@@ -926,6 +926,10 @@ FwdState::connectStart()
         cs->setHost(host);
     ++n_tries;
     AsyncJob::Start(cs);
+
+    Comm::ConnOpener *cs1 = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout);
+    ++n_tries;
+    AsyncJob::Start(cs1);
 }
 
 void
