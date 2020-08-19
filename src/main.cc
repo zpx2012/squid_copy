@@ -283,9 +283,16 @@ int teardown_nfq()
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
         unsigned char* packet;
+        struct nfqnl_msg_packet_hdr *ph;
+        ph = nfq_get_msg_packet_hdr(nfa);
+        if (!ph) {
+            log_error("nfq_get_msg_packet_hdr failed");
+            return -1;
+        }
+        unsigned int id = ntohl(ph->packet_id);
         int packet_len = nfq_get_payload(nfa, &packet);
-
-
+        
+        printf("cb: id %d, packet_len %d\n", id, packet_len);
 
         return 0;
 }
@@ -294,7 +301,7 @@ void *nfq_loop(void *arg)
 {
     int rv;
     char buf[65536];
-    void * placeholder;
+    void * placeholder = 0;
 
     while (!nfq_stop) {
         rv = recv(g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
