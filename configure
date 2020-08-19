@@ -15070,7 +15070,7 @@ if ${ac_cv_lib_dl_dlopen+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-ldl  $LIBS"
+LIBS="-ldl  -lnetfilter_queue -lnfnetlink  -pthread $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
