@@ -200,6 +200,7 @@ static const char *squid_start_script = "squid_start";
 struct nfq_handle *g_nfq_h;
 struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
+int nfq_stop;
 
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, 
               struct nfq_data *nfa, void *data);
@@ -226,13 +227,13 @@ int setup_nfq()
     }
 
     // set up a queue
-    debugs(0, DBG_CRITICAL,"binding this socket to queue %d", NF_QUEUE_NUM);
+    debugs(0, DBG_CRITICAL,"binding this socket to queue " << NF_QUEUE_NUM);
     g_nfq_qh = nfq_create_queue(g_nfq_h, NF_QUEUE_NUM, &cb, NULL);
     if (!g_nfq_qh) {
         debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
         return -1;
     }
-    debugs(0, DBG_CRITICAL,"nfq queue handler: %p", g_nfq_qh);
+    debugs(0, DBG_CRITICAL,"nfq queue handler: " << g_nfq_qh);
 
     debugs(0, DBG_CRITICAL,"setting copy_packet mode");
     if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
@@ -256,7 +257,7 @@ int setup_nfq()
 
 int teardown_nfq()
 {
-    debugs(0, DBG_CRITICAL,"unbinding from queue %d", NF_QUEUE_NUM);
+    debugs(0, DBG_CRITICAL,"unbinding from queue " << NF_QUEUE_NUM);
     if (nfq_destroy_queue(g_nfq_qh) != 0) {
         debugs(0, DBG_CRITICAL,"error during nfq_destroy_queue()");
         return -1;
@@ -292,6 +293,7 @@ void *nfq_loop(void *arg)
 {
     int rv;
     char buf[65536];
+    void * placeholder;
 
     while (!nfq_stop) {
         rv = recv(g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
@@ -303,11 +305,12 @@ void *nfq_loop(void *arg)
         }
         else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                debugs(0, DBG_CRITICAL,"recv() ret %d errno: %d", rv, errno);
+                debugs(0, DBG_CRITICAL,"recv() ret " << rv << "errno " << errno);
             }
             usleep(10); //10000
         }
     }
+    return placeholder;
 }
 
 /** end **/
