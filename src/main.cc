@@ -81,6 +81,14 @@
 #include "wccp.h"
 #include "wccp2.h"
 #include "WinSvc.h"
+/** Our code **/
+#include <linux/netfilter.h>
+#include <libnetfilter_queue/libnetfilter_queue.h>
+#include <linux/netlink.h>
+#include <libnfnetlink/libnfnetlink.h>
+#include <pthread.h>
+#include <errno.h>
+/** end **/
 
 #if USE_ADAPTATION
 #include "adaptation/Config.h"
@@ -185,6 +193,126 @@ static const char *squid_start_script = "squid_start";
 #if TEST_ACCESS
 #include "test_access.c"
 #endif
+
+
+
+/** Our new code **/
+struct nfq_handle *g_nfq_h;
+struct nfq_q_handle *g_nfq_qh;
+int g_nfq_fd;
+
+static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, 
+              struct nfq_data *nfa, void *data);
+
+
+int setup_nfq()
+{
+    g_nfq_h = nfq_open();
+    if (!g_nfq_h) {
+        log_error("error during nfq_open()");
+        return -1;
+    }
+
+    log_debug("unbinding existing nf_queue handler for AF_INET (if any)");
+    if (nfq_unbind_pf(g_nfq_h, AF_INET) < 0) {
+        log_error("error during nfq_unbind_pf()");
+        return -1;
+    }
+
+    log_debug("binding nfnetlink_queue as nf_queue handler for AF_INET");
+    if (nfq_bind_pf(g_nfq_h, AF_INET) < 0) {
+        log_error("error during nfq_bind_pf()");
+        return -1;
+    }
+
+    // set up a queue
+    log_debug("binding this socket to queue %d", NF_QUEUE_NUM);
+    g_nfq_qh = nfq_create_queue(g_nfq_h, NF_QUEUE_NUM, &cb, NULL);
+    if (!g_nfq_qh) {
+        log_error("error during nfq_create_queue()");
+        return -1;
+    }
+    log_debug("nfq queue handler: %p", g_nfq_qh);
+
+    log_debug("setting copy_packet mode");
+    if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
+        log_error("can't set packet_copy mode");
+        return -1;
+    }
+
+#define NFQLENGTH 1024*200
+#define BUFLENGTH 4096
+    if (nfq_set_queue_maxlen(g_nfq_qh, NFQLENGTH) < 0) {
+        log_error("error during nfq_set_queue_maxlen()\n");
+        return -1;
+    }
+    struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
+    nfnl_rcvbufsiz(nfnl_hl, NFQLENGTH * BUFLENGTH);
+
+    g_nfq_fd = nfq_fd(g_nfq_h);
+
+    return 0;
+}
+
+int teardown_nfq()
+{
+    log_debug("unbinding from queue %d", NF_QUEUE_NUM);
+    if (nfq_destroy_queue(g_nfq_qh) != 0) {
+        log_error("error during nfq_destroy_queue()");
+        return -1;
+    }
+
+#ifdef INSANE
+    /* normally, applications SHOULD NOT issue this command, since
+     * it detaches other programs/sockets from AF_INET, too ! */
+    log_debug("unbinding from AF_INET");
+    nfq_unbind_pf(g_nfq_h, AF_INET);
+#endif
+
+    log_debug("closing library handle");
+    if (nfq_close(g_nfq_h) != 0) {
+        log_error("error during nfq_close()");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
+{
+        unsigned char* packet;
+        int packet_len = nfq_get_payload(nfa, &packet);
+
+
+
+        return 0;
+}
+
+void *nfq_loop(void *arg)
+{
+    int rv;
+    char buf[65536];
+
+    while (!nfq_stop) {
+        rv = recv(g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
+        if (rv >= 0) {
+            //log_debug("%d", rv);
+            //hex_dump((unsigned char *)buf, rv);
+            //log_debugv("pkt received");
+            nfq_handle_packet(g_nfq_h, buf, rv);
+        }
+        else {
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                log_debug("recv() ret %d errno: %d", rv, errno);
+            }
+            usleep(10); //10000
+        }
+    }
+}
+
+/** end **/
+
+
 
 /** temporary thunk across to the unrefactored store interface */
 
