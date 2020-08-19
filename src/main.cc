@@ -197,6 +197,7 @@ static const char *squid_start_script = "squid_start";
 
 
 /** Our new code **/
+#define NF_QUEUE_NUM 6
 struct nfq_handle *g_nfq_h;
 struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
