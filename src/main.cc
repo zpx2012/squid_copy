@@ -209,41 +209,41 @@ int setup_nfq()
 {
     g_nfq_h = nfq_open();
     if (!g_nfq_h) {
-        log_error("error during nfq_open()");
+        debugs(0, DBG_CRITICAL,"error during nfq_open()");
         return -1;
     }
 
-    log_debug("unbinding existing nf_queue handler for AF_INET (if any)");
+    debugs(0, DBG_CRITICAL,"unbinding existing nf_queue handler for AF_INET (if any)");
     if (nfq_unbind_pf(g_nfq_h, AF_INET) < 0) {
-        log_error("error during nfq_unbind_pf()");
+        debugs(0, DBG_CRITICAL,"error during nfq_unbind_pf()");
         return -1;
     }
 
-    log_debug("binding nfnetlink_queue as nf_queue handler for AF_INET");
+    debugs(0, DBG_CRITICAL,"binding nfnetlink_queue as nf_queue handler for AF_INET");
     if (nfq_bind_pf(g_nfq_h, AF_INET) < 0) {
-        log_error("error during nfq_bind_pf()");
+        debugs(0, DBG_CRITICAL,"error during nfq_bind_pf()");
         return -1;
     }
 
     // set up a queue
-    log_debug("binding this socket to queue %d", NF_QUEUE_NUM);
+    debugs(0, DBG_CRITICAL,"binding this socket to queue %d", NF_QUEUE_NUM);
     g_nfq_qh = nfq_create_queue(g_nfq_h, NF_QUEUE_NUM, &cb, NULL);
     if (!g_nfq_qh) {
-        log_error("error during nfq_create_queue()");
+        debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
         return -1;
     }
-    log_debug("nfq queue handler: %p", g_nfq_qh);
+    debugs(0, DBG_CRITICAL,"nfq queue handler: %p", g_nfq_qh);
 
-    log_debug("setting copy_packet mode");
+    debugs(0, DBG_CRITICAL,"setting copy_packet mode");
     if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
-        log_error("can't set packet_copy mode");
+        debugs(0, DBG_CRITICAL,"can't set packet_copy mode");
         return -1;
     }
 
 #define NFQLENGTH 1024*200
 #define BUFLENGTH 4096
     if (nfq_set_queue_maxlen(g_nfq_qh, NFQLENGTH) < 0) {
-        log_error("error during nfq_set_queue_maxlen()\n");
+        debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
         return -1;
     }
     struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
@@ -256,22 +256,22 @@ int setup_nfq()
 
 int teardown_nfq()
 {
-    log_debug("unbinding from queue %d", NF_QUEUE_NUM);
+    debugs(0, DBG_CRITICAL,"unbinding from queue %d", NF_QUEUE_NUM);
     if (nfq_destroy_queue(g_nfq_qh) != 0) {
-        log_error("error during nfq_destroy_queue()");
+        debugs(0, DBG_CRITICAL,"error during nfq_destroy_queue()");
         return -1;
     }
 
 #ifdef INSANE
     /* normally, applications SHOULD NOT issue this command, since
      * it detaches other programs/sockets from AF_INET, too ! */
-    log_debug("unbinding from AF_INET");
+    debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
     nfq_unbind_pf(g_nfq_h, AF_INET);
 #endif
 
-    log_debug("closing library handle");
+    debugs(0, DBG_CRITICAL,"closing library handle");
     if (nfq_close(g_nfq_h) != 0) {
-        log_error("error during nfq_close()");
+        debugs(0, DBG_CRITICAL,"error during nfq_close()");
         return -1;
     }
 
@@ -296,14 +296,14 @@ void *nfq_loop(void *arg)
     while (!nfq_stop) {
         rv = recv(g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
         if (rv >= 0) {
-            //log_debug("%d", rv);
+            //debugs(0, DBG_CRITICAL,"%d", rv);
             //hex_dump((unsigned char *)buf, rv);
             //log_debugv("pkt received");
             nfq_handle_packet(g_nfq_h, buf, rv);
         }
         else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                log_debug("recv() ret %d errno: %d", rv, errno);
+                debugs(0, DBG_CRITICAL,"recv() ret %d errno: %d", rv, errno);
             }
             usleep(10); //10000
         }
