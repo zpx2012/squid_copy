@@ -21694,7 +21694,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pthread_pthread_create_" >&5
 $as_echo "$ac_cv_lib_pthread_pthread_create_" >&6; }
 if test "x$ac_cv_lib_pthread_pthread_create_" = xyes; then :
-  LIBPTHREADS="-lpthread"
+  LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"
 else
 
                 { $as_echo "$as_me:${as_lineno-$LINENO}: pthread library required but cannot be found." >&5
@@ -21704,8 +21704,8 @@ $as_echo "$as_me: pthread library required but cannot be found." >&6;}
 fi
 
             else
-                            SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT -lpthread"
-              SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT -lpthread"
+                            SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT -lpthread -lnetfilter_queue -lnfnetlink"
+              SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT -lpthread -lnetfilter_queue -lnfnetlink"
               { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing pthread_create" >&5
 $as_echo_n "checking for library containing pthread_create... " >&6; }
 if ${ac_cv_search_pthread_create+:} false; then :
@@ -21781,7 +21781,7 @@ if ${ac_cv_lib_pthread_pthread_create_+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lpthread  $LIBS"
+LIBS="-lpthread -lnetfilter_queue -lnfnetlink $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -21812,7 +21812,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pthread_pthread_create_" >&5
 $as_echo "$ac_cv_lib_pthread_pthread_create_" >&6; }
 if test "x$ac_cv_lib_pthread_pthread_create_" = xyes; then :
-  LIBPTHREADS="-lpthread"
+  LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"
 else
 
               { $as_echo "$as_me:${as_lineno-$LINENO}: pthread library required but cannot be found." >&5
