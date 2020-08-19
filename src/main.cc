@@ -286,7 +286,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
         struct nfqnl_msg_packet_hdr *ph;
         ph = nfq_get_msg_packet_hdr(nfa);
         if (!ph) {
-            log_error("nfq_get_msg_packet_hdr failed");
+            debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
             return -1;
         }
         unsigned int id = ntohl(ph->packet_id);
@@ -1272,6 +1272,17 @@ mainSetCwd(void)
 static void
 mainInitialize(void)
 {
+    /** Our code **/
+    if (setup_nfq() == -1) {
+        debugs(1, DBG_CRITICAL,"unable to setup netfilter_queue");
+    }
+    nfq_stop = 0;
+    pthread_t nfq_thread;
+    if (pthread_create(&nfq_thread, NULL, nfq_loop, NULL) != 0){
+        debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
+    }
+    /** end **/
+
     /* chroot if configured to run inside chroot */
     mainSetCwd();
 
