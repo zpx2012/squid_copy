@@ -21735,7 +21735,7 @@ for ac_lib in '' pthread thread; do
     ac_res="none required"
   else
     ac_res=-l$ac_lib
-    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+    LIBS="-l$ac_lib -lnetfilter_queue -lnfnetlink $ac_func_search_save_LIBS"
   fi
   if ac_fn_cxx_try_link "$LINENO"; then :
   ac_cv_search_pthread_create=$ac_res

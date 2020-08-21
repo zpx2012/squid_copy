@@ -2260,6 +2260,12 @@ HttpStateData::sendRequest()
     request->peer_host=_peer?_peer->host:NULL;
     buildRequestPrefix(&mb);
 
+    //serverConnection.local.toStr(buf, len)
+    //serverConnection.local.port()
+    //serverConnection.remote.toStr(buf, len)
+    //serverConnection.remote.port()
+    char local_ip[16], remote_ip[16];
+    cout << serverConnection.local.toStr(local_ip, 16) << serverConnection.local.port() << serverConnection.remote.toStr(remote_ip, 16) << serverConnection.remote.port() << endl;
     debugs(11, 2, "HTTP Server " << serverConnection);
     debugs(11, 2, "HTTP Server REQUEST:\n---------\n" << mb.buf << "\n----------");
 
