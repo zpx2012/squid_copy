@@ -2267,7 +2267,10 @@ HttpStateData::sendRequest()
     char remote_ip[16];//local_ip[16], 
     // std::cout << serverConnection->local.toStr(local_ip, 16) << serverConnection->local.port() << serverConnection->remote.toStr(remote_ip, 16) << serverConnection->remote.port() << std::endl;
     serverConnection->remote.toStr(remote_ip, 16);
-    system(std::string("iptables -A INPUT -p tcp -s ") + remote_ip + "--sport " + std::to_string(serverConnection->remote.port()) + "--dport " + std::to_string(serverConnection->local.port()) + "-j NFQUEUE --queue-num 6");
+    char cmd[200];
+    sprintf(cmd, "iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num 6", remote_ip, serverConnection->remote.port(), serverConnection->local.port());
+    system(cmd);
+    debugs(11, 2, cmd);
     debugs(11, 2, "HTTP Server " << serverConnection);
     debugs(11, 2, "HTTP Server REQUEST:\n---------\n" << mb.buf << "\n----------");
 
