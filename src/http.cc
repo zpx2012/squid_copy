@@ -2268,7 +2268,7 @@ HttpStateData::sendRequest()
     // std::cout << serverConnection->local.toStr(local_ip, 16) << serverConnection->local.port() << serverConnection->remote.toStr(remote_ip, 16) << serverConnection->remote.port() << std::endl;
     serverConnection->remote.toStr(remote_ip, 16);
     char cmd[200];
-    sprintf(cmd, "iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num 6", remote_ip, serverConnection->remote.port(), serverConnection->local.port());
+    sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num 6", remote_ip, serverConnection->remote.port(), serverConnection->local.port());
     int ret = system(cmd);
     debugs(11, 2, cmd << ret);
     debugs(11, 2, "HTTP Server " << serverConnection);
