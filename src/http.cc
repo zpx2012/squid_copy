@@ -2270,7 +2270,7 @@ HttpStateData::sendRequest()
     char cmd[200];
     sprintf(cmd, "iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num 6", remote_ip, serverConnection->remote.port(), serverConnection->local.port());
     int ret = system(cmd);
-    debugs(11, 2, cmd);
+    debugs(11, 2, cmd << ret);
     debugs(11, 2, "HTTP Server " << serverConnection);
     debugs(11, 2, "HTTP Server REQUEST:\n---------\n" << mb.buf << "\n----------");
 
