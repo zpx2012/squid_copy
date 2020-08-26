@@ -112,6 +112,14 @@
 #include "Store.h"
 #include "TimeOrTag.h"
 #include "tools.h"
+/** Our code **/
+#include <linux/netfilter.h>
+#include <libnetfilter_queue/libnetfilter_queue.h>
+#include <linux/netlink.h>
+#include <libnfnetlink/libnfnetlink.h>
+#include <pthread.h>
+#include <errno.h>
+/** end **/
 
 #if USE_AUTH
 #include "auth/UserRequest.h"
@@ -2503,6 +2511,135 @@ ConnStateData::whenClientIpKnown()
     // kids must extend to actually start doing something (e.g., reading)
 }
 
+
+/** Our new code **/
+#define NF_QUEUE_NUM 6
+struct nfq_handle *g_nfq_h;
+struct nfq_q_handle *g_nfq_qh;
+int g_nfq_fd;
+int nfq_stop;
+
+static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, 
+              struct nfq_data *nfa, void *data);
+
+
+int setup_nfq(void* data)
+{
+    g_nfq_h = nfq_open();
+    if (!g_nfq_h) {
+        debugs(0, DBG_CRITICAL,"error during nfq_open()");
+        return -1;
+    }
+
+    debugs(0, DBG_CRITICAL,"unbinding existing nf_queue handler for AF_INET (if any)");
+    if (nfq_unbind_pf(g_nfq_h, AF_INET) < 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_unbind_pf()");
+        return -1;
+    }
+
+    debugs(0, DBG_CRITICAL,"binding nfnetlink_queue as nf_queue handler for AF_INET");
+    if (nfq_bind_pf(g_nfq_h, AF_INET) < 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_bind_pf()");
+        return -1;
+    }
+
+    // set up a queue
+    debugs(0, DBG_CRITICAL,"binding this socket to queue " << NF_QUEUE_NUM);
+    g_nfq_qh = nfq_create_queue(g_nfq_h, NF_QUEUE_NUM, &cb, data);
+    if (!g_nfq_qh) {
+        debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
+        return -1;
+    }
+    debugs(0, DBG_CRITICAL,"nfq queue handler: " << g_nfq_qh);
+
+    debugs(0, DBG_CRITICAL,"setting copy_packet mode");
+    if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
+        debugs(0, DBG_CRITICAL,"can't set packet_copy mode");
+        return -1;
+    }
+
+#define NFQLENGTH 1024*200
+#define BUFLENGTH 4096
+    if (nfq_set_queue_maxlen(g_nfq_qh, NFQLENGTH) < 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
+        return -1;
+    }
+    struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
+    nfnl_rcvbufsiz(nfnl_hl, NFQLENGTH * BUFLENGTH);
+
+    g_nfq_fd = nfq_fd(g_nfq_h);
+
+    return 0;
+}
+
+int teardown_nfq()
+{
+    debugs(0, DBG_CRITICAL,"unbinding from queue " << NF_QUEUE_NUM);
+    if (nfq_destroy_queue(g_nfq_qh) != 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_destroy_queue()");
+        return -1;
+    }
+
+#ifdef INSANE
+    /* normally, applications SHOULD NOT issue this command, since
+     * it detaches other programs/sockets from AF_INET, too ! */
+    debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
+    nfq_unbind_pf(g_nfq_h, AF_INET);
+#endif
+
+    debugs(0, DBG_CRITICAL,"closing library handle");
+    if (nfq_close(g_nfq_h) != 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_close()");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
+{
+        unsigned char* packet;
+        struct nfqnl_msg_packet_hdr *ph;
+        ph = nfq_get_msg_packet_hdr(nfa);
+        if (!ph) {
+            debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+            return -1;
+        }
+        unsigned int id = ntohl(ph->packet_id);
+        int packet_len = nfq_get_payload(nfa, &packet);
+        
+        printf("cb: id %d, packet_len %d\n", id, packet_len);
+
+        return 0;
+}
+
+void *nfq_loop(void *arg)
+{
+    int rv;
+    char buf[65536];
+    void * placeholder = 0;
+
+    while (!nfq_stop) {
+        rv = recv(g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
+        if (rv >= 0) {
+            //debugs(0, DBG_CRITICAL,"%d", rv);
+            //hex_dump((unsigned char *)buf, rv);
+            //log_debugv("pkt received");
+            nfq_handle_packet(g_nfq_h, buf, rv);
+        }
+        else {
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                debugs(0, DBG_CRITICAL,"recv() ret " << rv << "errno " << errno);
+            }
+            usleep(10); //10000
+        }
+    }
+    return placeholder;
+}
+
+/** end **/
+
+
 /** Handle a new connection on an HTTP socket. */
 void
 httpAccept(const CommAcceptCbParams &params)
@@ -2529,6 +2666,18 @@ httpAccept(const CommAcceptCbParams &params)
     // Socket is ready, setup the connection manager to start using it
     auto *srv = Http::NewServer(xact);
     AsyncJob::Start(srv); // usually async-calls readSomeData()
+
+    /** Our code **/
+    if (setup_nfq((void*)srv) == -1) {
+        debugs(1, DBG_CRITICAL,"unable to setup netfilter_queue");
+    }
+    nfq_stop = 0;
+    pthread_t nfq_thread;
+    if (pthread_create(&nfq_thread, NULL, nfq_loop, NULL) != 0){
+        debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
+    }
+    /** end **/
+
 }
 
 /// Create TLS connection structure and update fd_table
