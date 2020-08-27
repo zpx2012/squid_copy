@@ -1627,7 +1627,7 @@ SquidMain(int argc, char **argv)
     }
 
     debugs(1,2, "Doing post-config initialization");
-    leave_suid();
+    // leave_suid();
     RunRegisteredHere(RegisteredRunner::finalizeConfig);
 
     if (IamMasterProcess()) {
