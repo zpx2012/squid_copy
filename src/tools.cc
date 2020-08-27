@@ -503,6 +503,10 @@ uniqueHostname(void)
 void
 leave_suid(void)
 {
+    /* Our code */
+    return;
+    /* end */
+
     debugs(21, 3, "leave_suid: PID " << getpid() << " called");
 
     if (Config.effectiveGroup) {
