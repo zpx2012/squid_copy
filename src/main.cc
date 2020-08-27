@@ -1085,7 +1085,7 @@ setEffectiveUser(void)
         debugs(0, DBG_CRITICAL, "start Squid as root, then you must configure");
         debugs(0, DBG_CRITICAL, "it to run as a non-priveledged user with the");
         debugs(0, DBG_CRITICAL, "'cache_effective_user' option in the config file.");
-        fatal("Don't run Squid as root, set 'cache_effective_user'!");
+        // fatal("Don't run Squid as root, set 'cache_effective_user'!"); //Our code
     }
 }
 
