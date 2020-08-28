@@ -2672,10 +2672,10 @@ httpAccept(const CommAcceptCbParams &params)
         debugs(1, DBG_CRITICAL,"unable to setup netfilter_queue");
     }
     nfq_stop = 0;
-    pthread_t nfq_thread;
-    if (pthread_create(&nfq_thread, NULL, nfq_loop, NULL) != 0){
-        debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
-    }
+    // pthread_t nfq_thread;
+    // if (pthread_create(&nfq_thread, NULL, nfq_loop, NULL) != 0){
+    //     debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
+    // }
     /** end **/
 
 }
