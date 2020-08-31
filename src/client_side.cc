@@ -2611,16 +2611,25 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
         //printf("cb: id %d, packet_len %d\n", id, packet_len);
         debugs(0, DBG_CRITICAL,"cb: id " << id << " packet_len " << packet_len);
         
-        MemBuf *mb = new MemBuf;
-        mb->init();
-        // opt 1 requires const char*
-        mb->append((char*)packet, packet_len);
-        // opt 2 printf style
-        //mb->appendf("%s\r\n", packet);
+        //MemBuf *mb = new MemBuf;
+        //mb->init();
+        //// opt 1 requires const char*
+        //mb->append((char*)packet, packet_len);
+        //// opt 2 printf style
+        ////mb->appendf("%s\r\n", packet);
 
         ConnStateData* conn = (ConnStateData*)data; 
-        conn->write(mb);
-        delete mb;
+        //conn->write(mb);
+        //delete mb;
+
+        StoreIOBuffer buf(packet_len, 0, (char*)packet);
+
+        Http::StreamPointer context = conn->pipeline.front();
+        if (context == NULL) {
+          debugs(0, DBG_CRITICAL,"No context ");
+          return 0;
+        }
+        context->sendBody(buf);
 
         return 0;
 }
