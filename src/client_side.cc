@@ -2608,7 +2608,19 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
         unsigned int id = ntohl(ph->packet_id);
         int packet_len = nfq_get_payload(nfa, &packet);
         
-        printf("cb: id %d, packet_len %d\n", id, packet_len);
+        //printf("cb: id %d, packet_len %d\n", id, packet_len);
+        debugs(0, DBG_CRITICAL,"cb: id " << id << " packet_len " << packet_len);
+        
+        MemBuf *mb = new MemBuf;
+        mb->init();
+        // opt 1 requires const char*
+        mb->append((char*)packet, packet_len);
+        // opt 2 printf style
+        //mb->appendf("%s\r\n", packet);
+
+        ConnStateData* conn = (ConnStateData*)data; 
+        conn->write(mb);
+        delete mb;
 
         return 0;
 }
