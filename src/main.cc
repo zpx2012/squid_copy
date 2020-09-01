@@ -1147,7 +1147,7 @@ mainInitialize(void)
     mainSetCwd();
 
     if (opt_catch_signals) {
-        squid_signal(SIGSEGV, death, SA_NODEFER | SA_RESETHAND);
+        // squid_signal(SIGSEGV, death, SA_NODEFER | SA_RESETHAND);
         squid_signal(SIGBUS, death, SA_NODEFER | SA_RESETHAND);
     }
 
