@@ -2612,7 +2612,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
         struct myiphdr *iphdr = ip_hdr(packet);
         struct mytcphdr *tcphdr = tcp_hdr(packet);
         unsigned char *payload = tcp_payload(packet);
-        unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
+        unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
         
         debugs(1,DBG_CRITICAL, "cb: id" << id << " packet_len " << packet_len << " payload_len" << payload_len);
 
