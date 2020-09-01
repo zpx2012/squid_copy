@@ -290,9 +290,9 @@ PrintRusage(void)
 void
 death(int sig)
 {
-    // if (sig == SIGSEGV)
-    //     debugs(1, DBG_CRITICAL, ForceAlert << "FATAL: Received Segment Violation...dying.");
-    // else 
+    if (sig == SIGSEGV)
+        debugs(1, DBG_CRITICAL, ForceAlert << "FATAL: Received Segment Violation...dying.");
+    else 
     if (sig == SIGBUS)
         debugs(1, DBG_CRITICAL, ForceAlert << "FATAL: Received Bus Error...dying.");
     else
