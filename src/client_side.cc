@@ -120,6 +120,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include "optimack/hping2.h"
+#include <vector.h>
 /** end **/
 
 #if USE_AUTH
@@ -2597,43 +2598,171 @@ int teardown_nfq()
     return 0;
 }
 
+struct subconn_info
+{
+    unsigned short local_port;
+    unsigned int ini_seq_rem;  //remote sequence number
+    unsigned int ini_seq_loc;  //local sequence number
+    unsigned int cur_seq_rem;
+    unsigned int cur_seq_loc;
+    short ack_sent;
+
+    pthread_t thread;
+    pthread_mutex_t mutex_opa;
+    unsigned int optim_ack_stop;
+    unsigned int opa_seq_start;  // local sequence number for optim ack to start
+    unsigned int opa_ack_start;  // local ack number for optim ack to start
+    unsigned int opa_seq_max_restart;
+    unsigned int opa_retrx_counter;
+    unsigned int win_size;
+    int ack_pacing;
+    unsigned int payload_len;
+};
+std::vector<struct subconn_info> subconn_infos;
+
+int find_subconn(std::vector<struct subconn_info> subconn_infos, unsigned int target_port){
+    for (int i = 0; i < subconn_infos.size(); i++)
+        if(subconn_infos[i]->local_port == target_port)
+            return i;
+    return -1;
+}
+
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
-        unsigned char* packet;
-        struct nfqnl_msg_packet_hdr *ph;
-        ph = nfq_get_msg_packet_hdr(nfa);
-        if (!ph) {
-            debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+    unsigned char* packet;
+    struct nfqnl_msg_packet_hdr *ph;
+    ph = nfq_get_msg_packet_hdr(nfa);
+    if (!ph) {
+        debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+        return -1;
+    }
+    unsigned int id = ntohl(ph->packet_id);
+    int packet_len = nfq_get_payload(nfa, &packet);
+
+    struct myiphdr *iphdr = ip_hdr(packet);
+    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    unsigned char *payload = tcp_payload(packet);
+    unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
+    
+    debugs(1,DBG_CRITICAL, "cb: id" << id << " packet_len " << packet_len << " payload_len" << payload_len);
+
+    char sip[16], dip[16];
+    ip2str(iphdr->saddr, sip);
+    ip2str(iphdr->daddr, dip);
+
+    unsigned short sport, dport;
+    unsigned int seq, ack;
+    sport = ntohs(tcphdr->th_sport);
+    dport = ntohs(tcphdr->th_dport);
+    seq = htonl(tcphdr->th_seq);
+    ack = htonl(tcphdr->th_ack);
+
+    int subconn_i = find_subconn(subconn_infos, dport);
+    //create new subconn info, how to deal with conns by other applications?
+    if (subconn_i == -1){
+        struct subconn_info new_subconn;
+        new_subconn.local_port = dport;//No nfq callback will interfere because iptable rules haven't been added
+        new_subconn.ini_seq_rem = seq;
+        new_subconn.ini_seq_loc = -1; //unknown
+        new_subconn.cur_seq_loc = ack;
+        new_subconn.win_size = 29200*128;
+        new_subconn.ack_pacing = 5000;
+        new_subconn.optim_ack_stop = 1;
+        new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+        subconn_infos.append(new_subconn);
+        subconn_i = subconn_infos.size() - 1;
+    }
+    log_exp("S%d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_id, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_id].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_id].ini_seq_loc, iphdr->ttl, payload_len);
+
+
+    if(payload_len){
+        ConnStateData* conn = (ConnStateData*)data; 
+        if (send(conn->clientConnection->fd, payload, payload_len, 0) <= 0){
+            debugs(0, DBG_CRITICAL, "send error %d" << errno);
             return -1;
         }
-        unsigned int id = ntohl(ph->packet_id);
-        int packet_len = nfq_get_payload(nfa, &packet);
+            unsigned int seq_rel = seq - subconn_infos[subconn_id].ini_seq_rem;
+            
+            if (seq_rel == 1 && subconn_infos[subconn_id].optim_ack_stop){
+                start_optim_ack(subconn_id, seq, ack, payload_len, 0);
 
-        struct myiphdr *iphdr = ip_hdr(packet);
-        struct mytcphdr *tcphdr = tcp_hdr(packet);
-        unsigned char *payload = tcp_payload(packet);
-        unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
-        
-        debugs(1,DBG_CRITICAL, "cb: id" << id << " packet_len " << packet_len << " payload_len" << payload_len);
+            }            
+            else {
+                subconn_infos[subconn_id].cur_seq_rem = seq;
+            }
+            
+            int offset = seq_rel - seq_next_global;
+            unsigned int append = 0;
+            if(offset > 0){
+                // if ((seq_rel-seq_next_global) % packet->payload_len != 0){
+                //     log_error("seq_rel %d-seq_next_global %d) % packet->payload_len %d != 0", seq_rel, seq_next_global, packet->payload_len);
+                //     return -1;
+                // }
+                log_exp("S%d-%d: Insert gaps: %d, to: %d.", subconn_id, thr_data->pkt_id, seq_next_global, seq_rel);
+                // pthread_mutex_lock(&mutex_seq_gaps);
+                insert_seq_gaps(seq_next_global, seq_rel, payload_len);
+                // pthread_mutex_unlock(&mutex_seq_gaps);
+                append = offset + payload_len;
 
-        if(payload_len){
-            ConnStateData* conn = (ConnStateData*)data; 
-            if (send(conn->clientConnection->fd, payload, payload_len, 0) <= 0){
-                debugs(0, DBG_CRITICAL, "send error %d" << errno);
+            }
+            else if (offset < 0){
+                
+                int ret = find_seq_gaps(seq_rel);
+                if (!ret){
+                    log_exp("S%d-%d: recv %d < wanting %d", subconn_id, thr_data->pkt_id, seq_rel, seq_next_global);
+                    pthread_mutex_unlock(&mutex_seq_next_global);
+                    
+                    pthread_mutex_lock(&subconn_infos[subconn_id].mutex_opa);
+                    if(seq < subconn_infos[subconn_id].cur_seq_rem){//Retrx  && seq >= subconn_infos[subconn_id].opa_seq_max_restart
+                        subconn_infos[subconn_id].opa_retrx_counter++;
+                        if (subconn_infos[subconn_id].opa_retrx_counter > 6){
+                            subconn_infos[subconn_id].optim_ack_stop = 1;
+                            subconn_infos[subconn_id].ack_pacing -= 10;
+                            subconn_infos[subconn_id].opa_retrx_counter = 0;
+                            while(subconn_infos[subconn_id].optim_ack_stop);
+                            start_optim_ack(subconn_id, seq, ack, payload_len, subconn_infos[subconn_id].cur_seq_rem);
+                            log_exp("S%d-%d: Restart optim ack", subconn_id, thr_data->pkt_id);
+                        }
+                    }
+                    pthread_mutex_unlock(&subconn_infos[subconn_id].mutex_opa);
+                    return -1;
+                }
+                // pthread_mutex_lock(&mutex_seq_gaps);
+                delete_seq_gaps(seq_rel);
+                // pthread_mutex_unlock(&mutex_seq_gaps);
+                log_exp("S%d-%d: Found gap %u. Delete gap.", subconn_id, thr_data->pkt_id, seq_rel);
+            }
+            else {
+                append = payload_len;
+                log_exp("S%d-%d: Found seg %u", subconn_id, thr_data->pkt_id, seq_rel);
+            }
+
+            if(append){
+                seq_next_global += append;
+                log_exp("S%d-%d: Update seq_global to %u", subconn_id, thr_data->pkt_id, seq_next_global);
+            }
+
+            pthread_mutex_unlock(&mutex_seq_next_global);
+
+            //send it to the client
+            if (send(client_sock, payload, payload_len, 0) <= 0){
+                log_error("process_tcp_packet: send error %d", errno);
                 return -1;
             }
-            // MemBuf *mb = new MemBuf;
-            // mb->init();
-            // // opt 1 require const char*
-            // mb->append((char*)payload, payload_len);
-            // // opt 2 probably not going to work
-            // //mb->appendf("%s\r\n", packet);
+            log_exp("S%d-%d: Sent seg %d to client\n", subconn_id, thr_data->pkt_id, seq_rel);
 
-            // conn->write(mb);
-            // delete mb;
-        }
-        nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
-        return 0;
+        // MemBuf *mb = new MemBuf;
+        // mb->init();
+        // // opt 1 require const char*
+        // mb->append((char*)payload, payload_len);
+        // // opt 2 probably not going to work
+        // //mb->appendf("%s\r\n", packet);
+
+        // conn->write(mb);
+        // delete mb;
+    }
+    nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
+    return 0;
 }
 
 void *nfq_loop(void *arg)
