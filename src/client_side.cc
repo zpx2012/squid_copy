@@ -2617,15 +2617,19 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
         debugs(1,DBG_CRITICAL, "cb: id" << id << " packet_len " << packet_len << " payload_len" << payload_len);
 
         if(payload_len){
-            MemBuf *mb = new MemBuf;
-            mb->init();
-            // opt 1 require const char*
-            mb->append((char*)payload, payload_len);
-            // opt 2 probably not going to work
-            //mb->appendf("%s\r\n", packet);
-
             ConnStateData* conn = (ConnStateData*)data; 
-            conn->write(mb);
+            if (send(conn->clientConnection->fd, payload, payload_len, 0) <= 0){
+                debugs(0, DBG_CRITICAL, "send error %d" << errno);
+                return -1;
+            }
+            // MemBuf *mb = new MemBuf;
+            // mb->init();
+            // // opt 1 require const char*
+            // mb->append((char*)payload, payload_len);
+            // // opt 2 probably not going to work
+            // //mb->appendf("%s\r\n", packet);
+
+            // conn->write(mb);
             delete mb;
         }
         nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
