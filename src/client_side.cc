@@ -2630,7 +2630,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
             // //mb->appendf("%s\r\n", packet);
 
             // conn->write(mb);
-            delete mb;
+            // delete mb;
         }
         nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
         return 0;
