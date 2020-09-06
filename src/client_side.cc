@@ -2529,7 +2529,7 @@ int nfq_stop;
 const int MARK = 66;
 
 // Optim ack
-#define SUBCONN_NUM 2
+//#define SUBCONN_NUM 2
 //struct subconn_info subconn_infos[SUBCONN_NUM];
 std::vector<struct subconn_info> subconn_infos;
 int ack_pacing;
@@ -2556,10 +2556,11 @@ struct subconn_info
 };
 
 // Multithread
-struct thread_data{
+struct thread_data {
     unsigned int  pkt_id;
     unsigned int  len;
     unsigned char *buf;
+    // added a conn data
     void *conn_data;
 };
 thr_pool_t* pool;
@@ -2708,6 +2709,26 @@ void *nfq_loop(void *arg)
     return placeholder;
 }
 
+void* optimistic_ack(void* threadid)
+{
+    int id = (long) threadid;
+    unsigned int ack_step = subconn_infos[id].payload_len;
+    unsigned int opa_seq_start = subconn_infos[id].opa_seq_start;
+    unsigned int opa_ack_start = subconn_infos[id].opa_ack_start;
+    unsigned int local_port = subconn_infos[id].local_port;
+    unsigned int ack_pacing = subconn_infos[id].ack_pacing;
+
+    debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
+    for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
+        send_ACK("", opa_ack_start+k*ack_step, opa_seq_start, local_port);
+        usleep(ack_pacing);
+    }
+    // TODO: why 0???
+    subconn_infos[id].optim_ack_stop = 0;
+    debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
+    pthread_exit(NULL);
+}
+
 int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max)
 {
     subconn_infos[id].opa_seq_start = ack;
@@ -2715,6 +2736,7 @@ int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int pay
     subconn_infos[id].opa_seq_max_restart = seq_max;
     subconn_infos[id].opa_retrx_counter = 0;
     subconn_infos[id].payload_len = payload_len;
+    // set to running
     subconn_infos[id].optim_ack_stop = 0;
     pthread_t thread;
     if (pthread_create(&thread, NULL, optimistic_ack, (void *)(intptr_t)id) != 0) {
@@ -2755,8 +2777,6 @@ int process_tcp_packet(struct thread_data* thr_data)
             subconn_i = (int)i;
             break;
         }
-    pthread_mutex_unlock(&mutex_subconn_infos);
-
     //create new subconn info, how to deal with conns by other applications?
     if (subconn_i == -1){
         struct subconn_info new_subconn;
@@ -2771,20 +2791,39 @@ int process_tcp_packet(struct thread_data* thr_data)
         subconn_infos.push_back(new_subconn);
         subconn_i = subconn_infos.size() - 1;
     }
+    pthread_mutex_unlock(&mutex_subconn_infos);
 
     sprintf(log, "S%d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
     debugs(1, DBG_CRITICAL, log);
     
     switch (tcphdr->th_flags) {
-        default:
+        case TH_ACK:
+        case TH_ACK | TH_PUSH:
+        case TH_ACK | TH_URG:
         {
-            if (payload_len > 0) {
-                // just send to squid
-                ConnStateData *conn = (ConnStateData*)(thr_data->conn_data);
-                // TODO: check if seq num within window
+            if (!payload_len) {
+                break;
             }
+            if (seq == subconn_infos[subconn_i].ini_seq_rem && subconn_infos[subconn_i].optim_ack_stop) {
+                // TODO: what if payload_len changes?
+                start_optim_ack(subconn_i, seq, ack, payload_len, 0);
+            }
+            break;
         }
+        case TH_ACK | TH_FIN:
+        {
+            //send_FIN_ACK("", seq+1, ack, dport);
+            // TODO: should I stop all or just one?
+            subconn_infos[subconn_i].optim_ack_stop = 1;
+            debugs(0, DBG_CRITICAL, "Subconn " << subconn_i << ": Received FIN/ACK. Sent FIN/ACK. Stop current optim ack thread");
+            break;
+        }
+        default:
+            debugs(0, DBG_CRITICAL, "Invalid tcp flags: " << tcp_flags_str(tcphdr->th_flags));
+            break;
     }
+    // send to squid at all conditions
+    
     return 0;
 }
 
