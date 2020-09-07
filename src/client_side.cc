@@ -2530,11 +2530,7 @@ int nfq_stop;
 const int MARK = 66;
 
 // Optim ack
-//#define SUBCONN_NUM 2
-//struct subconn_info subconn_infos[SUBCONN_NUM];
 std::vector<struct subconn_info> subconn_infos;
-int ack_pacing;
-int optim_ack_stop = 1;
 struct subconn_info
 {
     unsigned short local_port;
@@ -2569,6 +2565,10 @@ pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_seq_gaps = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
+
+// seq
+unsigned int seq_next_global = 1;
+std::set<unsigned int> seq_gaps;
 
 // protos
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, 
@@ -2710,6 +2710,44 @@ void *nfq_loop(void *arg)
     return placeholder;
 }
 
+int find_seq_gaps(unsigned int seq)
+{
+    if (seq < *seq_gaps.begin())
+        return 0;
+    return seq_gaps.find(seq) != seq_gaps.end();
+    // for (size_t i = 0; i < seq_gaps.size(); i++)
+    // {
+    //     if (seq < seq_gaps.at(i))
+    //         return -1;
+    //     else if(seq == seq_gaps.at(i))
+    //         return i;
+    // }
+    // return -1;
+}
+
+void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step)
+{
+    for(; start < end; start += step){
+        debugs(1, DBG_CRITICAL, "insert gap u" << start);
+        seq_gaps.insert(start);
+    }
+
+    // unsigned int last = seq_gaps.at(seq_gaps.size()-1);
+    // if (start > last){
+    //     for(; start < end; start += step)
+    //         seq_gaps.push_back(start);
+    // }
+    // else if (start < last) {
+    //     for(; start < end; start += step){
+
+    //     }       
+    // }
+}
+
+void delete_seq_gaps(unsigned int val){
+    seq_gaps.erase(val);
+}
+
 void* optimistic_ack(void* threadid)
 {
     int id = (long) threadid;
@@ -2721,7 +2759,8 @@ void* optimistic_ack(void* threadid)
 
     debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
-        send_ACK("", opa_ack_start+k*ack_step, opa_seq_start, local_port);
+        char empty_payload[] = "";
+        send_ACK(empty_payload, opa_ack_start+k*ack_step, opa_seq_start, local_port);
         usleep(ack_pacing);
     }
     // TODO: why 0???
@@ -2754,7 +2793,7 @@ int process_tcp_packet(struct thread_data* thr_data)
 
     struct myiphdr *iphdr = ip_hdr(thr_data->buf);
     struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-    unsigned char *payload = tcp_payload(thr_data->buf);
+    //unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
 
     debugs(1,DBG_CRITICAL, "cb: id" << thr_data->pkt_id << " packet_len " << thr_data->len << " payload_len" << payload_len);
@@ -2817,7 +2856,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             int offset = seq_rel - seq_next_global;
             unsigned int append = 0;
             if(offset > 0){
-                log_exp("S%d-%d: Insert gaps: %d, to: %d.", subconn_id, thr_data->pkt_id, seq_next_global, seq_rel);
+                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
                 // pthread_mutex_lock(&mutex_seq_gaps);
                 insert_seq_gaps(seq_next_global, seq_rel, payload_len);
                 // pthread_mutex_unlock(&mutex_seq_gaps);
@@ -2828,23 +2867,23 @@ int process_tcp_packet(struct thread_data* thr_data)
                 
                 int ret = find_seq_gaps(seq_rel);
                 if (!ret){
-                    log_exp("S%d-%d: recv %d < wanting %d", subconn_id, thr_data->pkt_id, seq_rel, seq_next_global);
+                    debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": recv " << seq_rel << " < wanting " << seq_next_global);
                     pthread_mutex_unlock(&mutex_seq_next_global);
                     return -1;
                 }
                 // pthread_mutex_lock(&mutex_seq_gaps);
                 delete_seq_gaps(seq_rel);
                 // pthread_mutex_unlock(&mutex_seq_gaps);
-                log_exp("S%d-%d: Found gap %u. Delete gap.", subconn_id, thr_data->pkt_id, seq_rel);
+                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
             }
             else {
                 append = payload_len;
-                log_exp("S%d-%d: Found seg %u", subconn_id, thr_data->pkt_id, seq_rel);
+                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
             }
 
             if(append){
                 seq_next_global += append;
-                log_exp("S%d-%d: Update seq_global to %u", subconn_id, thr_data->pkt_id, seq_next_global);
+                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
             }
 
             pthread_mutex_unlock(&mutex_seq_next_global);
@@ -2856,9 +2895,9 @@ int process_tcp_packet(struct thread_data* thr_data)
             // 4. checksum(IP,TCP)
             if(!subconn_i)
                 return 0; //Main subconn, return directly
-            tcphdr->th_dport = htons(subconn_infos[0]->local_port);
-            tcphdr->th_seq = htonl(subconn_infos[0]->ini_seq_rem+seq_rel);
-            tcphdr->th_ack = htonl(subconn_infos[0]->cur_seq_loc);
+            tcphdr->th_dport = htons(subconn_infos[0].local_port);
+            tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem+seq_rel);
+            tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
             compute_checksums(thr_data->buf, 20, iphdr->tot_len);
             return 0;
 
@@ -2876,8 +2915,6 @@ int process_tcp_packet(struct thread_data* thr_data)
             debugs(0, DBG_CRITICAL, "Invalid tcp flags: " << tcp_flags_str(tcphdr->th_flags));
             break;
     }
-
-
     return 0;
 }
 
