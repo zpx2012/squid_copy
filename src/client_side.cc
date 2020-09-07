@@ -124,6 +124,7 @@
 #include "optimack/thr_pool.h"
 #include "optimack/socket.h"
 #include "optimack/util.h"
+#include "optimack/checksum.h"
 /** end **/
 
 #if USE_AUTH
@@ -2795,7 +2796,9 @@ int process_tcp_packet(struct thread_data* thr_data)
 
     sprintf(log, "S%d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
     debugs(1, DBG_CRITICAL, log);
-    
+
+    unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
+
     switch (tcphdr->th_flags) {
         case TH_ACK:
         case TH_ACK | TH_PUSH:
@@ -2808,7 +2811,56 @@ int process_tcp_packet(struct thread_data* thr_data)
                 // TODO: what if payload_len changes?
                 start_optim_ack(subconn_i, seq, ack, payload_len, 0);
             }
-            // 
+
+            pthread_mutex_lock(&mutex_seq_next_global);
+
+            int offset = seq_rel - seq_next_global;
+            unsigned int append = 0;
+            if(offset > 0){
+                log_exp("S%d-%d: Insert gaps: %d, to: %d.", subconn_id, thr_data->pkt_id, seq_next_global, seq_rel);
+                // pthread_mutex_lock(&mutex_seq_gaps);
+                insert_seq_gaps(seq_next_global, seq_rel, payload_len);
+                // pthread_mutex_unlock(&mutex_seq_gaps);
+                append = offset + payload_len;
+
+            }
+            else if (offset < 0){
+                
+                int ret = find_seq_gaps(seq_rel);
+                if (!ret){
+                    log_exp("S%d-%d: recv %d < wanting %d", subconn_id, thr_data->pkt_id, seq_rel, seq_next_global);
+                    pthread_mutex_unlock(&mutex_seq_next_global);
+                    return -1;
+                }
+                // pthread_mutex_lock(&mutex_seq_gaps);
+                delete_seq_gaps(seq_rel);
+                // pthread_mutex_unlock(&mutex_seq_gaps);
+                log_exp("S%d-%d: Found gap %u. Delete gap.", subconn_id, thr_data->pkt_id, seq_rel);
+            }
+            else {
+                append = payload_len;
+                log_exp("S%d-%d: Found seg %u", subconn_id, thr_data->pkt_id, seq_rel);
+            }
+
+            if(append){
+                seq_next_global += append;
+                log_exp("S%d-%d: Update seq_global to %u", subconn_id, thr_data->pkt_id, seq_next_global);
+            }
+
+            pthread_mutex_unlock(&mutex_seq_next_global);
+
+            // send to squid 
+            // 1. dest port -> sub1->localport
+            // 2. seq -> sub1->init_seq_rem + seq_rel
+            // 3. ack -> sub1->cur_seq_loc
+            // 4. checksum(IP,TCP)
+            if(!subconn_i)
+                return 0; //Main subconn, return directly
+            tcphdr->th_dport = htons(subconn_infos[0]->local_port);
+            tcphdr->th_seq = htonl(subconn_infos[0]->ini_seq_rem+seq_rel);
+            tcphdr->th_ack = htonl(subconn_infos[0]->cur_seq_loc);
+            compute_checksums(thr_data->buf, 20, iphdr->tot_len);
+            return 0;
 
             break;
         }
@@ -2824,11 +2876,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             debugs(0, DBG_CRITICAL, "Invalid tcp flags: " << tcp_flags_str(tcphdr->th_flags));
             break;
     }
-    // send to squid at all conditions
-    // 1. dest port -> sub1->localport
-    // 2. seq -> sub1->init_seq_rem + seq_rel
-    // 3. ack -> sub1->cur_seq_loc
-    // 4. checksum(IP,TCP)
+
 
     return 0;
 }
