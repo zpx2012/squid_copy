@@ -2804,10 +2804,12 @@ int process_tcp_packet(struct thread_data* thr_data)
             if (!payload_len) {
                 break;
             }
-            if (seq == subconn_infos[subconn_i].ini_seq_rem && subconn_infos[subconn_i].optim_ack_stop) {
+            if (subconn_infos[subconn_i].optim_ack_stop) {
                 // TODO: what if payload_len changes?
                 start_optim_ack(subconn_i, seq, ack, payload_len, 0);
             }
+            // 
+
             break;
         }
         case TH_ACK | TH_FIN:
@@ -2823,7 +2825,11 @@ int process_tcp_packet(struct thread_data* thr_data)
             break;
     }
     // send to squid at all conditions
-    
+    // 1. dest port -> sub1->localport
+    // 2. seq -> sub1->init_seq_rem + seq_rel
+    // 3. ack -> sub1->cur_seq_loc
+    // 4. checksum(IP,TCP)
+
     return 0;
 }
 
@@ -2858,17 +2864,19 @@ void* pool_handler(void* arg)
         free(hex_str);
     }
 
-    // free(thr_data->buf);
-    free(thr_data);
+
 
     if (ret == 0){
-        nfq_set_verdict(g_nfq_qh, id, NF_ACCEPT, 0, NULL);
+        nfq_set_verdict(g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
         // log_exp("verdict: accpet\n");
     }
     else{
         nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
         // log_exp("verdict: drop\n");
     }
+
+     // free(thr_data->buf);
+    free(thr_data);
     // TODO: ret NULL?
     return NULL;
 }
