@@ -426,11 +426,12 @@ void send_a_half_req(char *payload, unsigned int ack, unsigned int seq)
     client_ISN = rand();
 
     // normal SYN request
-    send_SYN("", 0, client_ISN);
+    char empty_buf[] = "";
+    send_SYN(empty_buf, 0, client_ISN);
     
     seq = wait_SYN_ACK();
 
-    send_ACK("", seq+1, client_ISN + 1);
+    send_ACK(empty_buf, seq+1, client_ISN + 1);
     send_request(payload, seq+1, client_ISN + 1);
 }
 
@@ -438,7 +439,8 @@ void send_request_seg(char *payload, unsigned int ack, unsigned int seq, unsigne
 {
     assert(len < 100);
     char tmp[1000];
-    for (int i=0; i<strlen(payload); i+=len) {
+    int payload_len = strlen(payload);
+    for (int i=0; i < payload_len; i+=len) {
         strncpy(tmp, payload+i, len);
         send_request(tmp, ack, seq);
         seq+=len;
@@ -448,7 +450,8 @@ void send_request_seg(char *payload, unsigned int ack, unsigned int seq, unsigne
 void send_request2(char *payload, unsigned int ack, unsigned int seq)
 {
     char tmp[10];
-    for (int i=0; i<strlen(payload); i+=2) {
+    int payload_len = strlen(payload);
+    for (int i=0; i < payload_len; i+=2) {
         tmp[0] = payload[i];
         tmp[1] = payload[i];
         tmp[1] = 0;
