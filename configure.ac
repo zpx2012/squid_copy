@@ -640,7 +640,7 @@ for module in $squid_disk_module_candidates none; do
 
     DiskThreads)
       squid_opt_use_diskthreads="yes"
-      LIBPTHREADS=
+      LIBPTHREADS="-lnetfilter_queue -lnfnetlink"
       SQUID_STATE_SAVE([diskthreads_state],[SQUID_CFLAGS SQUID_CXXFLAGS])
       if test "x$with_pthreads" != "xno"; then
       dnl TODO: this needs to be extended to handle more systems and better
