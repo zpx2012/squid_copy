@@ -96,11 +96,12 @@ host_triplet = @host@
 @CONVENIENCE_LTDL_TRUE@am__append_3 = libltdlc.la
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/libtool.m4 \
-	$(top_srcdir)/m4/ltargz.m4 $(top_srcdir)/m4/ltdl.m4 \
-	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
-	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
-	$(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/../m4/libtool.m4 \
+	$(top_srcdir)/../m4/ltargz.m4 $(top_srcdir)/../m4/ltdl.m4 \
+	$(top_srcdir)/../m4/ltoptions.m4 \
+	$(top_srcdir)/../m4/ltsugar.m4 \
+	$(top_srcdir)/../m4/ltversion.m4 \
+	$(top_srcdir)/../m4/lt~obsolete.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
@@ -303,9 +304,11 @@ am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/config-h.in \
 	$(top_srcdir)/../cfgaux/install-sh \
 	$(top_srcdir)/../cfgaux/ltmain.sh \
 	$(top_srcdir)/../cfgaux/missing ../cfgaux/compile \
-	../cfgaux/config.guess ../cfgaux/config.sub ../cfgaux/depcomp \
-	../cfgaux/install-sh ../cfgaux/ltmain.sh ../cfgaux/missing \
-	COPYING.LIB README lt__argz.c lt__dirent.c lt__strl.c
+	../cfgaux/config.guess ../cfgaux/config.sub \
+	../cfgaux/depcomp ../cfgaux/install-sh \
+	../cfgaux/ltmain.sh \
+	../cfgaux/missing COPYING.LIB \
+	README lt__argz.c lt__dirent.c lt__strl.c
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 distdir = $(PACKAGE)-$(VERSION)
 top_distdir = $(distdir)
@@ -440,7 +443,6 @@ pdfdir = @pdfdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
-runstatedir = @runstatedir@
 sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
