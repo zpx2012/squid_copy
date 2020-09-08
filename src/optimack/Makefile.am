@@ -13,12 +13,15 @@ noinst_LTLIBRARIES = liboptim.la
 
 liboptim_la_SOURCES = \
 	checksum.h \
-	hping2.c \
+	hping2.cc \
 	hping2.h \
-	sendtcp.c \
-	socket.c \
+	sendtcp.cc \
+	socket.cc \
 	socket.h \
-	thr_pool.c \
+	thr_pool.cc \
 	thr_pool.h \
-	util.c \
-	util.h
+	util.cc \
+	util.h \
+	logging.cc \
+	logging.h \
+	globals.h
