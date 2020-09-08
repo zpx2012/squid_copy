@@ -24,4 +24,5 @@ liboptim_la_SOURCES = \
 	util.h \
 	logging.cc \
 	logging.h \
-	globals.h
+	globals.h \
+	waitpacket.cc
