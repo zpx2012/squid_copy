@@ -120,14 +120,8 @@ char ifstraddr[1024],
 
 
 /* Our code - Todo/Temperary */
-char local_ip[16];
-char remote_ip[16];
-
 char pkt_data[10000];
 size_t pkt_len;
-
-unsigned short local_port;
-unsigned short remote_port;
 /* end */
 
 

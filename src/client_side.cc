@@ -2528,6 +2528,9 @@ struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
 int nfq_stop;
 const int MARK = 66;
+char local_ip[16]; //TODO: different connection from client
+char remote_ip[16];
+unsigned short remote_port;
 
 // Optim ack
 std::vector<struct subconn_info> subconn_infos;
@@ -2754,13 +2757,13 @@ void* optimistic_ack(void* threadid)
     unsigned int ack_step = subconn_infos[id].payload_len;
     unsigned int opa_seq_start = subconn_infos[id].opa_seq_start;
     unsigned int opa_ack_start = subconn_infos[id].opa_ack_start;
-    unsigned int lport = subconn_infos[id].local_port;
+    unsigned int local_port = subconn_infos[id].local_port;
     unsigned int ack_pacing = subconn_infos[id].ack_pacing;
 
     debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
         char empty_payload[] = "";
-        send_ACK(empty_payload, opa_ack_start+k*ack_step, opa_seq_start, lport);
+        send_ACK(remote_ip, local_ip, remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
@@ -2848,6 +2851,9 @@ int process_tcp_packet(struct thread_data* thr_data)
             }
             if (subconn_infos[subconn_i].optim_ack_stop) {
                 // TODO: what if payload_len changes?
+                strncpy(local_ip, dip, 16); //TODO: change position
+                strncpy(remote_ip,sip, 16);
+                remote_port = sport;
                 start_optim_ack(subconn_i, seq, ack, payload_len, 0);
             }
 

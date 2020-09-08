@@ -7,11 +7,11 @@
 extern char pkt_data[10000];
 extern size_t pkt_len;
 
-extern char local_ip[16];
-extern char remote_ip[16];
+// extern char local_ip[16];
+// extern char remote_ip[16];
 
-extern unsigned short local_port;
-extern unsigned short remote_port;
+// extern unsigned short local_port;
+// extern unsigned short remote_port;
 
 extern char payload_sk[1000];
 extern char payload_nosk[1000];
