@@ -659,7 +659,7 @@ for module in $squid_disk_module_candidates none; do
               SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT"
               SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT"
               if test "x$GCC" = "xyes" -a "x$PRESET_LDFLAGS" = "x" ; then
-                LDFLAGS="$LDFLAGS -pthread"
+                LDFLAGS="$LDFLAGS -pthread -lnetfilter_queue -lnfnetlink"
               fi
             fi
             ;;
@@ -670,7 +670,7 @@ for module in $squid_disk_module_candidates none; do
             else
               SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT"
               SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT"
-              LDFLAGS="$LDFLAGS -lpthread"
+              LDFLAGS="$LDFLAGS -lpthread -lnetfilter_queue -lnfnetlink"
             fi
             ;;
           solaris)
