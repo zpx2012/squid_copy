@@ -2754,13 +2754,13 @@ void* optimistic_ack(void* threadid)
     unsigned int ack_step = subconn_infos[id].payload_len;
     unsigned int opa_seq_start = subconn_infos[id].opa_seq_start;
     unsigned int opa_ack_start = subconn_infos[id].opa_ack_start;
-    unsigned int local_port = subconn_infos[id].local_port;
+    unsigned int lport = subconn_infos[id].local_port;
     unsigned int ack_pacing = subconn_infos[id].ack_pacing;
 
     debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
         char empty_payload[] = "";
-        send_ACK(empty_payload, opa_ack_start+k*ack_step, opa_seq_start, local_port);
+        send_ACK(empty_payload, opa_ack_start+k*ack_step, opa_seq_start, lport);
         usleep(ack_pacing);
     }
     // TODO: why 0???
