@@ -2824,7 +2824,7 @@ int process_tcp_packet(struct thread_data* thr_data)
     if (subconn_i == -1){
         struct subconn_info new_subconn;
         new_subconn.local_port = dport;//No nfq callback will interfere because iptable rules haven't been added
-        new_subconn.ini_seq_rem = seq;
+        new_subconn.ini_seq_rem = seq-1;
         new_subconn.ini_seq_loc = -1; //unknown
         new_subconn.cur_seq_loc = ack;
         new_subconn.win_size = 29200*128;
