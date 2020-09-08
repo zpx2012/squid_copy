@@ -640,7 +640,7 @@ for module in $squid_disk_module_candidates none; do
 
     DiskThreads)
       squid_opt_use_diskthreads="yes"
-      LIBPTHREADS="-lnetfilter_queue -lnfnetlink"
+      LIBPTHREADS=
       SQUID_STATE_SAVE([diskthreads_state],[SQUID_CFLAGS SQUID_CXXFLAGS])
       if test "x$with_pthreads" != "xno"; then
       dnl TODO: this needs to be extended to handle more systems and better
@@ -659,7 +659,7 @@ for module in $squid_disk_module_candidates none; do
               SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT"
               SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT"
               if test "x$GCC" = "xyes" -a "x$PRESET_LDFLAGS" = "x" ; then
-                LDFLAGS="$LDFLAGS -pthread -lnetfilter_queue -lnfnetlink"
+                LDFLAGS="$LDFLAGS -pthread"
               fi
             fi
             ;;
@@ -670,14 +670,14 @@ for module in $squid_disk_module_candidates none; do
             else
               SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT"
               SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT"
-              LDFLAGS="$LDFLAGS -lpthread -lnetfilter_queue -lnfnetlink"
+              LDFLAGS="$LDFLAGS -lpthread"
             fi
             ;;
           solaris)
             if test "x$GCC" = "xyes" ; then
               SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT -pthreads"
               SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT -pthreads"
-              AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"], [
+              AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread"], [
                 AC_MSG_NOTICE(pthread library required but cannot be found.)
                 squid_opt_use_diskthreads="no"
                ])
@@ -696,7 +696,7 @@ for module in $squid_disk_module_candidates none; do
           *)
             SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT"
             SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT"
-            AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"], [
+            AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread"], [
               AC_MSG_NOTICE(pthread library required but cannot be found.)
               squid_opt_use_diskthreads="no"
             ])
@@ -3970,7 +3970,6 @@ AC_CONFIG_FILES([
 	src/store/Makefile
 	src/store/id_rewriters/Makefile
 	src/store/id_rewriters/file/Makefile
-    src/optimack/Makefile
 	test-suite/Makefile
 	tools/Makefile
 	tools/apparmor/Makefile
