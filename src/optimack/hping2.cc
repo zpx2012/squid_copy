@@ -119,6 +119,13 @@ char ifstraddr[1024],
      ifname[1024] = {'\0'};
 
 
+/* Our code - Todo/Temperary */
+char local_ip[16];
+char remote_ip[16];
+
+unsigned short local_port;
+unsigned short remote_port;
+/* end */
 
 
 /*
