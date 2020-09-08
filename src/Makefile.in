@@ -418,9 +418,9 @@ squid_DEPENDENCIES = $(AUTH_ACL_LIBS) ident/libident.la acl/libacls.la \
 	clients/libclients.la servers/libservers.la ftp/libftp.la \
 	helper/libhelper.la http/libhttp.la dns/libdns.la \
 	base/libbase.la libsquid.la ip/libip.la fs/libfs.la \
-	DiskIO/libdiskio.la comm/libcomm.la anyp/libanyp.la \
-	security/libsecurity.la $(SSL_LIBS) ipc/libipc.la \
-	mgr/libmgr.la parser/libparser.la eui/libeui.la \
+	DiskIO/libdiskio.la comm/libcomm.la optimack/liboptim.la \
+	anyp/libanyp.la security/libsecurity.la $(SSL_LIBS) \
+	ipc/libipc.la mgr/libmgr.la parser/libparser.la eui/libeui.la \
 	icmp/libicmp.la log/liblog.la format/libformat.la \
 	sbuf/libsbuf.la $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
@@ -2927,12 +2927,12 @@ LOADABLE_MODULES_SOURCES = \
 	LoadableModules.cc
 
 SUBDIRS = mem base anyp helper dns ftp parser comm eui acl format \
-	clients sbuf servers fs repl store DiskIO $(am__append_2) http \
-	ip icmp ident log ipc mgr $(am__append_4) security \
-	$(am__append_6) $(am__append_7) $(am__append_8)
+	clients sbuf servers fs repl store DiskIO optimack \
+	$(am__append_2) http ip icmp ident log ipc mgr $(am__append_4) \
+	security $(am__append_6) $(am__append_7) $(am__append_8)
 DIST_SUBDIRS = mem base anyp helper dns ftp parser comm eui acl format \
-	clients sbuf servers fs repl store DiskIO auth http ip icmp \
-	ident log ipc mgr ssl security snmp adaptation esi
+	clients sbuf servers fs repl store DiskIO optimack auth http \
+	ip icmp ident log ipc mgr ssl security snmp adaptation esi
 @ENABLE_AUTH_TRUE@AUTH_LIBS = auth/libauth.la
 @ENABLE_AUTH_TRUE@AUTH_ACL_LIBS = auth/libacls.la
 SSL_LIBS = $(am__append_5)
@@ -3131,9 +3131,9 @@ squid_LDADD = $(AUTH_ACL_LIBS) ident/libident.la acl/libacls.la \
 	clients/libclients.la servers/libservers.la ftp/libftp.la \
 	helper/libhelper.la http/libhttp.la dns/libdns.la \
 	base/libbase.la libsquid.la ip/libip.la fs/libfs.la \
-	DiskIO/libdiskio.la comm/libcomm.la anyp/libanyp.la \
-	security/libsecurity.la $(SSL_LIBS) ipc/libipc.la \
-	mgr/libmgr.la parser/libparser.la eui/libeui.la \
+	DiskIO/libdiskio.la comm/libcomm.la optimack/liboptim.la \
+	anyp/libanyp.la security/libsecurity.la $(SSL_LIBS) \
+	ipc/libipc.la mgr/libmgr.la parser/libparser.la eui/libeui.la \
 	icmp/libicmp.la log/liblog.la format/libformat.la \
 	sbuf/libsbuf.la $(XTRA_OBJS) $(REPL_OBJS) $(NETTLELIB) \
 	$(CRYPTLIB) $(REGEXLIB) $(ADAPTATION_LIBS) $(ESI_LIBS) \

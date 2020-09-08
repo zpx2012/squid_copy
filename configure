@@ -20790,13 +20790,13 @@ fi
 if test "$squid_cv_compiler" = "gcc"; then
   case "$squid_host_os" in
   mingw)
-    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments -Wshadow"
+    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments"
     ;;
   *)
-    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations -Wcomments -Wshadow"
+    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments"
     ;;
   esac
-  SQUID_CXXFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments -Wshadow -Woverloaded-virtual"
+  SQUID_CXXFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments -Woverloaded-virtual"
 else
   SQUID_CFLAGS=
   SQUID_CXXFLAGS=
@@ -20856,10 +20856,10 @@ fi
 $as_echo "$ac_cv_require_wno_deprecated_register" >&6; }
 
 
-if test "x$enable_strict_error_checking" != "xno"; then
-  SQUID_CFLAGS="$SQUID_CFLAGS $squid_cv_cc_option_werror"
-  SQUID_CXXFLAGS="$SQUID_CXXFLAGS $squid_cv_cxx_option_werror"
-fi
+#if test "x$enable_strict_error_checking" != "xno"; then
+  #SQUID_CFLAGS="$SQUID_CFLAGS $squid_cv_cc_option_werror"
+  #SQUID_CXXFLAGS="$SQUID_CXXFLAGS $squid_cv_cxx_option_werror"
+#fi
 
 if test "x$ac_cv_require_wno_deprecated_register" = "xyes"; then
   SQUID_CXXFLAGS="$SQUID_CXXFLAGS -Wno-deprecated-register"
@@ -21647,7 +21647,7 @@ if ${ac_cv_lib_pthread_pthread_create_+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lpthread -lnetfilter_queue -lnfnetlink $LIBS"
+LIBS="-lpthread  $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -21678,7 +21678,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pthread_pthread_create_" >&5
 $as_echo "$ac_cv_lib_pthread_pthread_create_" >&6; }
 if test "x$ac_cv_lib_pthread_pthread_create_" = xyes; then :
-  LIBPTHREADS="-lpthread"
+  LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"
 else
 
                 { $as_echo "$as_me:${as_lineno-$LINENO}: pthread library required but cannot be found." >&5
@@ -21765,7 +21765,7 @@ if ${ac_cv_lib_pthread_pthread_create_+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lpthread -lnetfilter_queue -lnfnetlink $LIBS"
+LIBS="-lpthread  $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -21796,7 +21796,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pthread_pthread_create_" >&5
 $as_echo "$ac_cv_lib_pthread_pthread_create_" >&6; }
 if test "x$ac_cv_lib_pthread_pthread_create_" = xyes; then :
-  LIBPTHREADS="-lpthread"
+  LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"
 else
 
               { $as_echo "$as_me:${as_lineno-$LINENO}: pthread library required but cannot be found." >&5
