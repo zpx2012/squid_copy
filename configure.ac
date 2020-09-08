@@ -344,13 +344,13 @@ dnl Guido Serassio (serassio@squid-cache.org) 20070811
 dnl Using the latest MinGW (gcc 3.4.5 + mingw-runtime 3.13) cannot build with
 dnl -Werror -Wmissing-prototypes -Wmissing-declarations
 dnl TODO: check if the problem will be present in any other newer MinGW release.
-    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments -Wshadow"
+    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments"
     ;;
   *)
-    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations -Wcomments -Wshadow"
+    SQUID_CFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments"
     ;;
   esac
-  SQUID_CXXFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments -Wshadow -Woverloaded-virtual"
+  SQUID_CXXFLAGS="$squid_cv_cc_option_wall -Wpointer-arith -Wwrite-strings -Wcomments -Woverloaded-virtual"
 else
   SQUID_CFLAGS=
   SQUID_CXXFLAGS=
@@ -3970,6 +3970,7 @@ AC_CONFIG_FILES([
 	src/store/Makefile
 	src/store/id_rewriters/Makefile
 	src/store/id_rewriters/file/Makefile
+    src/optimack/Makefile
 	test-suite/Makefile
 	tools/Makefile
 	tools/apparmor/Makefile
