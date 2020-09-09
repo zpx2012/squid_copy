@@ -958,15 +958,16 @@ FwdState::connectStart()
 
     memset(cmd, 0, 200);
     sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d -j NFQUEUE --queue-num 6", remote_ip, remote_port);
-    int ret = system(cmd);
+    ret = system(cmd);
     debugs(11, 2, cmd << ret);
 
 #define SUBCONN_NUM 2
     char local_ip[16];
+    char empty_payload[] = "";
     serverDestinations[0]->local.toStr(local_ip, 16);
     for (int i = 1; i < SUBCONN_NUM; i++){
         // int local_port = rand() % 20000 + 30000; 
-        send_SYN(remote_ip, local_ip, remote_port, rand() % 20000 + 30000, "", 0, rand());
+        send_SYN(remote_ip, local_ip, remote_port, rand() % 20000 + 30000, empty_payload, 0, rand());
         debugs(1, DBG_IMPORTANT, "S" << i << ": Sent SYN");
     }
     /* end */ 
