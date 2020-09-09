@@ -951,7 +951,7 @@ FwdState::connectStart()
     // debugs(11, 2, cmd << ret);
 
     memset(cmd, 0, 200);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d -j NFQUEUE --queue-num 6", remote_ip, remote_port, MARK);
+    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d -j NFQUEUE --queue-num 6", remote_ip, remote_port);
     int ret = system(cmd);
     debugs(11, 2, cmd << ret);
 
