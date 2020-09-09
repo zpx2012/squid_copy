@@ -239,224 +239,224 @@ unsigned int wait_data(char* remote_ip, char* local_ip, unsigned short remote_po
 
 
 
-void send_spoofed_ACK(char* fake_ip, char* payload, unsigned int ack, unsigned int seq = 1)
-{
-    struct tcphdr_opts opts;
-    opts.size = 0;
+//void send_spoofed_ACK(char* fake_ip, char* payload, unsigned int ack, unsigned int seq = 1)
+//{
+    //struct tcphdr_opts opts;
+    //opts.size = 0;
 
-    struct tcphdr_bsd header;
-    header.th_flags = TH_ACK;
-    header.th_seq = seq;
-    header.th_ack = ack;
-    header.th_win = 29200;
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_ACK;
+    //header.th_seq = seq;
+    //header.th_ack = ack;
+    //header.th_win = 29200;
 
-    send_tcp(local_port, remote_port, &header, &opts, fake_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-
-
-
-void send_spoofed_request(char* fake_ip, char* payload, unsigned int ack, unsigned int seq = 1)
-{
-    struct tcphdr_opts opts;
-    opts.size = 0;
-
-    struct tcphdr_bsd header;
-    header.th_flags = TH_ACK;
-    header.th_seq = seq;
-    header.th_ack = ack;
-    header.th_win = 29200;
-
-    send_tcp(local_port, remote_port, &header, &opts, fake_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-void send_RST(char* payload, unsigned int seq = 1, unsigned char ttl = 128)
-{
-    struct tcphdr_opts opts;
-    opts.size = 0;
-
-    struct tcphdr_bsd header;
-    header.th_flags = TH_RST;
-    header.th_seq = seq;
-    header.th_ack = 0;
-
-    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-void send_wrongcsum_RST(char* payload, unsigned int seq = 1)
-{
-    struct tcphdr_opts opts;
-    opts.size = 0;
-
-    struct tcphdr_bsd header;
-    header.th_flags = TH_RST;
-    header.th_seq = seq;
-    header.th_ack = 0;
-
-    send_tcp3(local_port, remote_port, &header, &opts, local_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-
-void send_RST_ACK(char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
-{
-    struct tcphdr_opts opts;
-    opts.size = 0;
-
-    struct tcphdr_bsd header;
-    header.th_flags = TH_RST | TH_ACK;
-    header.th_seq = seq;
-    header.th_ack = ack;
-
-
-    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-void send_RST_with_MD5(char *payload, unsigned int seq = 1)
-{
-    u_char bytes[20] = {0x13,0x12,0xf9,0x89,0x5c,0xdd,0xa6,0x15,0x12,0x83,0x3e,0x93,0x11,0x22,0x33,0x44,0x55,0x66,0x01,0x01};
-    struct tcphdr_opts opts;
-    memcpy(opts.bytes, bytes, 20);
-    opts.size = 20;
-
-    struct tcphdr_bsd header;
-    header.th_flags = TH_RST;
-    header.th_seq = seq;
-    header.th_ack = 0;
-
-    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-void send_FIN(char *payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
-{
-    struct tcphdr_opts opts;
-    opts.size = 0;
-
-    struct tcphdr_bsd header;
-    header.th_flags = TH_FIN;
-    header.th_seq = seq;
-    header.th_ack = ack;
-    header.th_win = 29200;
-
-    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
-}
-
-unsigned int wait_SYN()
-{
-    unsigned int recv_seq = 0, recv_ack = 0;
-    unsigned char tcp_flags = TH_SYN;
-    int succ = -1;
-    do{
-        succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
-        //if(succ != 0) printf("failed to get seq\n");
-    }
-    while(succ != 0);
-
-    //printf("seq from SYN: %u\n", recv_seq);
-    return recv_seq;
-}
+    //send_tcp(local_port, remote_port, &header, &opts, fake_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
+//}
 
 
 
-unsigned int wait_ACK(unsigned int ack = 0)
-{
-    unsigned int recv_seq = 0, recv_ack = 0;
-    unsigned char tcp_flags = TH_ACK;
-    int succ = -1;
-    do{
-        succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
-        if(ack != 0 && recv_ack != ack) succ = -1;
-        //if(succ != 0) printf("failed to get seq\n");
-    }
-    while(succ != 0);
 
-    //printf("seq from ACK: %u\n", recv_seq);
-    return recv_seq;
-}
+//void send_spoofed_request(char* fake_ip, char* payload, unsigned int ack, unsigned int seq = 1)
+//{
+    //struct tcphdr_opts opts;
+    //opts.size = 0;
 
-unsigned int wait_FIN()
-{
-    unsigned int recv_seq = 0, recv_ack = 0;
-    unsigned char tcp_flags = TH_FIN;
-    int succ = -1;
-    do{
-        succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
-        //if(succ != 0) printf("failed to get seq\n");
-    }
-    while(succ != 0);
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_ACK;
+    //header.th_seq = seq;
+    //header.th_ack = ack;
+    //header.th_win = 29200;
 
-    //printf("seq from FIN: %u\n", recv_seq);
-    return recv_seq;
-}
+    //send_tcp(local_port, remote_port, &header, &opts, fake_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
+//}
 
-unsigned int wait_FIN_ACK()
-{
-    unsigned int recv_seq = 0, recv_ack = 0;
-    unsigned char tcp_flags = TH_FIN | TH_ACK;
-    int succ = -1;
-    do{
-        succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
-        //if(succ != 0) printf("failed to get seq\n");
-    }
-    while(succ != 0);
+//void send_RST(char* payload, unsigned int seq = 1, unsigned char ttl = 128)
+//{
+    //struct tcphdr_opts opts;
+    //opts.size = 0;
 
-    //printf("seq from FIN-ACK: %u\n", recv_seq);
-    return recv_seq;
-}
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_RST;
+    //header.th_seq = seq;
+    //header.th_ack = 0;
 
-unsigned int wait_RST()
-{
-    unsigned int recv_seq = 0, recv_ack = 0;
-    unsigned char tcp_flags = TH_RST;
-    int succ = -1;
-    do{
-        succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
-        //if(succ != 0) printf("failed to get seq\n");
-    }
-    while(succ != 0);
+    //send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
+//}
 
-    //printf("seq from FIN-ACK: %u\n", recv_seq);
-    return recv_seq;
-}
+//void send_wrongcsum_RST(char* payload, unsigned int seq = 1)
+//{
+    //struct tcphdr_opts opts;
+    //opts.size = 0;
 
-void send_a_half_req(char *payload, unsigned int ack, unsigned int seq)
-{
-    local_port = rand() % 20000 + 30000; // generate random port (30000-39999)
-    unsigned int client_ISN;
-    //client_ISN = 345678;
-    client_ISN = rand();
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_RST;
+    //header.th_seq = seq;
+    //header.th_ack = 0;
 
-    // normal SYN request
-    char empty_buf[] = "";
-    send_SYN(empty_buf, 0, client_ISN);
+    //send_tcp3(local_port, remote_port, &header, &opts, local_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
+//}
+
+
+//void send_RST_ACK(char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
+//{
+    //struct tcphdr_opts opts;
+    //opts.size = 0;
+
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_RST | TH_ACK;
+    //header.th_seq = seq;
+    //header.th_ack = ack;
+
+
+    //send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
+//}
+
+//void send_RST_with_MD5(char *payload, unsigned int seq = 1)
+//{
+    //u_char bytes[20] = {0x13,0x12,0xf9,0x89,0x5c,0xdd,0xa6,0x15,0x12,0x83,0x3e,0x93,0x11,0x22,0x33,0x44,0x55,0x66,0x01,0x01};
+    //struct tcphdr_opts opts;
+    //memcpy(opts.bytes, bytes, 20);
+    //opts.size = 20;
+
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_RST;
+    //header.th_seq = seq;
+    //header.th_ack = 0;
+
+    //send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
+//}
+
+//void send_FIN(char *payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
+//{
+    //struct tcphdr_opts opts;
+    //opts.size = 0;
+
+    //struct tcphdr_bsd header;
+    //header.th_flags = TH_FIN;
+    //header.th_seq = seq;
+    //header.th_ack = ack;
+    //header.th_win = 29200;
+
+    //send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
+//}
+
+//unsigned int wait_SYN()
+//{
+    //unsigned int recv_seq = 0, recv_ack = 0;
+    //unsigned char tcp_flags = TH_SYN;
+    //int succ = -1;
+    //do{
+        //succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
+        ////if(succ != 0) printf("failed to get seq\n");
+    //}
+    //while(succ != 0);
+
+    ////printf("seq from SYN: %u\n", recv_seq);
+    //return recv_seq;
+//}
+
+
+
+//unsigned int wait_ACK(unsigned int ack = 0)
+//{
+    //unsigned int recv_seq = 0, recv_ack = 0;
+    //unsigned char tcp_flags = TH_ACK;
+    //int succ = -1;
+    //do{
+        //succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
+        //if(ack != 0 && recv_ack != ack) succ = -1;
+        ////if(succ != 0) printf("failed to get seq\n");
+    //}
+    //while(succ != 0);
+
+    ////printf("seq from ACK: %u\n", recv_seq);
+    //return recv_seq;
+//}
+
+//unsigned int wait_FIN()
+//{
+    //unsigned int recv_seq = 0, recv_ack = 0;
+    //unsigned char tcp_flags = TH_FIN;
+    //int succ = -1;
+    //do{
+        //succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
+        ////if(succ != 0) printf("failed to get seq\n");
+    //}
+    //while(succ != 0);
+
+    ////printf("seq from FIN: %u\n", recv_seq);
+    //return recv_seq;
+//}
+
+//unsigned int wait_FIN_ACK()
+//{
+    //unsigned int recv_seq = 0, recv_ack = 0;
+    //unsigned char tcp_flags = TH_FIN | TH_ACK;
+    //int succ = -1;
+    //do{
+        //succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
+        ////if(succ != 0) printf("failed to get seq\n");
+    //}
+    //while(succ != 0);
+
+    ////printf("seq from FIN-ACK: %u\n", recv_seq);
+    //return recv_seq;
+//}
+
+//unsigned int wait_RST()
+//{
+    //unsigned int recv_seq = 0, recv_ack = 0;
+    //unsigned char tcp_flags = TH_RST;
+    //int succ = -1;
+    //do{
+        //succ = wait_packet(local_ip, local_port, remote_ip, remote_port, tcp_flags, pkt_data, &pkt_len, &recv_seq, &recv_ack);
+        ////if(succ != 0) printf("failed to get seq\n");
+    //}
+    //while(succ != 0);
+
+    ////printf("seq from FIN-ACK: %u\n", recv_seq);
+    //return recv_seq;
+//}
+
+//void send_a_half_req(char *payload, unsigned int ack, unsigned int seq)
+//{
+    //local_port = rand() % 20000 + 30000; // generate random port (30000-39999)
+    //unsigned int client_ISN;
+    ////client_ISN = 345678;
+    //client_ISN = rand();
+
+    //// normal SYN request
+    //char empty_buf[] = "";
+    //send_SYN(empty_buf, 0, client_ISN);
     
-    seq = wait_SYN_ACK();
+    //seq = wait_SYN_ACK();
 
-    send_ACK(empty_buf, seq+1, client_ISN + 1);
-    send_request(payload, seq+1, client_ISN + 1);
-}
+    //send_ACK(empty_buf, seq+1, client_ISN + 1);
+    //send_request(payload, seq+1, client_ISN + 1);
+//}
 
-void send_request_seg(char *payload, unsigned int ack, unsigned int seq, unsigned int len)
-{
-    assert(len < 100);
-    char tmp[1000];
-    int payload_len = strlen(payload);
-    for (int i=0; i < payload_len; i+=len) {
-        strncpy(tmp, payload+i, len);
-        send_request(tmp, ack, seq);
-        seq+=len;
-    }
-}
+//void send_request_seg(char *payload, unsigned int ack, unsigned int seq, unsigned int len)
+//{
+    //assert(len < 100);
+    //char tmp[1000];
+    //int payload_len = strlen(payload);
+    //for (int i=0; i < payload_len; i+=len) {
+        //strncpy(tmp, payload+i, len);
+        //send_request(tmp, ack, seq);
+        //seq+=len;
+    //}
+//}
 
-void send_request2(char *payload, unsigned int ack, unsigned int seq)
-{
-    char tmp[10];
-    int payload_len = strlen(payload);
-    for (int i=0; i < payload_len; i+=2) {
-        tmp[0] = payload[i];
-        tmp[1] = payload[i];
-        tmp[1] = 0;
-        send_request(tmp, ack, seq);
-        seq++;
-    }
-}
+//void send_request2(char *payload, unsigned int ack, unsigned int seq)
+//{
+    //char tmp[10];
+    //int payload_len = strlen(payload);
+    //for (int i=0; i < payload_len; i+=2) {
+        //tmp[0] = payload[i];
+        //tmp[1] = payload[i];
+        //tmp[1] = 0;
+        //send_request(tmp, ack, seq);
+        //seq++;
+    //}
+//}
 

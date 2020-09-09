@@ -2528,7 +2528,6 @@ struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
 int nfq_stop;
 int all_ack_sent = 1;
-const int MARK = 66;
 char local_ip[16]; //TODO: different connection from client
 char remote_ip[16];
 unsigned short remote_port;
@@ -2556,6 +2555,7 @@ struct subconn_info
     int ack_pacing;
     unsigned int payload_len;
 };
+char empty_payload[] = "";
 
 // Multithread
 struct thread_data {
@@ -2764,7 +2764,6 @@ void* optimistic_ack(void* threadid)
 
     debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
-        char empty_payload[] = "";
         send_ACK(remote_ip, local_ip, remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
@@ -2815,18 +2814,18 @@ int process_tcp_packet(struct thread_data* thr_data)
     ack = htonl(tcphdr->th_ack);
 
     // TODO: mutex?
-    unsigned int subconn_i = -1;
+    int subconn_i = -1;
     bool incoming = true;
     for (size_t i = 0; i < subconn_infos.size(); i++)
         if (subconn_infos[i].local_port == dport || subconn_infos[i].local_port == sport) {
-            subconn_i = i;
+            subconn_i = (int)i;
             if (subconn_infos[i].local_port == sport)
                 incoming = false;
             break;
         }
     if (subconn_i != -1){
         //Check remote ip, local ip
-        if ((incoming && strncmp(remote_ip, sip) == 0) || (!incoming && strncmp(remote_ip,dip)))//don't check local_ip in case of private IP
+        if ((incoming && strncmp(remote_ip, sip, 16) == 0) || (!incoming && strncmp(remote_ip, dip, 16)))//don't check local_ip in case of private IP
         {
             debugs(1, DBG_IMPORTANT, "IP not found: sip " << sip << " dip" << dip);
             return -1;
@@ -2897,13 +2896,13 @@ int process_tcp_packet(struct thread_data* thr_data)
                 subconn_i = subconn_infos.size() - 1;
                 pthread_mutex_unlock(&mutex_subconn_infos);                
             } 
-            send_ACK(remote_ip, local_ip, remote_port, dport, "", seq+1, ack);
+            send_ACK(remote_ip, local_ip, remote_port, dport, empty_payload, ack, seq+1);
             subconn_infos[subconn_i].ack_sent = 1;            
             debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
             
             //check if all subconns receive syn/ack
             pthread_mutex_lock(&mutex_subconn_infos);
-            for (int i = 0; i < SUBCONN_NUM; i++)
+            for (size_t i = 0; i < subconn_infos.size(); i++)
                 if (!subconn_infos[i].ack_sent){
                     all_ack_sent = 0;
                     break;
@@ -2911,8 +2910,8 @@ int process_tcp_packet(struct thread_data* thr_data)
             pthread_mutex_unlock(&mutex_subconn_infos);
 
             if (all_ack_sent){
-                for (int i = 0; i < SUBCONN_NUM; i++){
-                    send_ACK(request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1, subconn_infos[i].local_port);
+                for (size_t i = 0; i < subconn_infos.size(); i++){
+                    send_ACK(remote_ip, local_ip, remote_port, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                 }
                 debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
             }
