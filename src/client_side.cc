@@ -2527,10 +2527,12 @@ struct nfq_handle *g_nfq_h;
 struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
 int nfq_stop;
+int all_ack_sent = 1;
 const int MARK = 66;
 char local_ip[16]; //TODO: different connection from client
 char remote_ip[16];
 unsigned short remote_port;
+char request[1000];
 
 // Optim ack
 std::vector<struct subconn_info> subconn_infos;
@@ -2796,7 +2798,7 @@ int process_tcp_packet(struct thread_data* thr_data)
 
     struct myiphdr *iphdr = ip_hdr(thr_data->buf);
     struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-    //unsigned char *payload = tcp_payload(thr_data->buf);
+    unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
 
     debugs(1,DBG_CRITICAL, "cb: id" << thr_data->pkt_id << " packet_len " << thr_data->len << " payload_len" << payload_len);
@@ -2813,28 +2815,23 @@ int process_tcp_packet(struct thread_data* thr_data)
     ack = htonl(tcphdr->th_ack);
 
     // TODO: mutex?
-    int subconn_i = -1;
-    pthread_mutex_lock(&mutex_subconn_infos);
+    unsigned int subconn_i = -1;
+    bool incoming = true;
     for (size_t i = 0; i < subconn_infos.size(); i++)
-        if (subconn_infos[i].local_port == dport) {
-            subconn_i = (int)i;
+        if (subconn_infos[i].local_port == dport || subconn_infos[i].local_port == sport) {
+            subconn_i = i;
+            if (subconn_infos[i].local_port == sport)
+                incoming = false;
             break;
         }
-    //create new subconn info, how to deal with conns by other applications?
-    if (subconn_i == -1){
-        struct subconn_info new_subconn;
-        new_subconn.local_port = dport;//No nfq callback will interfere because iptable rules haven't been added
-        new_subconn.ini_seq_rem = seq-1;
-        new_subconn.ini_seq_loc = -1; //unknown
-        new_subconn.cur_seq_loc = ack;
-        new_subconn.win_size = 29200*128;
-        new_subconn.ack_pacing = 5000;
-        new_subconn.optim_ack_stop = 1;
-        new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-        subconn_infos.push_back(new_subconn);
-        subconn_i = subconn_infos.size() - 1;
+    if (subconn_i != -1){
+        //Check remote ip, local ip
+        if ((incoming && strncmp(remote_ip, sip) == 0) || (!incoming && strncmp(remote_ip,dip)))//don't check local_ip in case of private IP
+        {
+            debugs(1, DBG_IMPORTANT, "IP not found: sip " << sip << " dip" << dip);
+            return -1;
+        }
     }
-    pthread_mutex_unlock(&mutex_subconn_infos);
 
     sprintf(log, "S%d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
     debugs(1, DBG_CRITICAL, log);
@@ -2842,18 +2839,106 @@ int process_tcp_packet(struct thread_data* thr_data)
     unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
 
     switch (tcphdr->th_flags) {
+/*
+ * 1. 在httpAccept里加只有remote_ip, remote_port的iptablesguize
+ * 2. 这里抓到squid发给server的SYN包，加squid连接的subconn_info, 复制test.c 1068-1077, 1087, SYN 发出去
+ * 3. 收到server的SYN/ACK，判断是squid还是我们的连接，如果是squid，放走accept,如果是我们的，回ack（473-476）,判断是否所有连接都发了ack(479-486)，是否收到request(自己写)，向所有连接发请求(487-492)
+ * 4. 抓到squid发给server的ACK包,都放行(accept),如果有长度，就是request，把payload复制下来
+*/
+        case TH_SYN:
+        {
+            if (subconn_i != -1 && subconn_i != 0){ //subconn_i == -1,正常情况;subconn_i == 0, SYN丢了重传了
+                debugs(1, DBG_IMPORTANT, "subconn_infos != -1/0 when receiving a SYN");
+                return 0;
+            }
+
+            if (subconn_i == -1){
+                strncpy(local_ip, sip, 16); //TODO: change position
+                strncpy(remote_ip,dip, 16);
+                remote_port = dport;
+
+                pthread_mutex_lock(&mutex_subconn_infos); //TODO: how to deal with conns by other applications?
+                struct subconn_info new_subconn;
+                new_subconn.local_port = sport;//No nfq callback will interfere because iptable rules haven't been added
+                new_subconn.ini_seq_loc = seq; //unknown
+                new_subconn.cur_seq_loc = seq;
+                new_subconn.win_size = 29200*128;
+                new_subconn.ack_pacing = 5000;
+                new_subconn.ack_sent = 1; //Assume squid will send ACK
+                new_subconn.optim_ack_stop = 1;
+                new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+                subconn_infos.push_back(new_subconn);
+                pthread_mutex_unlock(&mutex_subconn_infos);
+            }
+            return 0;
+            break;
+        }
+
+
+        case TH_SYN|TH_ACK:
+        {
+
+            if(!subconn_i)
+                return 0;
+
+            if(subconn_i == -1){
+                pthread_mutex_lock(&mutex_subconn_infos);
+                struct subconn_info new_subconn;
+                new_subconn.local_port = dport;//No nfq callback will interfere because iptable rules haven't been added
+                new_subconn.ini_seq_rem = new_subconn.cur_seq_rem = seq;
+                new_subconn.ini_seq_loc = ack - 1; //unknown
+                new_subconn.cur_seq_loc = ack;
+                new_subconn.win_size = 29200*128;
+                new_subconn.ack_pacing = 5000;
+                new_subconn.ack_sent = 1;
+                new_subconn.optim_ack_stop = 1;
+                new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+                subconn_infos.push_back(new_subconn);
+                subconn_i = subconn_infos.size() - 1;
+                pthread_mutex_unlock(&mutex_subconn_infos);                
+            } 
+            send_ACK(remote_ip, local_ip, remote_port, dport, "", seq+1, ack);
+            subconn_infos[subconn_i].ack_sent = 1;            
+            debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
+            
+            //check if all subconns receive syn/ack
+            pthread_mutex_lock(&mutex_subconn_infos);
+            for (int i = 0; i < SUBCONN_NUM; i++)
+                if (!subconn_infos[i].ack_sent){
+                    all_ack_sent = 0;
+                    break;
+                }
+            pthread_mutex_unlock(&mutex_subconn_infos);
+
+            if (all_ack_sent){
+                for (int i = 0; i < SUBCONN_NUM; i++){
+                    send_ACK(request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1, subconn_infos[i].local_port);
+                }
+                debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
+            }
+            return -1;
+            break;
+        }
+
         case TH_ACK:
         case TH_ACK | TH_PUSH:
         case TH_ACK | TH_URG:
         {
+
             if (!payload_len) {
                 break;
             }
+
+            if (!incoming){ //Squid 发出去的包
+                memset(request, 0, 1000);
+                memcpy(request, payload, payload_len);
+                return 0;
+            }
+
+
+            // Incoming Packet
             if (subconn_infos[subconn_i].optim_ack_stop) {
                 // TODO: what if payload_len changes?
-                strncpy(local_ip, dip, 16); //TODO: change position
-                strncpy(remote_ip,sip, 16);
-                remote_port = sport;
                 start_optim_ack(subconn_i, seq, ack, payload_len, 0);
             }
 
