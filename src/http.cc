@@ -2260,22 +2260,6 @@ HttpStateData::sendRequest()
     request->peer_host=_peer?_peer->host:NULL;
     buildRequestPrefix(&mb);
 
-    /* Our code */
-    //serverConnection.local.toStr(buf, len)
-    //serverConnection.local.port()
-    //serverConnection.remote.toStr(buf, len)
-    //serverConnection.remote.port()
-    char remote_ip[16];//local_ip[16], 
-    // std::cout << serverConnection->local.toStr(local_ip, 16) << serverConnection->local.port() << serverConnection->remote.toStr(remote_ip, 16) << serverConnection->remote.port() << std::endl;
-    serverConnection->remote.toStr(remote_ip, 16);
-    char cmd[200];
-    sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num 6", remote_ip, serverConnection->remote.port(), serverConnection->local.port());
-    int ret = system(cmd);
-    debugs(11, 2, cmd << ret);
-    debugs(11, 2, "HTTP Server " << serverConnection);
-    debugs(11, 2, "HTTP Server REQUEST:\n---------\n" << mb.buf << "\n----------");
-    /* end */ 
-
     Comm::Write(serverConnection, &mb, requestSender);
     return true;
 }
