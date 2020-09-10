@@ -2562,8 +2562,6 @@ struct thread_data {
     unsigned int  pkt_id;
     unsigned int  len;
     unsigned char *buf;
-    // added a conn data
-    void *conn_data;
 };
 thr_pool_t* pool;
 pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
@@ -2800,7 +2798,7 @@ int process_tcp_packet(struct thread_data* thr_data)
     unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
 
-    debugs(1,DBG_CRITICAL, "cb: id" << thr_data->pkt_id << " packet_len " << thr_data->len << " payload_len" << payload_len);
+    debugs(1,DBG_CRITICAL, "cb: id " << thr_data->pkt_id << " packet_len " << thr_data->len << " payload_len " << payload_len);
 
     char sip[16], dip[16];
     ip2str(iphdr->saddr, sip);
@@ -2823,19 +2821,29 @@ int process_tcp_packet(struct thread_data* thr_data)
                 incoming = false;
             break;
         }
-    if (subconn_i != -1){
-        //Check remote ip, local ip
-        if ((incoming && strncmp(remote_ip, sip, 16) == 0) || (!incoming && strncmp(remote_ip, dip, 16)))//don't check local_ip in case of private IP
+    
+    unsigned int seq_rel = 0;
+
+    // if subconn exists
+    if (subconn_i != -1) {
+        // check remote ip, local ip
+        if ((incoming && strncmp(remote_ip, sip, 16) == 0) || (!incoming && strncmp(remote_ip, dip, 16) == 0))//don't check local_ip in case of private IP
+        {
+            // print only if we have the subconn_i
+            sprintf(log, "Subconn %d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+            debugs(1, DBG_CRITICAL, log);
+            // seq_rel is safe to compute here
+            seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
+        }
+        else
         {
             debugs(1, DBG_IMPORTANT, "IP not found: sip " << sip << " dip" << dip);
             return -1;
         }
     }
+    else
+        sprintf(log, "Subconn_new %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
 
-    sprintf(log, "S%d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-    debugs(1, DBG_CRITICAL, log);
-
-    unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
 
     switch (tcphdr->th_flags) {
 /*
@@ -2846,12 +2854,13 @@ int process_tcp_packet(struct thread_data* thr_data)
 */
         case TH_SYN:
         {
+            // in this case, pkt must be squid -> server
             if (subconn_i != -1 && subconn_i != 0){ //subconn_i == -1,正常情况;subconn_i == 0, SYN丢了重传了
-                debugs(1, DBG_IMPORTANT, "subconn_infos != -1/0 when receiving a SYN");
+                debugs(1, DBG_CRITICAL, "subconn_infos != -1/0 when receiving a SYN");
                 return 0;
             }
-
-            if (subconn_i == -1){
+            // build subconn[0] for squid
+            if (subconn_i == -1) {
                 strncpy(local_ip, sip, 16); //TODO: change position
                 strncpy(remote_ip,dip, 16);
                 remote_port = dport;
@@ -2874,13 +2883,16 @@ int process_tcp_packet(struct thread_data* thr_data)
         }
 
 
-        case TH_SYN|TH_ACK:
+        case TH_SYN | TH_ACK:
         {
-
-            if(!subconn_i)
+            // if server -> squid, init remote seq for squid
+            if(!subconn_i) {
+                if (subconn_infos.size() > 0)
+                    subconn_infos[0].ini_seq_rem = seq;
                 return 0;
+            }
 
-            if(subconn_i == -1){
+            if(subconn_i == -1) {
                 pthread_mutex_lock(&mutex_subconn_infos);
                 struct subconn_info new_subconn;
                 new_subconn.local_port = dport;//No nfq callback will interfere because iptable rules haven't been added
@@ -2903,14 +2915,14 @@ int process_tcp_packet(struct thread_data* thr_data)
             //check if all subconns receive syn/ack
             pthread_mutex_lock(&mutex_subconn_infos);
             for (size_t i = 0; i < subconn_infos.size(); i++)
-                if (!subconn_infos[i].ack_sent){
+                if (!subconn_infos[i].ack_sent) {
                     all_ack_sent = 0;
                     break;
                 }
             pthread_mutex_unlock(&mutex_subconn_infos);
 
-            if (all_ack_sent){
-                for (size_t i = 0; i < subconn_infos.size(); i++){
+            if (all_ack_sent) {
+                for (size_t i = 0; i < subconn_infos.size(); i++) {
                     send_ACK(remote_ip, local_ip, remote_port, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                 }
                 debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
@@ -2923,17 +2935,15 @@ int process_tcp_packet(struct thread_data* thr_data)
         case TH_ACK | TH_PUSH:
         case TH_ACK | TH_URG:
         {
-
             if (!payload_len) {
                 break;
             }
 
-            if (!incoming){ //Squid 发出去的包
+            if (!incoming) { // Squid 发出去的包
                 memset(request, 0, 1000);
                 memcpy(request, payload, payload_len);
                 return 0;
             }
-
 
             // Incoming Packet
             if (subconn_infos[subconn_i].optim_ack_stop) {
@@ -2945,13 +2955,12 @@ int process_tcp_packet(struct thread_data* thr_data)
 
             int offset = seq_rel - seq_next_global;
             unsigned int append = 0;
-            if(offset > 0){
+            if (offset > 0) {
                 debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
                 // pthread_mutex_lock(&mutex_seq_gaps);
                 insert_seq_gaps(seq_next_global, seq_rel, payload_len);
                 // pthread_mutex_unlock(&mutex_seq_gaps);
                 append = offset + payload_len;
-
             }
             else if (offset < 0){
                 
@@ -3043,14 +3052,13 @@ void* pool_handler(void* arg)
 
     if (ret == 0){
         nfq_set_verdict(g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        // log_exp("verdict: accpet\n");
+        debugs(0, DBG_CRITICAL, "Verdict: Accept");
     }
     else{
         nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
-        // log_exp("verdict: drop\n");
+        debugs(0, DBG_CRITICAL, "Verdict: Drop");
     }
 
-     // free(thr_data->buf);
     free(thr_data);
     // TODO: ret NULL?
     return NULL;
@@ -3080,7 +3088,6 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     thr_data->pkt_id = htonl(ph->packet_id);
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len);
-    thr_data->conn_data = data;
     if (!thr_data->buf){
             debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
