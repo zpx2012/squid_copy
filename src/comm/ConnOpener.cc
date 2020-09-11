@@ -26,6 +26,10 @@
 
 #include <cerrno>
 
+/* Our code */
+#include "optimack/netfilter_queue.h"
+/* end */
+
 class CachePeer;
 
 CBDATA_NAMESPACED_CLASS_INIT(Comm, ConnOpener);
@@ -323,6 +327,18 @@ Comm::ConnOpener::connected()
         ++peer->stats.conn_open;
 
     lookupLocalAddress();
+
+    /* Our code */
+    //serverConnection.remote.toStr(buf, len)
+    //serverConnection.remote.port()
+    char remote_ip[16], local_ip[16];
+    conn_->remote.toStr(remote_ip, 16);
+    conn_->local.toStr(local_ip, 16);
+    unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
+
+    open_duplicate_conns(remote_ip, local_ip, remote_port, local_port);
+    /* end */ 
+
 
     /* TODO: remove these fd_table accesses. But old code still depends on fd_table flags to
      *       indicate the state of a raw fd object being passed around.

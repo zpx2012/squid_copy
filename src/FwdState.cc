@@ -66,11 +66,6 @@
 
 #include <cerrno>
 
-/* Our code */
-#include "optimack/hping2.h"
-#include "optimack/socket.h"
-/* end */
-
 static PSC fwdPeerSelectionCompleteWrapper;
 static CLCB fwdServerClosedWrapper;
 static CNCB fwdConnectDoneWrapper;
@@ -931,46 +926,6 @@ FwdState::connectStart()
         cs->setHost(host);
     ++n_tries;
     AsyncJob::Start(cs);
-
-    /* Our code */
-    //serverConnection.remote.toStr(buf, len)
-    //serverConnection.remote.port()
-    char remote_ip[16];
-    serverDestinations[0]->remote.toStr(remote_ip, 16);
-    unsigned short remote_port = serverDestinations[0]->remote.port();
-    char cmd[200];
-    int ret;
-
-    memset(cmd, 0, 200); //TODO: iptables too broad??
-    sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d -j NFQUEUE --queue-num 6", remote_ip, remote_port);
-    ret = system(cmd);
-    debugs(11, 2, cmd << ret);
-
-    memset(cmd, 0, 200);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
-    ret = system(cmd);
-    debugs(11, 2, cmd << ret);
-
-    // memset(cmd, 0, 200);
-    // sprintf(cmd, "sudo iptables -A OUTPUT -t raw -p tcp -d %s --dport %u --tcp-flags RST,ACK RST -j DROP", remote_ip, remote_port);
-    // ret = system(cmd);
-    // debugs(11, 2, cmd << ret);
-
-    memset(cmd, 0, 200);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d -j NFQUEUE --queue-num 6", remote_ip, remote_port);
-    ret = system(cmd);
-    debugs(11, 2, cmd << ret);
-
-#define SUBCONN_NUM 2
-    char local_ip[16];
-    char empty_payload[] = "";
-    serverDestinations[0]->local.toStr(local_ip, 16);
-    for (int i = 1; i < SUBCONN_NUM; i++){
-        // int local_port = rand() % 20000 + 30000; 
-        send_SYN(remote_ip, local_ip, remote_port, rand() % 20000 + 30000, empty_payload, 0, rand());
-        debugs(1, DBG_IMPORTANT, "S" << i << ": Sent SYN");
-    }
-    /* end */ 
 }
 
 void

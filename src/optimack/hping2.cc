@@ -122,7 +122,6 @@ char ifstraddr[1024],
 /* Our code - Todo/Temperary */
 char pkt_data[10000];
 size_t pkt_len;
-const int MARK = 66;
 /* end */
 
 

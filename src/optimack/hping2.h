@@ -581,7 +581,7 @@ extern char ifname[1024],
         ip_optlen,
         *opt_scanports;
 
-extern const int MARK;
+// extern const int MARK;
 
 extern struct sockaddr_in icmp_ip_src, icmp_ip_dst, icmp_gw, local, remote;
 
