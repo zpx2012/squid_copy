@@ -1,4 +1,5 @@
-
+#ifndef __CHECKSUM_H__
+#define __CHECKSUM_H__
 
 //++++++++++++++++++++++++++++++++++++++++++++++++
 //New IPv4 header checksum calculation
