@@ -119,7 +119,7 @@ void send_tcp(int sport, int dport, struct tcphdr_bsd* tcp_in, struct tcphdr_opt
     //hex_dump(packet, PSEUDOHDR_SIZE + packet_size);
 
 	/* compute checksum */
-	tcp->th_sum = tcp_sum_calc((u_short)packet_size, ((u_short*)packet)+6, ((u_short*)packet)+8, ((u_short*)packet));
+	tcp->th_sum = tcp_sum_calc((u_short)packet_size, ((u_short*)packet)+6, ((u_short*)packet)+8, ((u_short*)(packet+PSEUDOHDR_SIZE)));
 	unsigned short dcsum = cksum((u_short*) packet, PSEUDOHDR_SIZE + packet_size);
 	fprintf(stderr, "\n\n#################\ndefault csum: %x, our csum: %x\n#################\n", dcsum, tcp->th_sum);
 
