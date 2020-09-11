@@ -13,6 +13,7 @@ noinst_LTLIBRARIES = liboptim.la
 
 liboptim_la_SOURCES = \
 	checksum.h \
+	checksum.cc \
 	hping2.cc \
 	hping2.h \
 	sendtcp.cc \
