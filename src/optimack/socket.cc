@@ -32,7 +32,7 @@ void send_SYN(char* remote_ip, char* local_ip, unsigned short remote_port, unsig
     header.th_ack = ack;
     header.th_win = 29200;
 
-    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
+    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, NULL, 0, 1);
 }
 
 
