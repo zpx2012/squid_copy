@@ -231,14 +231,19 @@ Comm::ConnOpener::start()
 {
     Must(conn_ != NULL);
 
+    cout << "before setIPv4" << conn_->local;
     /* outbound sockets have no need to be protocol agnostic. */
     if (!(Ip::EnableIpv6&IPV6_SPECIAL_V4MAPPING) && conn_->remote.isIPv4()) {
         conn_->local.setIPv4();
     }
+    cout << "after setIPv4" << conn_->local;
 
     conn_->noteStart();
-    if (createFd())
+    if (createFd()){
+        cout << "before doConnect" << conn_->local;
         doConnect();
+        cout << "after doConnect" << conn_->local;
+    }
 }
 
 /// called at the end of Comm::ConnOpener::DelayedConnectRetry event
