@@ -129,3 +129,5 @@ void compute_checksums(unsigned char *buf, uint16_t leni4, uint16_t lenpk) {
 
 	*(pt_buf16 + (leni4>>1) + 8) = ~( (uint16_t)(new_tcp_header_checksum));
 }
+
+#endif
