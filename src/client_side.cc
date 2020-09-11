@@ -2760,14 +2760,14 @@ void* optimistic_ack(void* threadid)
     unsigned int local_port = subconn_infos[id].local_port;
     unsigned int ack_pacing = subconn_infos[id].ack_pacing;
 
-    debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
+    //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
         send_ACK(remote_ip, local_ip, remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
     subconn_infos[id].optim_ack_stop = 0;
-    debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
+    //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
     pthread_exit(NULL);
 }
 
@@ -2785,7 +2785,7 @@ int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int pay
         debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
         return -1;
     }
-    debugs(1, DBG_CRITICAL, "S" << id <<": optimistic ack thread created");   
+    //debugs(1, DBG_CRITICAL, "S" << id <<": optimistic ack thread created");   
     return 0;
 }
 
@@ -2798,7 +2798,7 @@ int process_tcp_packet(struct thread_data* thr_data)
     unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
 
-    debugs(1,DBG_CRITICAL, "cb: id " << thr_data->pkt_id << " packet_len " << thr_data->len << " payload_len " << payload_len);
+    //debugs(1,DBG_CRITICAL, "cb: id " << thr_data->pkt_id << " packet_len " << thr_data->len << " payload_len " << payload_len);
 
     char sip[16], dip[16];
     ip2str(iphdr->saddr, sip);
@@ -2831,13 +2831,13 @@ int process_tcp_packet(struct thread_data* thr_data)
         {
             // print only if we have the subconn_i
             sprintf(log, "Subconn %d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-            debugs(1, DBG_CRITICAL, log);
+            //debugs(1, DBG_CRITICAL, log);
             // seq_rel is safe to compute here
             seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
         }
         else
         {
-            debugs(1, DBG_IMPORTANT, "IP not found: sip " << sip << " dip" << dip);
+            //debugs(1, DBG_IMPORTANT, "IP not found: sip " << sip << " dip" << dip);
             return -1;
         }
     }
@@ -2856,7 +2856,7 @@ int process_tcp_packet(struct thread_data* thr_data)
         {
             // in this case, pkt must be squid -> server
             if (subconn_i != -1 && subconn_i != 0){ //subconn_i == -1,正常情况;subconn_i == 0, SYN丢了重传了
-                debugs(1, DBG_CRITICAL, "subconn_infos != -1/0 when receiving a SYN");
+                //debugs(1, DBG_CRITICAL, "subconn_infos != -1/0 when receiving a SYN");
                 return 0;
             }
             // build subconn[0] for squid
@@ -2910,7 +2910,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             } 
             send_ACK(remote_ip, local_ip, remote_port, dport, empty_payload, ack, seq+1);
             subconn_infos[subconn_i].ack_sent = 1;            
-            debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
+            //debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
             
             //check if all subconns receive syn/ack
             pthread_mutex_lock(&mutex_subconn_infos);
@@ -2925,7 +2925,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                 for (size_t i = 0; i < subconn_infos.size(); i++) {
                     send_ACK(remote_ip, local_ip, remote_port, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                 }
-                debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
+                //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
             }
             return -1;
             break;
@@ -2956,7 +2956,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             int offset = seq_rel - seq_next_global;
             unsigned int append = 0;
             if (offset > 0) {
-                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
+                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
                 // pthread_mutex_lock(&mutex_seq_gaps);
                 insert_seq_gaps(seq_next_global, seq_rel, payload_len);
                 // pthread_mutex_unlock(&mutex_seq_gaps);
@@ -2966,23 +2966,23 @@ int process_tcp_packet(struct thread_data* thr_data)
                 
                 int ret = find_seq_gaps(seq_rel);
                 if (!ret){
-                    debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": recv " << seq_rel << " < wanting " << seq_next_global);
+                    //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": recv " << seq_rel << " < wanting " << seq_next_global);
                     pthread_mutex_unlock(&mutex_seq_next_global);
                     return -1;
                 }
                 // pthread_mutex_lock(&mutex_seq_gaps);
                 delete_seq_gaps(seq_rel);
                 // pthread_mutex_unlock(&mutex_seq_gaps);
-                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
+                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
             }
             else {
                 append = payload_len;
-                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
+                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
             }
 
             if(append){
                 seq_next_global += append;
-                debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
+                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
             }
 
             pthread_mutex_unlock(&mutex_seq_next_global);
@@ -3007,11 +3007,11 @@ int process_tcp_packet(struct thread_data* thr_data)
             //send_FIN_ACK("", seq+1, ack, dport);
             // TODO: should I stop all or just one?
             subconn_infos[subconn_i].optim_ack_stop = 1;
-            debugs(0, DBG_CRITICAL, "Subconn " << subconn_i << ": Received FIN/ACK. Sent FIN/ACK. Stop current optim ack thread");
+            //debugs(0, DBG_CRITICAL, "Subconn " << subconn_i << ": Received FIN/ACK. Sent FIN/ACK. Stop current optim ack thread");
             break;
         }
         default:
-            debugs(0, DBG_CRITICAL, "Invalid tcp flags: " << tcp_flags_str(tcphdr->th_flags));
+            //debugs(0, DBG_CRITICAL, "Invalid tcp flags: " << tcp_flags_str(tcphdr->th_flags));
             break;
     }
     return 0;
@@ -3024,14 +3024,14 @@ void* pool_handler(void* arg)
     u_int32_t id = thr_data->pkt_id;
     int ret = -1;
 
-    debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
+    //debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
 
     short protocol = ip_hdr(thr_data->buf)->protocol;
     if (protocol == 6)
         ret = process_tcp_packet(thr_data);
     else{ 
         sprintf(log, "Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
-        debugs(0, DBG_CRITICAL, log);
+        //debugs(0, DBG_CRITICAL, log);
         struct myiphdr *iphdr = ip_hdr(thr_data->buf);
         struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
         //unsigned char *payload = tcp_payload(thr_data->buf);
@@ -3042,9 +3042,9 @@ void* pool_handler(void* arg)
 
         memset(log, 0, LOGSIZE);
         sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        debugs(0, DBG_CRITICAL, log);
+        //debugs(0, DBG_CRITICAL, log);
         char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
-        debugs(0, DBG_CRITICAL, hex_str);
+        //debugs(0, DBG_CRITICAL, hex_str);
         free(hex_str);
     }
 
@@ -3052,11 +3052,11 @@ void* pool_handler(void* arg)
 
     if (ret == 0){
         nfq_set_verdict(g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        debugs(0, DBG_CRITICAL, "Verdict: Accept");
+        //debugs(0, DBG_CRITICAL, "Verdict: Accept");
     }
     else{
         nfq_set_verdict(g_nfq_qh, id, NF_DROP, 0, NULL);
-        debugs(0, DBG_CRITICAL, "Verdict: Drop");
+        //debugs(0, DBG_CRITICAL, "Verdict: Drop");
     }
 
     free(thr_data);
@@ -3068,6 +3068,17 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
 {
     unsigned char* packet;
     int packet_len = nfq_get_payload(nfa, &packet);
+
+    struct myiphdr *iphdr = ip_hdr(packet);
+    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    //unsigned char *payload = tcp_payload(thr_data->buf);
+    unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
+    char sip[16], dip[16];
+    ip2str(iphdr->saddr, sip);
+    ip2str(iphdr->daddr, dip);
+
+    char log[LOGSIZE];
+    sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
 
     struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
     if (!thr_data)
