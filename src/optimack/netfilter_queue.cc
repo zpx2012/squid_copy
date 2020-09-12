@@ -303,11 +303,11 @@ int process_tcp_packet(struct thread_data* thr_data)
             break;
         }
 
-    printf(log, "P%d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+    sprintf(log, "P%d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
     printf("%s\n", log);
     if (subconn_i == -1) {
         //sprintf(log, "Subconn not found %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        printf("P%d: Subconn not found\n", thr_data->pkt_id,);
+        printf("P%d: Subconn not found\n", thr_data->pkt_id);
         return -1;
     }
 
@@ -474,7 +474,7 @@ int process_tcp_packet(struct thread_data* thr_data)
 
             if(append){
                 seq_next_global += append;
-                printf("P%d-S%d: Update seq_global to %d\n", thr_data->pkt_id, subconn_i, seq_global);
+                printf("P%d-S%d: Update seq_next_global to %d\n", thr_data->pkt_id, subconn_i, seq_next_global);
                 //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
             }
 
