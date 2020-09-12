@@ -238,14 +238,14 @@ void* optimistic_ack(void* threadid)
     unsigned int ack_pacing = subconn_infos[id].ack_pacing;
 
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
-    printf("S%d : optimistic ack started\n", id);   
+    printf("S%d: optimistic ack started\n", id);   
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
         send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
     subconn_infos[id].optim_ack_stop = 0;
-    printf("S%d : optimistic ack ends\n", id);   
+    printf("S%d: optimistic ack ends\n", id);   
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
     pthread_exit(NULL);
 }
@@ -262,11 +262,11 @@ int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int pay
     pthread_t thread;
     if (pthread_create(&thread, NULL, optimistic_ack, (void *)(intptr_t)id) != 0) {
         //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
-        printf("Fail to create optimistic_ack thread\n");
+        printf("S%d: Fail to create optimistic_ack thread\n", id);
         return -1;
     }
     //debugs(1, DBG_CRITICAL, "S" << id <<": optimistic ack thread created");   
-    printf("S%d : optimistic ack thread created\n", id);   
+    printf("S%d: optimistic ack thread created\n", id);   
     return 0;
 }
 
@@ -331,7 +331,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
             {
                 if (!payload_len){
-                    printf("P%d-Squid-out: squid ack %x\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem);
+                    printf("P%d-Squid-out: squid ack %d\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem);
                     return -1;
                 }
 
