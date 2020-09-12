@@ -52,6 +52,7 @@ pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
 // seq
 unsigned int seq_next_global = 1;
 std::set<unsigned int> seq_gaps;
+unsigned int max_win_size = 0;
 
 
 void init()
@@ -332,7 +333,10 @@ int process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
             {
                 if (!payload_len){
-                    printf("P%d-Squid-out: squid ack %d, win_size %d\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem, ntohs(tcphdr->th_win));
+                    int win_size = ntohs(tcphdr->th_win);
+                    if(win_size > max_win_size)
+                        max_win_size = win_size;
+                    printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem, win_size, max_win_size);
                     return -1;
                 }
 
