@@ -23,7 +23,20 @@ using namespace std;
 #include "netfilter_queue.h"
 #include "Debug.h"
 
+// globals
+struct nfq_handle *g_nfq_h;
+struct nfq_q_handle *g_nfq_qh;
+int g_nfq_fd;
+int nfq_stop;
 
+char g_local_ip[16]; //TODO: different connection from client
+char g_remote_ip[16];
+unsigned short g_remote_port;
+char request[1000];
+
+std::vector<struct subconn_info> subconn_infos;
+
+// locals
 bool request_recved = false;
 char empty_payload[] = "";
 const int MARK = 666;
@@ -194,7 +207,7 @@ int find_seq_gaps(unsigned int seq)
 void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step)
 {
     for(; start < end; start += step){
-        debugs(1, DBG_CRITICAL, "insert gap u" << start);
+        //debugs(1, DBG_CRITICAL, "insert gap u" << start);
         seq_gaps.insert(start);
     }
 
@@ -225,12 +238,14 @@ void* optimistic_ack(void* threadid)
     unsigned int ack_pacing = subconn_infos[id].ack_pacing;
 
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
+    printf("Subconn %d : optimistic ack started\n", id);   
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
         send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
     subconn_infos[id].optim_ack_stop = 0;
+    printf("Subconn %d : optimistic ack ends\n", id);   
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
     pthread_exit(NULL);
 }
@@ -246,10 +261,12 @@ int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int pay
     subconn_infos[id].optim_ack_stop = 0;
     pthread_t thread;
     if (pthread_create(&thread, NULL, optimistic_ack, (void *)(intptr_t)id) != 0) {
-        debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
+        //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
+        printf("Fail to create optimistic_ack thread\n");
         return -1;
     }
     //debugs(1, DBG_CRITICAL, "S" << id <<": optimistic ack thread created");   
+    printf("Subconn %d : optimistic ack thread created\n", id);   
     return 0;
 }
 
@@ -286,21 +303,24 @@ int process_tcp_packet(struct thread_data* thr_data)
             break;
         }
 
-    if (subconn_i != -1) {
-        printf("subconn not found\n");
-        return 0;
+    sprintf(log, "Pkt %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+    printf("%s\n", log);
+    if (subconn_i == -1) {
+        //sprintf(log, "Subconn not found %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        printf("Subconn not found\n");
+        return -1;
     }
 
     // check remote ip, local ip
-    if ((incoming && strncmp(g_remote_ip, sip, 16) == 0) || (!incoming && strncmp(g_remote_ip, dip, 16) == 0))//don't check local_ip in case of private IP
+    if (!((incoming && strncmp(g_remote_ip, sip, 16) == 0) || (!incoming && strncmp(g_remote_ip, dip, 16) == 0)))//don't check local_ip in case of private IP
     {
-        cout << "IP not found: sip " << sip << " dip" << dip;
+        cout << "IP not found: sip " << sip << " dip" << dip << endl;
         return 0;
     }
 
     // print only if we have the subconn_i
     sprintf(log, "Subconn %d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-    printf("%s", log);
+    printf("%s\n", log);
     //debugs(1, DBG_CRITICAL, log);
 
 
@@ -323,7 +343,6 @@ int process_tcp_packet(struct thread_data* thr_data)
                 return 0;
         }
     }
-
 
     unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
     switch (tcphdr->th_flags) {
@@ -374,7 +393,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             }
 
 
-            send_ACK(sip, dip, sport, dport, empty_payload, ack, seq+1);
+            send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
             subconn_infos[subconn_i].ini_seq_rem = subconn_infos[subconn_i].cur_seq_rem = seq; //unknown
             //debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
             
@@ -408,12 +427,13 @@ int process_tcp_packet(struct thread_data* thr_data)
         case TH_ACK | TH_URG:
         {
             if (!payload_len) {
-                break;
+                return -1;
             }
 
             if (subconn_infos[subconn_i].optim_ack_stop) {
                 // TODO: what if payload_len changes?
-                start_optim_ack(subconn_i, seq, ack, payload_len, 0);
+                printf("Start optimistic_ack: subconn %d\n", subconn_infos[subconn_i].local_port);
+                start_optim_ack(subconn_i, seq-1, ack, payload_len, 0);
             }
 
             pthread_mutex_lock(&mutex_seq_next_global);
@@ -462,7 +482,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             tcphdr->th_dport = htons(subconn_infos[0].local_port);
             tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem+seq_rel);
             tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
-            compute_checksums(thr_data->buf, 20, iphdr->tot_len);
+            compute_checksums(thr_data->buf, 20, thr_data->len);
             return 0;
 
             break;
@@ -484,7 +504,7 @@ int process_tcp_packet(struct thread_data* thr_data)
 
 void* pool_handler(void* arg)
 {
-    char log[LOGSIZE];
+    //char log[LOGSIZE];
     struct thread_data* thr_data = (struct thread_data*)arg;
     u_int32_t id = thr_data->pkt_id;
     int ret = -1;
@@ -495,7 +515,7 @@ void* pool_handler(void* arg)
     if (protocol == 6)
         ret = process_tcp_packet(thr_data);
     else{ 
-        sprintf(log, "Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
+        //sprintf(log, "Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
         //debugs(0, DBG_CRITICAL, log);
         struct myiphdr *iphdr = ip_hdr(thr_data->buf);
         struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
@@ -505,15 +525,13 @@ void* pool_handler(void* arg)
         ip2str(iphdr->saddr, sip);
         ip2str(iphdr->daddr, dip);
 
-        memset(log, 0, LOGSIZE);
-        sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        //memset(log, 0, LOGSIZE);
+        //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
         //debugs(0, DBG_CRITICAL, log);
         char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
         //debugs(0, DBG_CRITICAL, hex_str);
         free(hex_str);
     }
-
-
 
     if (ret == 0){
         nfq_set_verdict(g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
@@ -542,13 +560,14 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     ip2str(iphdr->saddr, sip);
     ip2str(iphdr->daddr, dip);
 
-    char log[LOGSIZE];
-    sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+    //char log[LOGSIZE];
+    //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+    //debugs(0, DBG_CRITICAL, log);
 
     struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
     if (!thr_data)
     {
-        debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
+        //debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
         return -1;
     }
     memset(thr_data, 0, sizeof(struct thread_data));
@@ -557,7 +576,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     struct nfqnl_msg_packet_hdr *ph;
     ph = nfq_get_msg_packet_hdr(nfa);
     if (!ph) {
-        debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+        //debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
         return -1;
     }
 
@@ -565,16 +584,15 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len);
     if (!thr_data->buf){
-            debugs(0, DBG_CRITICAL, "cb: error during malloc");
+            //debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
     }
     memcpy(thr_data->buf, packet, packet_len);
 
-    if(thr_pool_queue(pool, pool_handler, (void *)thr_data) < 0){
-            debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
-            return -1;
+    if(thr_pool_queue(pool, pool_handler, (void *)thr_data) < 0) {
+        debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
+        return -1;
     }
-
     return 0;
 }
 
@@ -621,7 +639,7 @@ void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote
 
 
     for (int i = 1; i <= 2; i++){
-        int local_port_new = rand() % 20000 + 30000; 
+        unsigned short local_port_new = rand() % 20000 + 30000; 
         int seq = rand();
 
         memset(cmd, 0, 200); //TODO: iptables too broad??
@@ -630,13 +648,13 @@ void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote
         debugs(11, 2, cmd << ret);
 
         send_SYN(remote_ip, local_ip, remote_port, local_port_new, empty_payload, 0, seq);
-        debugs(1, DBG_IMPORTANT, "S" << i << ": Sent SYN");
+        debugs(1, DBG_IMPORTANT, "Subconn " << i << ": Sent SYN");
 
         // pthread_mutex_lock(&mutex_subconn_infos);
         struct subconn_info new_subconn;
         memset(&new_subconn, 0, sizeof(struct subconn_info));
         new_subconn.local_port = local_port_new;//No nfq callback will interfere because iptable rules haven't been added
-        new_subconn.ini_seq_rem = new_subconn.cur_seq_rem = seq;
+        new_subconn.ini_seq_loc = new_subconn.cur_seq_loc = seq;
         new_subconn.win_size = 29200*128;
         new_subconn.ack_pacing = 5000;
         new_subconn.ack_sent = 0;
@@ -644,7 +662,6 @@ void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote
         new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
         subconn_infos.push_back(new_subconn);
         // pthread_mutex_unlock(&mutex_subconn_infos);                
-
     }
 }
 

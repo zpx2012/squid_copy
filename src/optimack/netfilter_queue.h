@@ -7,18 +7,18 @@
 // nfq
 #define NF_QUEUE_NUM 6
 
-struct nfq_handle *g_nfq_h;
-struct nfq_q_handle *g_nfq_qh;
-int g_nfq_fd;
-int nfq_stop;
+extern struct nfq_handle *g_nfq_h;
+extern struct nfq_q_handle *g_nfq_qh;
+extern int g_nfq_fd;
+extern int nfq_stop;
 
-char g_local_ip[16]; //TODO: different connection from client
-char g_remote_ip[16];
-unsigned short g_remote_port;
-char request[1000];
+extern char g_local_ip[16]; //TODO: different connection from client
+extern char g_remote_ip[16];
+extern unsigned short g_remote_port;
+extern char request[1000];
 
 // Optim ack
-std::vector<struct subconn_info> subconn_infos;
+extern std::vector<struct subconn_info> subconn_infos;
 struct subconn_info
 {
     unsigned short local_port;
