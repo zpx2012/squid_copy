@@ -25,7 +25,7 @@ using namespace std;
 
 
 bool request_recved = false;
-char empty_payload[] = "";
+empty_payload = "";
 const int MARK = 666;
 
 thr_pool_t* pool;
