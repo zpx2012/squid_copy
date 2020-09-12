@@ -6,7 +6,7 @@
 #define LOGSIZE 1024
 // nfq
 #define NF_QUEUE_NUM 6
-#define MARK 666
+
 struct nfq_handle *g_nfq_h;
 struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
@@ -39,7 +39,7 @@ struct subconn_info
     int ack_pacing;
     unsigned int payload_len;
 };
-char empty_payload[];
+char* empty_payload;
 
 // Multithread
 struct thread_data {

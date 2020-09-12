@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <vector>
+#inlcude <set>
 
 #include <linux/netfilter.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
@@ -19,10 +20,12 @@
 #include "util.h"
 #include "checksum.h"
 #include "netfilter_queue.h"
+#include "Debug.h"
 
 
 bool request_recved = false;
 char empty_payload[] = "";
+const int MARK = 666;
 
 thr_pool_t* pool;
 pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
@@ -222,7 +225,7 @@ void* optimistic_ack(void* threadid)
 
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
-        send_ACK(remote_ip, local_ip, remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
+        send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
