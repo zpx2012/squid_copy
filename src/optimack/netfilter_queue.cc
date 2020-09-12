@@ -373,7 +373,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             }
 
 
-            send_ACK(remote_ip, local_ip, remote_port, dport, empty_payload, ack, seq+1);
+            send_ACK(sip, dip, sport, dport, empty_payload, ack, seq+1);
             subconn_infos[subconn_i].ini_seq_rem = subconn_infos[subconn_i].cur_seq_rem = seq; //unknown
             //debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
             
