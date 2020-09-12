@@ -306,9 +306,10 @@ int process_tcp_packet(struct thread_data* thr_data)
             break;
         }
 
-    sprintf(log, "P%d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-    printf("%s\n", log);
+
     if (subconn_i == -1) {
+        sprintf(log, "P%d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        printf("%s\n", log);
         //sprintf(log, "Subconn not found %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
         printf("P%d: Subconn not found\n", thr_data->pkt_id);
         return -1;
@@ -317,13 +318,15 @@ int process_tcp_packet(struct thread_data* thr_data)
     // check remote ip, local ip
     if (!((incoming && strncmp(g_remote_ip, sip, 16) == 0) || (!incoming && strncmp(g_remote_ip, dip, 16) == 0)))//don't check local_ip in case of private IP
     {
+        sprintf(log, "P%d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        printf("%s\n", log);
         printf("P%d: IP not found: sip %s dip %s\n", thr_data->pkt_id, sip, dip);
         return 0;
     }
 
     // print only if we have the subconn_i
-    // sprintf(log, "Subconn %d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-    // printf("%s\n", log);
+    sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+    printf("%s\n", log);
     //debugs(1, DBG_CRITICAL, log);
 
 
@@ -425,7 +428,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                 for (size_t i = 0; i < subconn_infos.size(); i++) {
                     send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                     subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
-                    start_optim_ack(i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, payload_len, 0);
+                    start_optim_ack(i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, 1460, 0); //TODO: read MTU
                     printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, i);
                 }
                 //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
