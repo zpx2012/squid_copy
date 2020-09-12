@@ -266,7 +266,7 @@ int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int pay
         return -1;
     }
     //debugs(1, DBG_CRITICAL, "S" << id <<": optimistic ack thread created");   
-    printf("Subconn %d : optimistic ack thread created\n", id);   
+    printf("S%d : optimistic ack thread created\n", id);   
     return 0;
 }
 
@@ -303,24 +303,24 @@ int process_tcp_packet(struct thread_data* thr_data)
             break;
         }
 
-    sprintf(log, "Pkt %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+    printf(log, "P%d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
     printf("%s\n", log);
     if (subconn_i == -1) {
         //sprintf(log, "Subconn not found %d: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        printf("Subconn not found\n");
+        printf("P%d: Subconn not found\n", thr_data->pkt_id,);
         return -1;
     }
 
     // check remote ip, local ip
     if (!((incoming && strncmp(g_remote_ip, sip, 16) == 0) || (!incoming && strncmp(g_remote_ip, dip, 16) == 0)))//don't check local_ip in case of private IP
     {
-        cout << "IP not found: sip " << sip << " dip" << dip << endl;
+        printf("P%d: IP not found: sip %s dip %s\n", thr_data->pkt_id, sip, dip);
         return 0;
     }
 
     // print only if we have the subconn_i
-    sprintf(log, "Subconn %d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-    printf("%s\n", log);
+    // sprintf(log, "Subconn %d-%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", subconn_i, thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+    // printf("%s\n", log);
     //debugs(1, DBG_CRITICAL, log);
 
 
@@ -330,12 +330,15 @@ int process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_PUSH:
             case TH_ACK | TH_URG:
             {
-                if (!payload_len)
+                if (!payload_len){
+                    printf("P%d-Squid-out: squid ack %x\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem);
                     return -1;
+                }
 
                 memset(request, 0, 1000);
                 memcpy(request, payload, payload_len);
                 request_recved = true;
+                printf("P%d-Squid-out: request sent to server %d\n", thr_data->pkt_id, payload_len);
                 return 0;
                 break;
             }
@@ -427,12 +430,13 @@ int process_tcp_packet(struct thread_data* thr_data)
         case TH_ACK | TH_URG:
         {
             if (!payload_len) {
+                printf("P%d-Squid-in: server ack %d\n", thr_data->pkt_id, ack);
                 return -1;
             }
 
             if (subconn_infos[subconn_i].optim_ack_stop) {
                 // TODO: what if payload_len changes?
-                printf("Start optimistic_ack: subconn %d\n", subconn_infos[subconn_i].local_port);
+                printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
                 start_optim_ack(subconn_i, seq-1, ack, payload_len, 0);
             }
 
@@ -441,6 +445,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             int offset = seq_rel - seq_next_global;
             unsigned int append = 0;
             if (offset > 0) {
+                printf("P%d-S%d: > Insert gaps %d -> %d\n", thr_data->pkt_id, subconn_i, seq_next_global, seq_rel);
                 //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
                 // pthread_mutex_lock(&mutex_seq_gaps);
                 insert_seq_gaps(seq_next_global, seq_rel, payload_len);
@@ -459,14 +464,17 @@ int process_tcp_packet(struct thread_data* thr_data)
                 delete_seq_gaps(seq_rel);
                 // pthread_mutex_unlock(&mutex_seq_gaps);
                 //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
+                printf("P%d-S%d: < Found gaps %d. Deleted\n", thr_data->pkt_id, subconn_i, seq_rel);
             }
             else {
                 append = payload_len;
                 //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
+                printf("P%d-S%d: = In order %d\n", thr_data->pkt_id, subconn_i, seq_rel);
             }
 
             if(append){
                 seq_next_global += append;
+                printf("P%d-S%d: Update seq_global to %d\n", thr_data->pkt_id, subconn_i, seq_global);
                 //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
             }
 
@@ -567,7 +575,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
     if (!thr_data)
     {
-        //debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
+        debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
         return -1;
     }
     memset(thr_data, 0, sizeof(struct thread_data));
@@ -576,7 +584,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     struct nfqnl_msg_packet_hdr *ph;
     ph = nfq_get_msg_packet_hdr(nfa);
     if (!ph) {
-        //debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+        debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
         return -1;
     }
 
@@ -584,7 +592,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len);
     if (!thr_data->buf){
-            //debugs(0, DBG_CRITICAL, "cb: error during malloc");
+            debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
     }
     memcpy(thr_data->buf, packet, packet_len);
