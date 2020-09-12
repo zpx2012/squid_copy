@@ -391,7 +391,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                 }
             if (i == subconn_infos.size()) {
                 for (size_t i = 0; i < subconn_infos.size(); i++) {
-                    send_ACK(remote_ip, local_ip, remote_port, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
+                    send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                 }
                 //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
             }
