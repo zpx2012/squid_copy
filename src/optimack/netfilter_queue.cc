@@ -238,14 +238,14 @@ void* optimistic_ack(void* threadid)
     unsigned int ack_pacing = subconn_infos[id].ack_pacing;
 
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
-    printf("Subconn %d : optimistic ack started\n", id);   
+    printf("S%d : optimistic ack started\n", id);   
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
         send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
     subconn_infos[id].optim_ack_stop = 0;
-    printf("Subconn %d : optimistic ack ends\n", id);   
+    printf("S%d : optimistic ack ends\n", id);   
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
     pthread_exit(NULL);
 }
@@ -324,7 +324,7 @@ int process_tcp_packet(struct thread_data* thr_data)
     //debugs(1, DBG_CRITICAL, log);
 
 
-    if (!incoming){
+    if (!incoming && !subconn_i){
         switch (tcphdr->th_flags) {
             case TH_ACK:
             case TH_ACK | TH_PUSH:
@@ -334,6 +334,11 @@ int process_tcp_packet(struct thread_data* thr_data)
                     printf("P%d-Squid-out: squid ack %x\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem);
                     return -1;
                 }
+
+                subconn_infos[0].ini_seq_rem = ack - 1;
+                subconn_infos[0].cur_seq_rem = ack;
+                subconn_infos[0].ini_seq_loc = seq - 1;
+                subconn_infos[0].cur_seq_loc = seq;
 
                 memset(request, 0, 1000);
                 memcpy(request, payload, payload_len);
