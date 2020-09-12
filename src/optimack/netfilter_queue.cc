@@ -348,7 +348,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                 request_len = payload_len;
                 request_recved = true;
                 printf("P%d-Squid-out: request sent to server %d\n", thr_data->pkt_id, payload_len);
-                return 0;
+                return -1;
                 break;
             }
             default:
@@ -425,8 +425,8 @@ int process_tcp_packet(struct thread_data* thr_data)
                 for (size_t i = 0; i < subconn_infos.size(); i++) {
                     send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                     subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
-                    start_optim_ack(subconn_i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, payload_len, 0);
-                    printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
+                    start_optim_ack(i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, payload_len, 0);
+                    printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, i);
                 }
                 //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
             }
