@@ -39,7 +39,6 @@ struct subconn_info
     int ack_pacing;
     unsigned int payload_len;
 };
-char* empty_payload;
 
 // Multithread
 struct thread_data {
