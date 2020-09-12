@@ -33,6 +33,7 @@ char g_local_ip[16]; //TODO: different connection from client
 char g_remote_ip[16];
 unsigned short g_remote_port;
 char request[1000];
+unsigned short request_len;
 
 std::vector<struct subconn_info> subconn_infos;
 
@@ -206,11 +207,13 @@ int find_seq_gaps(unsigned int seq)
 
 void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step)
 {
+    printf("insert gap: ");
     for(; start < end; start += step){
+        printf("%d ", start);
         //debugs(1, DBG_CRITICAL, "insert gap u" << start);
         seq_gaps.insert(start);
     }
-
+    printf("\n");
     // unsigned int last = seq_gaps.at(seq_gaps.size()-1);
     // if (start > last){
     //     for(; start < end; start += step)
@@ -250,10 +253,10 @@ void* optimistic_ack(void* threadid)
     pthread_exit(NULL);
 }
 
-int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max)
+int start_optim_ack(int id, unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max)
 {
-    subconn_infos[id].opa_seq_start = ack;
-    subconn_infos[id].opa_ack_start = seq + 1;
+    subconn_infos[id].opa_seq_start = opa_seq_start;
+    subconn_infos[id].opa_ack_start = opa_ack_start;
     subconn_infos[id].opa_seq_max_restart = seq_max;
     subconn_infos[id].opa_retrx_counter = 0;
     subconn_infos[id].payload_len = payload_len;
@@ -342,6 +345,7 @@ int process_tcp_packet(struct thread_data* thr_data)
 
                 memset(request, 0, 1000);
                 memcpy(request, payload, payload_len);
+                request_len = payload_len;
                 request_recved = true;
                 printf("P%d-Squid-out: request sent to server %d\n", thr_data->pkt_id, payload_len);
                 return 0;
@@ -420,6 +424,9 @@ int process_tcp_packet(struct thread_data* thr_data)
             if (i == subconn_infos.size()) {
                 for (size_t i = 0; i < subconn_infos.size(); i++) {
                     send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
+                    subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
+                    start_optim_ack(subconn_i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, payload_len, 0);
+                    printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
                 }
                 //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
             }
@@ -439,11 +446,10 @@ int process_tcp_packet(struct thread_data* thr_data)
                 return -1;
             }
 
-            if (subconn_infos[subconn_i].optim_ack_stop) {
-                // TODO: what if payload_len changes?
-                printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
-                start_optim_ack(subconn_i, seq-1, ack, payload_len, 0);
-            }
+            // if (subconn_infos[subconn_i].optim_ack_stop) {
+            //     // TODO: what if payload_len changes?
+            //     printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
+            // }
 
             pthread_mutex_lock(&mutex_seq_next_global);
 
