@@ -324,11 +324,6 @@ int process_tcp_packet(struct thread_data* thr_data)
         return 0;
     }
 
-    // print only if we have the subconn_i
-    sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-    printf("%s\n", log);
-    //debugs(1, DBG_CRITICAL, log);
-
 
     if (!incoming && !subconn_i){
         switch (tcphdr->th_flags) {
@@ -337,7 +332,7 @@ int process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
             {
                 if (!payload_len){
-                    printf("P%d-Squid-out: squid ack %d\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem);
+                    printf("P%d-Squid-out: squid ack %d, win_size %d\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem, ntohs(tcphdr->th_win));
                     return -1;
                 }
 
@@ -358,6 +353,11 @@ int process_tcp_packet(struct thread_data* thr_data)
                 return 0;
         }
     }
+
+    // print only if we have the subconn_i
+    sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+    printf("%s\n", log);
+    //debugs(1, DBG_CRITICAL, log);
 
     unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
     switch (tcphdr->th_flags) {
