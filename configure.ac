@@ -677,7 +677,7 @@ for module in $squid_disk_module_candidates none; do
             if test "x$GCC" = "xyes" ; then
               SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT -pthreads"
               SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT -pthreads"
-              AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"], [
+              AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread"], [
                 AC_MSG_NOTICE(pthread library required but cannot be found.)
                 squid_opt_use_diskthreads="no"
                ])
@@ -696,7 +696,7 @@ for module in $squid_disk_module_candidates none; do
           *)
             SQUID_CFLAGS="$SQUID_CFLAGS -D_REENTRANT"
             SQUID_CXXFLAGS="$SQUID_CXXFLAGS -D_REENTRANT"
-            AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"], [
+            AC_CHECK_LIB(pthread, pthread_create ,[LIBPTHREADS="-lpthread"], [
               AC_MSG_NOTICE(pthread library required but cannot be found.)
               squid_opt_use_diskthreads="no"
             ])
@@ -3824,7 +3824,9 @@ if test "x$ac_cv_lib_malloc_main" = "xyes" ; then
 	fi
 fi
 AC_SUBST(XTRA_OBJS)
-
+# Our code
+LIBS="$LIBS -lnetfilter_queue -lnfnetlink"
+# end
 if test "x$XTRA_LIBS" = "x"; then
 	XTRA_LIBS="$LIBS"
 	dnl minor cleanup

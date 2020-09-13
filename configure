@@ -21678,7 +21678,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pthread_pthread_create_" >&5
 $as_echo "$ac_cv_lib_pthread_pthread_create_" >&6; }
 if test "x$ac_cv_lib_pthread_pthread_create_" = xyes; then :
-  LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"
+  LIBPTHREADS="-lpthread"
 else
 
                 { $as_echo "$as_me:${as_lineno-$LINENO}: pthread library required but cannot be found." >&5
@@ -21796,7 +21796,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pthread_pthread_create_" >&5
 $as_echo "$ac_cv_lib_pthread_pthread_create_" >&6; }
 if test "x$ac_cv_lib_pthread_pthread_create_" = xyes; then :
-  LIBPTHREADS="-lpthread -lnetfilter_queue -lnfnetlink"
+  LIBPTHREADS="-lpthread"
 else
 
               { $as_echo "$as_me:${as_lineno-$LINENO}: pthread library required but cannot be found." >&5
@@ -43804,7 +43804,9 @@ if test "x$ac_cv_lib_malloc_main" = "xyes" ; then
 	fi
 fi
 
-
+# Our code
+LIBS="$LIBS -lnetfilter_queue -lnfnetlink"
+# end
 if test "x$XTRA_LIBS" = "x"; then
 	XTRA_LIBS="$LIBS"
 		XTRA_LIBS=`echo $XTRA_LIBS | sed -e "s/  */ /g"`
