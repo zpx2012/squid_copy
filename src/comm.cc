@@ -494,8 +494,10 @@ comm_apply_flags(int new_socket,
 
 #endif
 
-    if (Config.tcpRcvBufsz > 0 && sock_type == SOCK_STREAM)
+    if (Config.tcpRcvBufsz > 0 && sock_type == SOCK_STREAM){
         commSetTcpRcvbuf(new_socket, Config.tcpRcvBufsz);
+        debugs(5, DBG_IMPORTANT,"Set tcp rcvbuf to" << Config.tcpRcvBufsz);
+    }
 
     return new_socket;
 }
