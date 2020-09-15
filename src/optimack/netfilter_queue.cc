@@ -458,51 +458,51 @@ int process_tcp_packet(struct thread_data* thr_data)
             //     printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
             // }
 
-            pthread_mutex_lock(&mutex_seq_next_global);
+            // pthread_mutex_lock(&mutex_seq_next_global);
 
-            int offset = seq_rel - seq_next_global;
-            unsigned int append = 0;
-            if (offset > 0) {
-                printf("P%d-S%d: > Insert gaps %d -> %d\n", thr_data->pkt_id, subconn_i, seq_next_global, seq_rel);
-                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
-                // pthread_mutex_lock(&mutex_seq_gaps);
-                insert_seq_gaps(seq_next_global, seq_rel, payload_len);
-                // pthread_mutex_unlock(&mutex_seq_gaps);
-                append = offset + payload_len;
-            }
-            else if (offset < 0){
+            // int offset = seq_rel - seq_next_global;
+            // unsigned int append = 0;
+            // if (offset > 0) {
+            //     printf("P%d-S%d: > Insert gaps %d -> %d\n", thr_data->pkt_id, subconn_i, seq_next_global, seq_rel);
+            //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
+            //     // pthread_mutex_lock(&mutex_seq_gaps);
+            //     insert_seq_gaps(seq_next_global, seq_rel, payload_len);
+            //     // pthread_mutex_unlock(&mutex_seq_gaps);
+            //     append = offset + payload_len;
+            // }
+            // else if (offset < 0){
                 
-                int ret = find_seq_gaps(seq_rel);
-                if (!ret){
-                    //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": recv " << seq_rel << " < wanting " << seq_next_global);
-                    pthread_mutex_unlock(&mutex_seq_next_global);
-                    return -1;
-                }
-                // pthread_mutex_lock(&mutex_seq_gaps);
-                delete_seq_gaps(seq_rel);
-                // pthread_mutex_unlock(&mutex_seq_gaps);
-                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
-                printf("P%d-S%d: < Found gaps %d. Deleted\n", thr_data->pkt_id, subconn_i, seq_rel);
-            }
-            else {
-                append = payload_len;
-                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
-                printf("P%d-S%d: = In order %d\n", thr_data->pkt_id, subconn_i, seq_rel);
-            }
+            //     int ret = find_seq_gaps(seq_rel);
+            //     if (!ret){
+            //         //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": recv " << seq_rel << " < wanting " << seq_next_global);
+            //         pthread_mutex_unlock(&mutex_seq_next_global);
+            //         return -1;
+            //     }
+            //     // pthread_mutex_lock(&mutex_seq_gaps);
+            //     delete_seq_gaps(seq_rel);
+            //     // pthread_mutex_unlock(&mutex_seq_gaps);
+            //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
+            //     printf("P%d-S%d: < Found gaps %d. Deleted\n", thr_data->pkt_id, subconn_i, seq_rel);
+            // }
+            // else {
+            //     append = payload_len;
+            //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
+            //     printf("P%d-S%d: = In order %d\n", thr_data->pkt_id, subconn_i, seq_rel);
+            // }
 
-            if(append){
-                seq_next_global += append;
-                printf("P%d-S%d: Update seq_next_global to %d\n", thr_data->pkt_id, subconn_i, seq_next_global);
-                //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
-            }
+            // if(append){
+            //     seq_next_global += append;
+            //     printf("P%d-S%d: Update seq_next_global to %d\n", thr_data->pkt_id, subconn_i, seq_next_global);
+            //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
+            // }
 
-            pthread_mutex_unlock(&mutex_seq_next_global);
+            // pthread_mutex_unlock(&mutex_seq_next_global);
 
-            // send to squid 
-            // 1. dest port -> sub1->localport
-            // 2. seq -> sub1->init_seq_rem + seq_rel
-            // 3. ack -> sub1->cur_seq_loc
-            // 4. checksum(IP,TCP)
+            // // send to squid 
+            // // 1. dest port -> sub1->localport
+            // // 2. seq -> sub1->init_seq_rem + seq_rel
+            // // 3. ack -> sub1->cur_seq_loc
+            // // 4. checksum(IP,TCP)
             if(!subconn_i)
                 return 0; //Main subconn, return directly
             tcphdr->th_dport = htons(subconn_infos[0].local_port);
