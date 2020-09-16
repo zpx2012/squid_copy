@@ -664,7 +664,7 @@ void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
 
-    for (int i = 1; i <= 4; i++){
+    for (int i = 1; i <= 7; i++){
         unsigned short local_port_new = rand() % 20000 + 30000; 
         int seq = rand();
 
