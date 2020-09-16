@@ -656,7 +656,7 @@ void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote
     struct subconn_info squid_conn;
     memset(&squid_conn, 0, sizeof(struct subconn_info));
     squid_conn.local_port = local_port;//No nfq callback will interfere because iptable rules haven't been added
-    squid_conn.ack_pacing = 500;
+    squid_conn.ack_pacing = 1000;
     squid_conn.ack_sent = 1; //Assume squid will send ACK
     squid_conn.optim_ack_stop = 1;
     squid_conn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
@@ -682,7 +682,7 @@ void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote
         new_subconn.local_port = local_port_new;//No nfq callback will interfere because iptable rules haven't been added
         new_subconn.ini_seq_loc = new_subconn.cur_seq_loc = seq;
         new_subconn.win_size = 29200*128;
-        new_subconn.ack_pacing = 500;
+        new_subconn.ack_pacing = 1000;
         new_subconn.ack_sent = 0;
         new_subconn.optim_ack_stop = 1;
         new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
