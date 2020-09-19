@@ -411,16 +411,17 @@ int process_tcp_packet(struct thread_data* thr_data)
                 return 0;
             }
 
-
             send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
             subconn_infos[subconn_i].ini_seq_rem = subconn_infos[subconn_i].cur_seq_rem = seq; //unknown
             //debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
-            
-            if(!request_recved)
-                return -1;
 
             pthread_mutex_lock(&mutex_subconn_infos);
             subconn_infos[subconn_i].ack_sent = 1;  
+
+            if(!request_recved) {
+                pthread_mutex_unlock(&mutex_subconn_infos);
+                return -1;
+            }
 
             //check if all subconns receive syn/ack        
             size_t i;
