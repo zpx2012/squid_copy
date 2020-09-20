@@ -2,6 +2,7 @@
 #define NETFILTER_QUEUE_H
 
 /** Our code **/
+#define ACKPACING 500
 // TODO: cleanup()
 #define LOGSIZE 1024
 // nfq
