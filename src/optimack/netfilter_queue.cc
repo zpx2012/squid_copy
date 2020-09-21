@@ -246,7 +246,7 @@ void* optimistic_ack(void* threadid)
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     printf("S%d: optimistic ack started\n", id);   
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
-        send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
+        send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*subconn_infos[id].payload_len, opa_seq_start);
         usleep(ack_pacing);
     }
     // TODO: why 0???
@@ -331,7 +331,16 @@ int process_tcp_packet(struct thread_data* thr_data)
                         if(win_size > max_win_size)
                             max_win_size = win_size;
                         int ack_rel = ack - subconn_infos[0].ini_seq_rem;
-                        printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, (seq_next_global-ack_rel)/1460.0, win_size, max_win_size);
+                        float off_packet_num = (seq_next_global-ack_rel)/1460.0;
+                        printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
+                        
+                        if(off_packet_num < 0.01){
+                            for (size_t i = 0; i < subconn_infos.size(); ++i)
+                            {
+                                subconn_infos[i].payload_len *= 2;
+                                printf("P%d-Squid-out: Speed up by 2!\n", thr_data->pkt_id);
+                            }
+                        }
                         return -1;
                     }
 
@@ -474,8 +483,8 @@ int process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                 }
 
-                if (seq_next_global < seq_rel)
-                    seq_next_global = seq_rel;
+                if (seq_next_global < seq_rel + payload_len)
+                    seq_next_global = seq_rel + payload_len;
 
                 // if (subconn_infos[subconn_i].optim_ack_stop) {
                 //     // TODO: what if payload_len changes?
