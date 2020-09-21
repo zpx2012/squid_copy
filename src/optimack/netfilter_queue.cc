@@ -569,6 +569,7 @@ void* pool_handler(void* arg)
         //debugs(0, DBG_CRITICAL, "Verdict: Drop");
     }
 
+    free(thr_data->buf);
     free(thr_data);
     // TODO: ret NULL?
     return NULL;
