@@ -331,7 +331,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                         if(win_size > max_win_size)
                             max_win_size = win_size;
                         int ack_rel = ack - subconn_infos[0].ini_seq_rem;
-                        printf("P%d-Squid-out: squid ack %d, seq_global %d, off %f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, (seq_next_global-ack_rel)/1460.0, win_size, max_win_size);
+                        printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, (seq_next_global-ack_rel)/1460.0, win_size, max_win_size);
                         return -1;
                     }
 
