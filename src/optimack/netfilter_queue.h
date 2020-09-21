@@ -15,6 +15,8 @@ extern int nfq_stop;
 
 extern char g_local_ip[16]; //TODO: different connection from client
 extern char g_remote_ip[16];
+extern unsigned int g_local_ip_int;
+extern unsigned int g_remote_ip_int;
 extern unsigned short g_remote_port;
 extern char request[1000];
 
