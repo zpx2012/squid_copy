@@ -288,7 +288,7 @@ int process_tcp_packet(struct thread_data* thr_data)
 
     // check remote ip, local ip
     bool incoming = true;
-    char* sip, dip;
+    char *sip, *dip;
     if (g_remote_ip_int == iphdr->saddr){
         incoming = true;
         sip = g_remote_ip;
