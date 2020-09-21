@@ -330,7 +330,8 @@ int process_tcp_packet(struct thread_data* thr_data)
                         int win_size = ntohs(tcphdr->th_win);
                         if(win_size > max_win_size)
                             max_win_size = win_size;
-                        printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, ack - subconn_infos[0].ini_seq_rem, win_size, max_win_size);
+                        int ack_rel = ack - subconn_infos[0].ini_seq_rem;
+                        printf("P%d-Squid-out: squid ack %d, seq_global %d, off %d packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, (seq_next_global-ack_rel)/1460.0, win_size, max_win_size);
                         return -1;
                     }
 
@@ -472,6 +473,9 @@ int process_tcp_packet(struct thread_data* thr_data)
                     printf("P%d-Squid-in: server ack %d\n", thr_data->pkt_id, ack);
                     return -1;
                 }
+
+                if (seq_next_global < seq_rel)
+                    seq_next_global = seq_rel;
 
                 // if (subconn_infos[subconn_i].optim_ack_stop) {
                 //     // TODO: what if payload_len changes?
