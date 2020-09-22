@@ -55,6 +55,7 @@ pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
 unsigned int seq_next_global = 1;
 std::set<unsigned int> seq_gaps;
 unsigned int max_win_size = 0;
+unsigned int last_speedup_ack_rel = 1;
 
 
 void init()
@@ -334,12 +335,17 @@ int process_tcp_packet(struct thread_data* thr_data)
                         float off_packet_num = (seq_next_global-ack_rel)/1460.0;
                         printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
                         
-                        if(off_packet_num < 0.01){
-                            for (size_t i = 0; i < subconn_infos.size(); ++i)
-                            {
-                                subconn_infos[i].payload_len *= 2;
+                        if(off_packet_num < 0.01 && ack_rel > 4*last_speedup_ack_rel){
+                            pthread_mutex_lock(&mutex_subconn_infos);
+                            if (ack_rel > 4*last_speedup_ack_rel){
+                                last_speedup_ack_rel = ack_rel;
                                 printf("P%d-Squid-out: Speed up by 2!\n", thr_data->pkt_id);
+                                for (size_t i = 0; i < subconn_infos.size(); ++i)
+                                {
+                                    subconn_infos[i].payload_len *= 2;
+                                }
                             }
+                            pthread_mutex_unlock(&mutex_subconn_infos);
                         }
                         return -1;
                     }
