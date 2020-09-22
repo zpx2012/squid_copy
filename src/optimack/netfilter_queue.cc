@@ -342,7 +342,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                                 printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
                                 for (size_t i = 0; i < subconn_infos.size(); ++i)
                                 {
-                                    if(ack_pacing > 100)
+                                    if(subconn_infos[i].ack_pacing > 100)
                                         subconn_infos[i].ack_pacing -= 100;
                                 }
                             }
