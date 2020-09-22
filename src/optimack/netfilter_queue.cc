@@ -342,7 +342,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                                 printf("P%d-Squid-out: Speed up by 2!\n", thr_data->pkt_id);
                                 for (size_t i = 0; i < subconn_infos.size(); ++i)
                                 {
-                                    subconn_infos[i].payload_len += 730;
+                                    subconn_infos[i].payload_len += 365;
                                 }
                             }
                             pthread_mutex_unlock(&mutex_subconn_infos);
