@@ -335,7 +335,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                         float off_packet_num = (seq_next_global-ack_rel)/1460.0;
                         printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
                         
-                        if(off_packet_num < 0.01 && ack_rel > 4*last_speedup_ack_rel){
+                        if(off_packet_num < 0.01 && ack_rel > 4*last_speedup_ack_rel && ack_rel > 800000){
                             pthread_mutex_lock(&mutex_subconn_infos);
                             if (ack_rel > 4*last_speedup_ack_rel){
                                 last_speedup_ack_rel = ack_rel;
