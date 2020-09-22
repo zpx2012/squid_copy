@@ -247,8 +247,8 @@ void* optimistic_ack(void* threadid)
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     printf("S%d: optimistic ack started\n", id);   
     for (int k = 0; !subconn_infos[id].optim_ack_stop; k++){
-        send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*subconn_infos[id].payload_len, opa_seq_start);
-        usleep(ack_pacing);
+        send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
+        usleep(subconn_infos[id].ack_pacing);
     }
     // TODO: why 0???
     subconn_infos[id].optim_ack_stop = 0;
@@ -342,7 +342,7 @@ int process_tcp_packet(struct thread_data* thr_data)
                                 printf("P%d-Squid-out: Speed up by 2!\n", thr_data->pkt_id);
                                 for (size_t i = 0; i < subconn_infos.size(); ++i)
                                 {
-                                    subconn_infos[i].payload_len += 365;
+                                    subconn_infos[i].ack_pacing -= 100;
                                 }
                             }
                             pthread_mutex_unlock(&mutex_subconn_infos);
