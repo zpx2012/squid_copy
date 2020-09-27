@@ -16,6 +16,9 @@
 #include "comm/forward.h"
 #include "CommCalls.h"
 
+// Our code
+class ConnStateData;
+
 namespace Comm
 {
 
@@ -34,10 +37,15 @@ public:
     virtual bool doneAll() const;
 
     ConnOpener(Comm::ConnectionPointer &, AsyncCall::Pointer &handler, time_t connect_timeout);
+    // Our code server_conn
+    ConnOpener(Comm::ConnectionPointer &, AsyncCall::Pointer &handler, time_t connect_timeout, ConnStateData* server_conn);
     ~ConnOpener();
 
     void setHost(const char *);    ///< set the hostname note for this connection
     const char * getHost() const;  ///< get the hostname noted for this connection
+
+    // Our code
+    ConnStateData* server;
 
 protected:
     virtual void start();

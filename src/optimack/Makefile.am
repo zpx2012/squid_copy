@@ -12,8 +12,8 @@ include $(top_srcdir)/src/TestHeaders.am
 noinst_LTLIBRARIES = liboptim.la
 
 liboptim_la_SOURCES = \
-	netfilter_queue.h \
-	netfilter_queue.cc \
+	Optimack.h \
+	Optimack.cc \
 	checksum.h \
 	checksum.cc \
 	hping2.cc \

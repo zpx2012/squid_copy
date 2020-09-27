@@ -128,8 +128,8 @@ FwdState::closeServerConnection(const char *reason)
 }
 
 /**** PUBLIC INTERFACE ********************************************************/
-
-FwdState::FwdState(const Comm::ConnectionPointer &client, StoreEntry * e, HttpRequest * r, const AccessLogEntryPointer &alp):
+// Our code server_conn
+FwdState::FwdState(const Comm::ConnectionPointer &client, StoreEntry * e, HttpRequest * r, const AccessLogEntryPointer &alp, ConnStateData* httpserver_conn):
     entry(e),
     request(r),
     al(alp),
@@ -139,6 +139,7 @@ FwdState::FwdState(const Comm::ConnectionPointer &client, StoreEntry * e, HttpRe
     n_tries(0),
     pconnRace(raceImpossible)
 {
+    server_conn = httpserver_conn;
     debugs(17, 2, "Forwarding client request " << client << ", url=" << e->url());
     HTTPMSGLOCK(request);
     serverDestinations.reserve(Config.forward_max_tries);
@@ -304,8 +305,9 @@ FwdState::~FwdState()
  * a transaction.  It is a static method that may or may not
  * allocate a FwdState.
  */
+// Our code server_conn
 void
-FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, HttpRequest *request, const AccessLogEntryPointer &al)
+FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, HttpRequest *request, const AccessLogEntryPointer &al, ConnStateData* httpserver_conn)
 {
     /** \note
      * client_addr == no_addr indicates this is an "internal" request
@@ -374,7 +376,8 @@ FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, Ht
         return;
 
     default:
-        FwdState::Pointer fwd = new FwdState(clientConn, entry, request, al);
+        // Our code server_conn
+        FwdState::Pointer fwd = new FwdState(clientConn, entry, request, al, httpserver_conn);
         fwd->start(fwd);
         return;
     }
@@ -386,7 +389,8 @@ void
 FwdState::fwdStart(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, HttpRequest *request)
 {
     // Hides AccessLogEntry.h from code that does not supply ALE anyway.
-    Start(clientConn, entry, request, NULL);
+    // Our code NULL
+    Start(clientConn, entry, request, NULL, NULL);
 }
 
 /// subtracts time_t values, returning zero if smaller exceeds the larger value
@@ -921,7 +925,8 @@ FwdState::connectStart()
 
     calls.connector = commCbCall(17,3, "fwdConnectDoneWrapper", CommConnectCbPtrFun(fwdConnectDoneWrapper, this));
     const time_t connTimeout = serverDestinations[0]->connectTimeout(start_t);
-    Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout);
+    // Our code server_conn
+    Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout, server_conn);
     if (host)
         cs->setHost(host);
     ++n_tries;

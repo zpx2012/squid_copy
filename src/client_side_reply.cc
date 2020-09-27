@@ -348,7 +348,8 @@ clientReplyContext::processExpired()
          * this clientReplyContext does
          */
         Comm::ConnectionPointer conn = http->getConn() != NULL ? http->getConn()->clientConnection : NULL;
-        FwdState::Start(conn, http->storeEntry(), http->request, http->al);
+        // Our code
+        FwdState::Start(conn, http->storeEntry(), http->request, http->al, http->getConn());
     }
     /* Register with storage manager to receive updates when data comes in. */
 
@@ -780,7 +781,8 @@ clientReplyContext::processMiss()
         assert(r->clientConnectionManager == http->getConn());
 
         /** Start forwarding to get the new object from network */
-        FwdState::Start(conn, http->storeEntry(), r, http->al);
+        // Our code
+        FwdState::Start(conn, http->storeEntry(), r, http->al, http->getConn());
     }
 }
 

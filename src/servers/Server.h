@@ -21,6 +21,9 @@
 #include "sbuf/SBuf.h"
 #include "servers/forward.h"
 
+// Our code
+#include "optimack/Optimack.h"
+
 /**
  * Common base for all Server classes used
  * to manage connections from clients.
@@ -30,6 +33,9 @@ class Server : virtual public AsyncJob, public BodyProducer
 public:
     Server(const MasterXactionPointer &xact);
     virtual ~Server() {}
+
+    // Our code
+    Optimack optimack_server;
 
     /* AsyncJob API */
     virtual void start();

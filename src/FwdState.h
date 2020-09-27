@@ -54,6 +54,8 @@ nfmark_t GetNfmarkToServer(HttpRequest * request);
 void GetMarkingsToServer(HttpRequest * request, Comm::Connection &conn);
 
 class HelperReply;
+// our code 
+class ConnStateData;
 
 class FwdState : public RefCountable
 {
@@ -65,7 +67,8 @@ public:
     static void initModule();
 
     /// Initiates request forwarding to a peer or origin server.
-    static void Start(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *, const AccessLogEntryPointer &alp);
+    // Our code httpserver_conn
+    static void Start(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *, const AccessLogEntryPointer &alp, ConnStateData* httpserver_conn);
     /// Same as Start() but no master xaction info (AccessLogEntry) available.
     static void fwdStart(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *);
     /// time left to finish the whole forwarding process (which started at fwdStart)
@@ -105,9 +108,13 @@ public:
     /** return a ConnectionPointer to the current server connection (may or may not be open) */
     Comm::ConnectionPointer const & serverConnection() const { return serverConn; };
 
+    // Our code
+    ConnStateData* server_conn;
+
 private:
     // hidden for safer management of self; use static fwdStart
-    FwdState(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *, const AccessLogEntryPointer &alp);
+    // Our code
+    FwdState(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *, const AccessLogEntryPointer &alp, ConnStateData* httpserver_conn);
     void start(Pointer aSelf);
 
 #if STRICT_ORIGINAL_DST

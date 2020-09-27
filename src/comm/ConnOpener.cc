@@ -27,7 +27,8 @@
 #include <cerrno>
 
 /* Our code */
-#include "optimack/netfilter_queue.h"
+#include "client_side.h"
+#include "http/Stream.h"
 /* end */
 
 class CachePeer;
@@ -46,6 +47,22 @@ Comm::ConnOpener::ConnOpener(Comm::ConnectionPointer &c, AsyncCall::Pointer &han
 {
     debugs(5, 3, "will connect to " << c << " with " << ctimeout << " timeout");
 }
+
+/* Our code reload construct function*/
+Comm::ConnOpener::ConnOpener(Comm::ConnectionPointer &c, AsyncCall::Pointer &handler, time_t ctimeout, ConnStateData* server_conn) :
+    AsyncJob("Comm::ConnOpener"),
+    host_(NULL),
+    temporaryFd_(-1),
+    conn_(c),
+    callback_(handler),
+    totalTries_(0),
+    failRetries_(0),
+    deadline_(squid_curtime + static_cast<time_t>(ctimeout))
+{
+    server = server_conn;
+    debugs(5, 3, "will connect to " << c << " with " << ctimeout << " timeout");
+}
+/* end */
 
 Comm::ConnOpener::~ConnOpener()
 {
@@ -331,8 +348,8 @@ Comm::ConnOpener::connected()
     conn_->remote.toStr(remote_ip, 16);
     conn_->local.toStr(local_ip, 16);
     unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
-
-    open_duplicate_conns(remote_ip, local_ip, remote_port, local_port);
+    
+    server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port);
     /* end */ 
 
 

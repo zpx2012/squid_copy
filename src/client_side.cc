@@ -112,9 +112,6 @@
 #include "Store.h"
 #include "TimeOrTag.h"
 #include "tools.h"
-/** Our code **/
-#include "optimack/netfilter_queue.h"
-/** end **/
 
 #if USE_AUTH
 #include "auth/UserRequest.h"
@@ -2536,19 +2533,6 @@ httpAccept(const CommAcceptCbParams &params)
     // Socket is ready, setup the connection manager to start using it
     auto *srv = Http::NewServer(xact);
     AsyncJob::Start(srv); // usually async-calls readSomeData()
-
-    /** Our code **/
-    init();
-    if (setup_nfq((void*)srv) == -1) {
-        debugs(1, DBG_CRITICAL,"unable to setup netfilter_queue");
-        return;
-    }
-    nfq_stop = 0;
-    pthread_t nfq_thread;
-    if (pthread_create(&nfq_thread, NULL, nfq_loop, NULL) != 0){
-        debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
-    }
-    /** end **/
 
 }
 

@@ -163,9 +163,8 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 liboptim_la_LIBADD =
-am_liboptim_la_OBJECTS = netfilter_queue.lo checksum.lo hping2.lo \
-	sendtcp.lo socket.lo thr_pool.lo util.lo logging.lo \
-	waitpacket.lo
+am_liboptim_la_OBJECTS = Optimack.lo checksum.lo hping2.lo sendtcp.lo \
+	socket.lo thr_pool.lo util.lo logging.lo waitpacket.lo
 liboptim_la_OBJECTS = $(am_liboptim_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -186,11 +185,11 @@ am__v_at_1 =
 DEFAULT_INCLUDES = 
 depcomp = $(SHELL) $(top_srcdir)/cfgaux/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/checksum.Plo ./$(DEPDIR)/hping2.Plo \
-	./$(DEPDIR)/logging.Plo ./$(DEPDIR)/netfilter_queue.Plo \
-	./$(DEPDIR)/sendtcp.Plo ./$(DEPDIR)/socket.Plo \
-	./$(DEPDIR)/thr_pool.Plo ./$(DEPDIR)/util.Plo \
-	./$(DEPDIR)/waitpacket.Plo
+am__depfiles_remade = ./$(DEPDIR)/Optimack.Plo \
+	./$(DEPDIR)/checksum.Plo ./$(DEPDIR)/hping2.Plo \
+	./$(DEPDIR)/logging.Plo ./$(DEPDIR)/sendtcp.Plo \
+	./$(DEPDIR)/socket.Plo ./$(DEPDIR)/thr_pool.Plo \
+	./$(DEPDIR)/util.Plo ./$(DEPDIR)/waitpacket.Plo
 am__mv = mv -f
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
@@ -727,8 +726,8 @@ COMPAT_LIB = $(top_builddir)/compat/libcompatsquid.la $(LIBPROFILER)
 subst_perlshell = sed -e 's,[@]PERL[@],$(PERL),g' <$(srcdir)/$@.pl.in >$@ || ($(RM) -f $@ ; exit 1)
 noinst_LTLIBRARIES = liboptim.la
 liboptim_la_SOURCES = \
-	netfilter_queue.h \
-	netfilter_queue.cc \
+	Optimack.h \
+	Optimack.cc \
 	checksum.h \
 	checksum.cc \
 	hping2.cc \
@@ -809,10 +808,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Optimack.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/checksum.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hping2.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/logging.Plo@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/netfilter_queue.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sendtcp.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/socket.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thr_pool.Plo@am__quote@ # am--include-marker
@@ -1149,10 +1148,10 @@ clean-am: clean-checkPROGRAMS clean-generic clean-libtool \
 	clean-noinstLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
-		-rm -f ./$(DEPDIR)/checksum.Plo
+		-rm -f ./$(DEPDIR)/Optimack.Plo
+	-rm -f ./$(DEPDIR)/checksum.Plo
 	-rm -f ./$(DEPDIR)/hping2.Plo
 	-rm -f ./$(DEPDIR)/logging.Plo
-	-rm -f ./$(DEPDIR)/netfilter_queue.Plo
 	-rm -f ./$(DEPDIR)/sendtcp.Plo
 	-rm -f ./$(DEPDIR)/socket.Plo
 	-rm -f ./$(DEPDIR)/thr_pool.Plo
@@ -1203,10 +1202,10 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-		-rm -f ./$(DEPDIR)/checksum.Plo
+		-rm -f ./$(DEPDIR)/Optimack.Plo
+	-rm -f ./$(DEPDIR)/checksum.Plo
 	-rm -f ./$(DEPDIR)/hping2.Plo
 	-rm -f ./$(DEPDIR)/logging.Plo
-	-rm -f ./$(DEPDIR)/netfilter_queue.Plo
 	-rm -f ./$(DEPDIR)/sendtcp.Plo
 	-rm -f ./$(DEPDIR)/socket.Plo
 	-rm -f ./$(DEPDIR)/thr_pool.Plo
