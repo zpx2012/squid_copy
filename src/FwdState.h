@@ -113,8 +113,9 @@ public:
 
 private:
     // hidden for safer management of self; use static fwdStart
-    // Our code
-    FwdState(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *, const AccessLogEntryPointer &alp, ConnStateData* httpserver_conn);
+    // Our code added httpserver_conn
+    FwdState(const Comm::ConnectionPointer &client, StoreEntry *, HttpRequest *, const AccessLogEntryPointer &alp, 
+            ConnStateData* httpserver_conn);
     void start(Pointer aSelf);
 
 #if STRICT_ORIGINAL_DST

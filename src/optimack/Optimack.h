@@ -48,6 +48,7 @@ struct ack_thread {
     Optimack* obj;
 };
 
+// Thread wrapper
 void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);

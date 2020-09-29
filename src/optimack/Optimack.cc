@@ -97,14 +97,17 @@ pool_handler(void* arg)
 void* 
 optimistic_ack(void* arg)
 {
-    int id = ((struct ack_thread*)arg)->thread_id;
-    Optimack* obj = ((struct ack_thread*)arg)->obj;
+    struct ack_thread* ack_thr = (struct ack_thread*)arg;
+    int id = ack_thr->thread_id;
+    Optimack* obj = ack_thr->obj;
     struct subconn_info* conn = &(obj->subconn_infos[id]);
     unsigned int ack_step = conn->payload_len;
     unsigned int opa_seq_start = conn->opa_seq_start;
     unsigned int opa_ack_start = conn->opa_ack_start;
     unsigned int local_port = conn->local_port;
     unsigned int ack_pacing = conn->ack_pacing;
+
+    free(ack_thr);
 
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     char empty_payload[] = "";
@@ -115,7 +118,7 @@ optimistic_ack(void* arg)
     }
     // TODO: why 0???
     conn->optim_ack_stop = 0;
-    printf("S%d: optimistic ack ends\n", id);   
+    printf("S%d: optimistic ack ends\n", id);
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack ends");
     pthread_exit(NULL);
 }
@@ -266,6 +269,7 @@ Optimack::setup_nfq(void* data)
 int 
 Optimack::setup_nfqloop()
 {
+    // pass the Optimack obj
     if (pthread_create(&nfq_thread, NULL, nfq_loop, (void*)this) != 0) {
         debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
         return -1;
@@ -409,12 +413,10 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
         return 0;
     }
 
-
     unsigned short sport = ntohs(tcphdr->th_sport);
     unsigned short dport = ntohs(tcphdr->th_dport);
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
-
     
     //Incoming Packets
     if (!incoming) 
@@ -478,7 +480,6 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     //Outgoing Packets
     else        
     {
-
         // TODO: mutex?
         int subconn_i = -1;
         for (size_t i = 0; i < subconn_infos.size(); i++)
