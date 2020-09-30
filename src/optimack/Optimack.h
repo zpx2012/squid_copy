@@ -11,6 +11,8 @@
 #define LOGSIZE 1024
 // nfq
 #define NF_QUEUE_NUM 6
+#define NFQLENGTH 1024*200
+#define BUFLENGTH 4096
 
 class Optimack;
 
@@ -57,6 +59,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *
 class Optimack
 {
 public:
+    ~Optimack();
     void init();
     int setup_nfq(void* data);
     int setup_nfqloop();
@@ -91,6 +94,7 @@ public:
     // locals
     bool request_recved = false;
     const int MARK = 666;
+    int nfq_queue_num;
     
     thr_pool_t* pool;
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;

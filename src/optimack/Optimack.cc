@@ -39,6 +39,7 @@ nfq_loop(void *arg)
         else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 debugs(0, DBG_CRITICAL,"recv() ret " << rv << "errno " << errno);
+                printf("recv() ret %s errno %d\n", rv, errno);
             }
             usleep(100); //10000
         }
@@ -112,7 +113,7 @@ optimistic_ack(void* arg)
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     char empty_payload[] = "";
     printf("S%d: optimistic ack started\n", id);   
-    for (int k = 0; !conn->optim_ack_stop; k++){
+    for (int k = 0; !conn->optim_ack_stop; k++) {
         send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
         usleep(conn->ack_pacing);
     }
@@ -175,6 +176,24 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     return 0;
 }
 
+Optimack::~Optimack()
+{
+    // stop nfq_loop thread
+    nfq_stop = 1;
+    // stop the optimistic_ack thread
+    for (size_t i=0; i < subconn_infos.size(); i++)
+        // TODO: mutex?
+        subconn_infos[i].optim_ack_stop = 1;
+    teardown_nfq();
+    pthread_mutex_destroy(&mutex_seq_next_global);
+    pthread_mutex_destroy(&mutex_seq_gaps);
+    pthread_mutex_destroy(&mutex_subconn_infos);
+    pthread_mutex_destroy(&mutex_optim_ack_stop);
+    // TODO: clear iptables rules
+    // TODO: signaling would be the best way to synchronize thread
+    usleep(100);
+}
+
 void
 Optimack::init()
 {
@@ -215,7 +234,7 @@ Optimack::init()
     }
 }
 
-// TODO: the *data is not used
+// the *data is http1Server*
 int 
 Optimack::setup_nfq(void* data)
 {
@@ -238,8 +257,9 @@ Optimack::setup_nfq(void* data)
     }
 
     // set up a queue
-    debugs(0, DBG_CRITICAL,"binding this socket to queue " << NF_QUEUE_NUM);
-    g_nfq_qh = nfq_create_queue(g_nfq_h, NF_QUEUE_NUM, &cb, (void*)this);
+    nfq_queue_num = rand() % 32;
+    debugs(0, DBG_CRITICAL,"binding this socket to queue " << nfq_queue_num);
+    g_nfq_qh = nfq_create_queue(g_nfq_h, nfq_queue_num, &cb, (void*)this);
     if (!g_nfq_qh) {
         debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
         return -1;
@@ -252,8 +272,6 @@ Optimack::setup_nfq(void* data)
         return -1;
     }
 
-#define NFQLENGTH 1024*200
-#define BUFLENGTH 4096
     if (nfq_set_queue_maxlen(g_nfq_qh, NFQLENGTH) < 0) {
         debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
         return -1;
@@ -280,7 +298,7 @@ Optimack::setup_nfqloop()
 int 
 Optimack::teardown_nfq()
 {
-    debugs(0, DBG_CRITICAL,"unbinding from queue " << NF_QUEUE_NUM);
+    debugs(0, DBG_CRITICAL,"unbinding from queue " << nfq_queue_num);
     if (nfq_destroy_queue(g_nfq_qh) != 0) {
         debugs(0, DBG_CRITICAL,"error during nfq_destroy_queue()");
         return -1;
@@ -683,12 +701,12 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     debugs(11, 2, cmd << ret);
 
     memset(cmd, 0, 200); //TODO: iptables too broad??
-    sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, NF_QUEUE_NUM);
+    sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
     ret = system(cmd);
     debugs(11, 2, cmd << ret);
 
     memset(cmd, 0, 200);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, NF_QUEUE_NUM);
+    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
     ret = system(cmd);
     debugs(11, 2, cmd << ret);
  
@@ -720,7 +738,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         int seq = rand();
 
         memset(cmd, 0, 200); //TODO: iptables too broad??
-        sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port_new, NF_QUEUE_NUM);
+        sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port_new, nfq_queue_num);
         ret = system(cmd);
         debugs(11, 2, cmd << ret);
 
