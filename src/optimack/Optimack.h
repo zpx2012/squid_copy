@@ -6,9 +6,9 @@
 #include <vector>
 
 /** Our code **/
-#define ACKPACING 1000
-// TODO: cleanup()
+#define ACKPACING 2000
 #define LOGSIZE 1024
+#define IPTABLESLEN 128
 // nfq
 #define NF_QUEUE_NUM 6
 #define NFQLENGTH 1024*200
@@ -66,7 +66,7 @@ public:
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, 
             unsigned short local_port);
     int teardown_nfq();
-
+    int exec_iptables(char action, char* rule);
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
     int g_nfq_fd;
@@ -90,6 +90,8 @@ public:
     unsigned short request_len;
     
     std::vector<struct subconn_info> subconn_infos;
+
+    std::vector<char*> iptables_rules;
     
     // locals
     bool request_recved = false;

@@ -25,7 +25,7 @@ nfq_loop(void *arg)
 {
     int rv;
     char buf[65536];
-    void * placeholder = 0;
+    //void * placeholder = 0;
 
     Optimack* obj = (Optimack*)arg;
     while (!(obj->nfq_stop)) {
@@ -44,7 +44,8 @@ nfq_loop(void *arg)
             usleep(100); //10000
         }
     }
-    return placeholder;
+    pthread_exit(NULL);
+    //return placeholder;
 }
 
 void* 
@@ -180,18 +181,26 @@ Optimack::~Optimack()
 {
     // stop nfq_loop thread
     nfq_stop = 1;
+    pthread_join(nfq_thread, NULL);
+    printf("NFQ %d nfq_thread exited\n", nfq_queue_num);
     // stop the optimistic_ack thread
     for (size_t i=0; i < subconn_infos.size(); i++)
         // TODO: mutex?
         subconn_infos[i].optim_ack_stop = 1;
+    for (size_t i=0; i < subconn_infos.size(); i++)
+        pthread_join(subconn_infos[i].thread, NULL);
+    printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
+    // clear thr_pool
+    thr_pool_destroy(pool);
+
     teardown_nfq();
     pthread_mutex_destroy(&mutex_seq_next_global);
     pthread_mutex_destroy(&mutex_seq_gaps);
     pthread_mutex_destroy(&mutex_subconn_infos);
     pthread_mutex_destroy(&mutex_optim_ack_stop);
     // TODO: clear iptables rules
-    // TODO: signaling would be the best way to synchronize thread
-    usleep(100);
+    for (size_t i=0; i<iptables_rules.size(); i++)
+        exec_iptables('D', iptables_rules[i]);
 }
 
 void
@@ -320,6 +329,14 @@ Optimack::teardown_nfq()
     return 0;
 }
 
+int
+Optimack::exec_iptables(char action, char* rule)
+{
+    char cmd[IPTABLESLEN+32];
+    sprintf(cmd, "sudo iptables -%c %s", action, rule);
+    return system(cmd);
+}
+
 int 
 Optimack::find_seq_gaps(unsigned int seq)
 {
@@ -387,8 +404,7 @@ Optimack::start_optim_ack(int id, unsigned int opa_ack_start, unsigned int opa_s
     ack_thr->thread_id = id;
     ack_thr->obj = this;
 
-    pthread_t thread;
-    if (pthread_create(&thread, NULL, optimistic_ack, (void *)ack_thr) != 0) {
+    if (pthread_create(&(subconn_infos[id].thread), NULL, optimistic_ack, (void *)ack_thr) != 0) {
         //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
         printf("S%d: Fail to create optimistic_ack thread\n", id);
         return -1;
@@ -436,7 +452,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
     
-    //Incoming Packets
+    // Outgoing Packets
     if (!incoming) 
     {   
         if (subconn_infos[0].local_port == sport)
@@ -454,19 +470,19 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         float off_packet_num = (seq_next_global-ack_rel)/1460.0;
                         printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
                         
-                        if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
-                            pthread_mutex_lock(&mutex_subconn_infos);
-                            if (ack_rel > 4*last_speedup_ack_rel){
-                                last_speedup_ack_rel = ack_rel;
-                                printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
-                                for (size_t i = 0; i < subconn_infos.size(); ++i)
-                                {
-                                    if(subconn_infos[i].ack_pacing > 100)
-                                        subconn_infos[i].ack_pacing -= 100;
-                                }
-                            }
-                            pthread_mutex_unlock(&mutex_subconn_infos);
-                        }
+                        //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
+                            //pthread_mutex_lock(&mutex_subconn_infos);
+                            //if (ack_rel > 4*last_speedup_ack_rel){
+                                //last_speedup_ack_rel = ack_rel;
+                                //printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
+                                //for (size_t i = 0; i < subconn_infos.size(); ++i)
+                                //{
+                                    //if(subconn_infos[i].ack_pacing > 100)
+                                        //subconn_infos[i].ack_pacing -= 100;
+                                //}
+                            //}
+                            //pthread_mutex_unlock(&mutex_subconn_infos);
+                        //}
                         return -1;
                     }
 
@@ -495,7 +511,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
         }
     }
 
-    //Outgoing Packets
+    // Incoming Packets
     else        
     {
         // TODO: mutex?
@@ -692,22 +708,26 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 void 
 Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port)
 {
-    char cmd[200];
+    char* cmd;
     int ret;
 
-    memset(cmd, 0, 200);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
-    ret = system(cmd);
+    cmd = (char*) malloc(IPTABLESLEN);
+    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
 
-    memset(cmd, 0, 200); //TODO: iptables too broad??
-    sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
-    ret = system(cmd);
+    //TODO: iptables too broad??
+    cmd = (char*) malloc(IPTABLESLEN);
+    sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
 
-    memset(cmd, 0, 200);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
-    ret = system(cmd);
+    cmd = (char*) malloc(IPTABLESLEN);
+    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
  
     // memset(cmd, 0, 200);
@@ -737,9 +757,11 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         unsigned short local_port_new = rand() % 20000 + 30000; 
         int seq = rand();
 
-        memset(cmd, 0, 200); //TODO: iptables too broad??
-        sprintf(cmd, "sudo iptables -A INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port_new, nfq_queue_num);
-        ret = system(cmd);
+        //TODO: iptables too broad??
+        cmd = (char*) malloc(IPTABLESLEN);
+        sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port_new, nfq_queue_num);
+        ret = exec_iptables('A', cmd);
+        iptables_rules.push_back(cmd);
         debugs(11, 2, cmd << ret);
 
         send_SYN(remote_ip, local_ip, remote_port, local_port_new, empty_payload, 0, seq);
