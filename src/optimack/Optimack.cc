@@ -604,8 +604,6 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     for (size_t i = 0; i < subconn_infos.size(); i++) {
                         send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
                         subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
-                        start_optim_ack(i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, 1460, 0); //TODO: read MTU
-                        printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, i);
                     }
                     //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
                 }
@@ -624,6 +622,17 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     printf("P%d-Squid-in: server ack %d\n", thr_data->pkt_id, ack);
                     return -1;
                 }
+
+                if(!subconn_infos[subconn_i].payload_len && subconn_infos[subconn_id].optim_ack_stop){
+                    pthread_mutex_lock(&subconn_infos[subconn_id].mutex_opa);
+                    if(!subconn_infos[subconn_i].payload_len && subconn_infos[subconn_id].optim_ack_stop){
+                        subconn_infos[subconn_i].payload_len = payload_len;
+                        start_optim_ack(i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, payload_len, 0); //TODO: read MTU
+                        printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, i); 
+                    }
+                    pthread_mutex_unlock(&subconn_infos[subconn_id].mutex_opa);
+                }
+
 
                 if (seq_next_global < seq_rel + payload_len)
                     seq_next_global = seq_rel + payload_len;
