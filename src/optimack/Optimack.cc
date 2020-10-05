@@ -627,7 +627,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_lock(&subconn_infos[subconn_i].mutex_opa);
                     if(!subconn_infos[subconn_i].payload_len && subconn_infos[subconn_i].optim_ack_stop){
                         subconn_infos[subconn_i].payload_len = payload_len;
-                        start_optim_ack(subconn_i, subconn_infos[i].ini_seq_rem + 1, subconn_infos[i].cur_seq_loc, payload_len, 0); //TODO: read MTU
+                        start_optim_ack(subconn_i, subconn_infos[subconn_i].ini_seq_rem + 1, subconn_infos[subconn_i].cur_seq_loc, payload_len, 0); //TODO: read MTU
                         printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, i); 
                     }
                     pthread_mutex_unlock(&subconn_infos[subconn_i].mutex_opa);
