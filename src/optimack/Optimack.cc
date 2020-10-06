@@ -452,86 +452,82 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
     
+        // TODO: mutex?
+    int subconn_i = -1;
+    for (size_t i = 0; i < subconn_infos.size(); i++)
+        if (subconn_infos[i].local_port == dport) {
+            subconn_i = (int)i;
+            break;
+        }
+
+    if (subconn_i == -1) {
+        sprintf(log, "P%d: ERROR - Subconn not found: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        printf("%s\n", log);
+        return -1;
+    }
+
+    // print only if we have the subconn_i
+    sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+    printf("%s\n", log);
+    //debugs(1, DBG_CRITICAL, log);
+
     // Outgoing Packets
     if (!incoming) 
     {   
-        if (subconn_infos[0].local_port == sport)
-        { 
-            switch (tcphdr->th_flags) {
-                case TH_ACK:
-                case TH_ACK | TH_PUSH:
-                case TH_ACK | TH_URG:
-                {
-                    if (!payload_len){
-                        int win_size = ntohs(tcphdr->th_win);
-                        if(win_size > max_win_size)
-                            max_win_size = win_size;
-                        int ack_rel = ack - subconn_infos[0].ini_seq_rem;
-                        float off_packet_num = (seq_next_global-ack_rel)/1460.0;
-                        printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
-                        
-                        //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
-                            //pthread_mutex_lock(&mutex_subconn_infos);
-                            //if (ack_rel > 4*last_speedup_ack_rel){
-                                //last_speedup_ack_rel = ack_rel;
-                                //printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
-                                //for (size_t i = 0; i < subconn_infos.size(); ++i)
-                                //{
-                                    //if(subconn_infos[i].ack_pacing > 100)
-                                        //subconn_infos[i].ack_pacing -= 100;
-                                //}
+        // Todo: change [0] to [subconn_i]
+        switch (tcphdr->th_flags) {
+            case TH_ACK:
+            case TH_ACK | TH_PUSH:
+            case TH_ACK | TH_URG:
+            {
+                if (!payload_len){
+                    int win_size = ntohs(tcphdr->th_win);
+                    if(win_size > max_win_size)
+                        max_win_size = win_size;
+                    int ack_rel = ack - subconn_infos[0].ini_seq_rem;
+                    float off_packet_num = (seq_next_global-ack_rel)/1460.0;
+                    printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
+                    
+                    //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
+                        //pthread_mutex_lock(&mutex_subconn_infos);
+                        //if (ack_rel > 4*last_speedup_ack_rel){
+                            //last_speedup_ack_rel = ack_rel;
+                            //printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
+                            //for (size_t i = 0; i < subconn_infos.size(); ++i)
+                            //{
+                                //if(subconn_infos[i].ack_pacing > 100)
+                                    //subconn_infos[i].ack_pacing -= 100;
                             //}
-                            //pthread_mutex_unlock(&mutex_subconn_infos);
                         //}
-                        return -1;
-                    }
+                        //pthread_mutex_unlock(&mutex_subconn_infos);
+                    //}
+                    return -1;
+                }
 
-                    subconn_infos[0].ini_seq_rem = ack - 1;
-                    subconn_infos[0].cur_seq_rem = ack;
-                    subconn_infos[0].ini_seq_loc = seq - 1;
-                    subconn_infos[0].cur_seq_loc = seq;
+                subconn_infos[0].ini_seq_rem = ack - 1;
+                subconn_infos[0].cur_seq_rem = ack;
+                subconn_infos[0].ini_seq_loc = seq - 1;
+                subconn_infos[0].cur_seq_loc = seq;
 
+                //squid connection with payload -> copy request, our connection -> only update seq/ack 
+                if (subconn_i == 0){
                     memset(request, 0, 1000);
                     memcpy(request, payload, payload_len);
                     request_len = payload_len;
                     request_recved = true;
                     printf("P%d-Squid-out: request sent to server %d\n", thr_data->pkt_id, payload_len);
-                    return -1;
-                    break;
                 }
-                default:
-                    return 0;
+                return -1;
+                break;
             }
-        }
-        else
-        {
-            sprintf(log, "P%d: ERROR - Incoming packet not from Squid: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-            printf("%s\n", log);
-            return 0;
+            default:
+                return 0;
         }
     }
 
     // Incoming Packets
     else        
     {
-        // TODO: mutex?
-        int subconn_i = -1;
-        for (size_t i = 0; i < subconn_infos.size(); i++)
-            if (subconn_infos[i].local_port == dport) {
-                subconn_i = (int)i;
-                break;
-            }
-
-        if (subconn_i == -1) {
-            sprintf(log, "P%d: ERROR - Subconn not found: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-            printf("%s\n", log);
-            return -1;
-        }
-
-        // print only if we have the subconn_i
-        sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-        printf("%s\n", log);
-        //debugs(1, DBG_CRITICAL, log);
 
         unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
         switch (tcphdr->th_flags) {
