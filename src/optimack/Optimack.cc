@@ -184,9 +184,10 @@ Optimack::~Optimack()
     pthread_join(nfq_thread, NULL);
     printf("NFQ %d nfq_thread exited\n", nfq_queue_num);
     // stop the optimistic_ack thread
-    for (size_t i=0; i < subconn_infos.size(); i++)
+    for (size_t i=0; i < subconn_infos.size(); i++) {
         // TODO: mutex?
         subconn_infos[i].optim_ack_stop = 1;
+    }
     for (size_t i=0; i < subconn_infos.size(); i++)
         pthread_join(subconn_infos[i].thread, NULL);
     printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
@@ -199,8 +200,10 @@ Optimack::~Optimack()
     pthread_mutex_destroy(&mutex_subconn_infos);
     pthread_mutex_destroy(&mutex_optim_ack_stop);
     // TODO: clear iptables rules
-    for (size_t i=0; i<iptables_rules.size(); i++)
+    for (size_t i=0; i<iptables_rules.size(); i++) {
         exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+    }
 }
 
 void
@@ -243,9 +246,8 @@ Optimack::init()
     }
 }
 
-// the *data is http1Server*
 int 
-Optimack::setup_nfq(void* data)
+Optimack::setup_nfq(unsigned short id)
 {
     g_nfq_h = nfq_open();
     if (!g_nfq_h) {
@@ -266,7 +268,7 @@ Optimack::setup_nfq(void* data)
     }
 
     // set up a queue
-    nfq_queue_num = rand() % 32;
+    nfq_queue_num = id;
     debugs(0, DBG_CRITICAL,"binding this socket to queue " << nfq_queue_num);
     g_nfq_qh = nfq_create_queue(g_nfq_h, nfq_queue_num, &cb, (void*)this);
     if (!g_nfq_qh) {
@@ -423,112 +425,126 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
     unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
-
-    // check remote ip, local ip
-    bool incoming = true;
-    char *sip, *dip;
-    if (g_remote_ip_int == iphdr->saddr){
-        incoming = true;
-        sip = g_remote_ip;
-        dip = g_local_ip;
-    }
-    else if (g_remote_ip_int == iphdr->daddr){
-        incoming = false;
-        sip = g_local_ip;
-        dip = g_remote_ip;
-    }
-    else 
-    {
-        char sip_[16], dip_[16];
-        ip2str(iphdr->saddr, sip_);
-        ip2str(iphdr->daddr, dip_);
-        sprintf(log, "P%d: ERROR - IP not found: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip_, ntohs(tcphdr->th_sport), dip_, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        printf("%s\n", log);
-        return 0;
-    }
-
     unsigned short sport = ntohs(tcphdr->th_sport);
     unsigned short dport = ntohs(tcphdr->th_dport);
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
-    
-        // TODO: mutex?
-    int subconn_i = -1;
-    for (size_t i = 0; i < subconn_infos.size(); i++)
-        if (subconn_infos[i].local_port == dport) {
-            subconn_i = (int)i;
-            break;
-        }
 
+    // check remote ip, local ip
+    // and set key_port
+    bool incoming = true;
+    int subconn_i = -1;
+    char *sip, *dip;
+    if (g_remote_ip_int == iphdr->saddr) {
+        incoming = true;
+        sip = g_remote_ip;
+        dip = g_local_ip;
+        pthread_mutex_lock(&mutex_subconn_infos);
+        for (size_t i = 0; i < subconn_infos.size(); i++)
+            if (subconn_infos[i].local_port == dport) {
+                subconn_i = (int)i;
+                break;
+            }
+        pthread_mutex_unlock(&mutex_subconn_infos);
+    }
+    else if (g_remote_ip_int == iphdr->daddr) {
+        incoming = false;
+        sip = g_local_ip;
+        dip = g_remote_ip;
+        pthread_mutex_lock(&mutex_subconn_infos);
+        for (size_t i = 0; i < subconn_infos.size(); i++)
+            if (subconn_infos[i].local_port == sport) {
+                subconn_i = (int)i;
+                break;
+            }
+        pthread_mutex_unlock(&mutex_subconn_infos);
+    }
     if (subconn_i == -1) {
-        sprintf(log, "P%d: ERROR - Subconn not found: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        char sip_[16], dip_[16];
+        ip2str(iphdr->saddr, sip_);
+        ip2str(iphdr->daddr, dip_);
+        sprintf(log, "P%d: ERROR - IP or Subconn not found: %s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", thr_data->pkt_id, sip_, ntohs(tcphdr->th_sport), dip_, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
         printf("%s\n", log);
         return -1;
     }
 
-    // print only if we have the subconn_i
-    sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
-    printf("%s\n", log);
-    //debugs(1, DBG_CRITICAL, log);
-
     // Outgoing Packets
     if (!incoming) 
     {   
-        // Todo: change [0] to [subconn_i]
         switch (tcphdr->th_flags) {
             case TH_ACK:
             case TH_ACK | TH_PUSH:
             case TH_ACK | TH_URG:
-            {
-                if (!payload_len){
-                    int win_size = ntohs(tcphdr->th_win);
-                    if(win_size > max_win_size)
-                        max_win_size = win_size;
-                    int ack_rel = ack - subconn_infos[0].ini_seq_rem;
-                    float off_packet_num = (seq_next_global-ack_rel)/1460.0;
-                    printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
-                    
-                    //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
-                        //pthread_mutex_lock(&mutex_subconn_infos);
-                        //if (ack_rel > 4*last_speedup_ack_rel){
+                {
+                    // init seq and ack if haven't
+                    if (!subconn_infos[subconn_i].seq_init) {
+                        subconn_infos[subconn_i].ini_seq_rem = ack - 1;
+                        subconn_infos[subconn_i].ini_seq_loc = seq - 1;
+                        subconn_infos[subconn_i].seq_init = true;
+                        printf("Subconn %d seq_init done\n", subconn_i);
+                    }
+                    // TODO: clear iptables or always update
+                    subconn_infos[subconn_i].cur_seq_rem = ack;
+                    subconn_infos[subconn_i].cur_seq_loc = seq;
+
+                    if (subconn_i == 0) {
+                        if (!payload_len) {
+                            int win_size = ntohs(tcphdr->th_win);
+                            if(win_size > max_win_size)
+                                max_win_size = win_size;
+                            int ack_rel = ack - subconn_infos[0].ini_seq_rem;
+                            float off_packet_num = (seq_next_global-ack_rel)/1460.0;
+                            printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
+
+                            //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
+                            //pthread_mutex_lock(&mutex_subconn_infos);
+                            //if (ack_rel > 4*last_speedup_ack_rel){
                             //last_speedup_ack_rel = ack_rel;
                             //printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
                             //for (size_t i = 0; i < subconn_infos.size(); ++i)
                             //{
-                                //if(subconn_infos[i].ack_pacing > 100)
-                                    //subconn_infos[i].ack_pacing -= 100;
+                            //if(subconn_infos[i].ack_pacing > 100)
+                            //subconn_infos[i].ack_pacing -= 100;
                             //}
-                        //}
-                        //pthread_mutex_unlock(&mutex_subconn_infos);
-                    //}
-                    return -1;
+                            //}
+                            //pthread_mutex_unlock(&mutex_subconn_infos);
+                            //}
+                            return -1;
+                        }
+                        // if payload_len != 0, assume it's request
+                        // squid connection with payload -> copy request, our connection -> only update seq/ack 
+                        memset(request, 0, 1000);
+                        memcpy(request, payload, payload_len);
+                        request_len = payload_len;
+                        request_recved = true;
+                        printf("P%d-Squid-out: request sent to server %d\n", thr_data->pkt_id, payload_len);
+                        // check if we can send request now
+                        pthread_mutex_lock(&mutex_subconn_infos);
+                        for (size_t i=1; i<subconn_infos.size(); i++)
+                            if (subconn_infos[i].seq_init == false) {
+                                pthread_mutex_unlock(&mutex_subconn_infos);
+                                return -1;
+                            }
+                        // all done, start to send request
+                        for (size_t i=0; i<subconn_infos.size(); i++) {
+                            send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
+                            subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
+                        }
+                        pthread_mutex_unlock(&mutex_subconn_infos);
+                        return -1;
+                    }
+                    break;
                 }
-
-                subconn_infos[0].ini_seq_rem = ack - 1;
-                subconn_infos[0].cur_seq_rem = ack;
-                subconn_infos[0].ini_seq_loc = seq - 1;
-                subconn_infos[0].cur_seq_loc = seq;
-
-                //squid connection with payload -> copy request, our connection -> only update seq/ack 
-                if (subconn_i == 0){
-                    memset(request, 0, 1000);
-                    memcpy(request, payload, payload_len);
-                    request_len = payload_len;
-                    request_recved = true;
-                    printf("P%d-Squid-out: request sent to server %d\n", thr_data->pkt_id, payload_len);
-                }
-                return -1;
-                break;
-            }
             default:
                 return 0;
         }
     }
-
     // Incoming Packets
     else        
     {
-
+        sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+        printf("%s\n", log);
+        //debugs(1, DBG_CRITICAL, log);
         unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
         switch (tcphdr->th_flags) {
     /*
@@ -568,47 +584,47 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             // }
 
 
-            case TH_SYN | TH_ACK:
-            {
-                // if server -> squid, init remote seq for squid
-                if(!subconn_i) {
-                    if (subconn_infos.size() > 0)
-                        subconn_infos[0].ini_seq_rem = seq;
-                    return 0;
-                }
+            //case TH_SYN | TH_ACK:
+            //{
+                //// if server -> squid, init remote seq for squid
+                //if(!subconn_i) {
+                    //if (subconn_infos.size() > 0)
+                        //subconn_infos[0].ini_seq_rem = seq;
+                    //return 0;
+                //}
 
-                char empty_payload[] = "";
-                send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
-                subconn_infos[subconn_i].ini_seq_rem = subconn_infos[subconn_i].cur_seq_rem = seq; //unknown
-                //debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
+                //char empty_payload[] = "";
+                //send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
+                //subconn_infos[subconn_i].ini_seq_rem = subconn_infos[subconn_i].cur_seq_rem = seq; //unknown
+                ////debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
 
-                pthread_mutex_lock(&mutex_subconn_infos);
-                subconn_infos[subconn_i].ack_sent = 1;  
+                //pthread_mutex_lock(&mutex_subconn_infos);
+                //subconn_infos[subconn_i].ack_sent = 1;
 
-                if(!request_recved) {
-                    pthread_mutex_unlock(&mutex_subconn_infos);
-                    return -1;
-                }
+                //if(!request_recved) {
+                    //pthread_mutex_unlock(&mutex_subconn_infos);
+                    //return -1;
+                //}
 
-                //check if all subconns receive syn/ack        
-                size_t i;
-                for (i = 0; i < subconn_infos.size(); i++)
-                    if (!subconn_infos[i].ack_sent) {
-                        break;
-                    }
-                if (i == subconn_infos.size()) {
-                    for (size_t i = 0; i < subconn_infos.size(); i++) {
-                        send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
-                        subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
-                    }
-                    //debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
-                }
-                pthread_mutex_unlock(&mutex_subconn_infos);
+                ////check if all subconns receive syn/ack        
+                //size_t i;
+                //for (i = 0; i < subconn_infos.size(); i++)
+                    //if (!subconn_infos[i].ack_sent) {
+                        //break;
+                    //}
+                //if (i == subconn_infos.size()) {
+                    //for (size_t i = 0; i < subconn_infos.size(); i++) {
+                        //send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
+                        //subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
+                    //}
+                    ////debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
+                //}
+                //pthread_mutex_unlock(&mutex_subconn_infos);
 
 
-                return -1;
-                break;
-            }
+                //return -1;
+                //break;
+            //}
 
             case TH_ACK:
             case TH_ACK | TH_PUSH:
@@ -709,13 +725,13 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     }
 }
 
-
 void 
 Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port)
 {
     char* cmd;
     int ret;
 
+    // if marked, let through
     cmd = (char*) malloc(IPTABLESLEN);
     sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
     ret = exec_iptables('A', cmd);
@@ -735,21 +751,17 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
  
-    // memset(cmd, 0, 200);
-    // sprintf(cmd, "sudo iptables -A OUTPUT -t raw -p tcp -d %s --dport %u --tcp-flags RST,ACK RST -j DROP", remote_ip, remote_port);
-    // ret = system(cmd);
-    // debugs(11, 2, cmd << ret);
-
     strncpy(g_local_ip, local_ip, 16); //TODO: change position
     strncpy(g_remote_ip, remote_ip, 16);
     inet_pton(AF_INET, local_ip, &g_local_ip_int);
     inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
     g_remote_port = remote_port;
 
-    // pthread_mutex_lock(&mutex_subconn_infos); //TODO: how to deal with conns by other applications?
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // TODO: how to deal with conns by other applications?
     struct subconn_info squid_conn;
     memset(&squid_conn, 0, sizeof(struct subconn_info));
-    squid_conn.local_port = local_port;//No nfq callback will interfere because iptable rules haven't been added
+    squid_conn.local_port = local_port;
     squid_conn.ack_pacing = ACKPACING;
     squid_conn.ack_sent = 1; //Assume squid will send ACK
     squid_conn.optim_ack_stop = 1;
@@ -757,33 +769,73 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    char empty_payload[] = "";
-    for (int i = 1; i <= 7; i++){
-        unsigned short local_port_new = rand() % 20000 + 30000; 
-        int seq = rand();
-
-        //TODO: iptables too broad??
-        cmd = (char*) malloc(IPTABLESLEN);
-        sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port_new, nfq_queue_num);
-        ret = exec_iptables('A', cmd);
-        iptables_rules.push_back(cmd);
-        debugs(11, 2, cmd << ret);
-
-        send_SYN(remote_ip, local_ip, remote_port, local_port_new, empty_payload, 0, seq);
-        debugs(1, DBG_IMPORTANT, "Subconn " << i << ": Sent SYN");
-
+    for (int i = 1; i <= 7; i++) {
         // pthread_mutex_lock(&mutex_subconn_infos);
         struct subconn_info new_subconn;
         memset(&new_subconn, 0, sizeof(struct subconn_info));
-        new_subconn.local_port = local_port_new;//No nfq callback will interfere because iptable rules haven't been added
-        new_subconn.ini_seq_loc = new_subconn.cur_seq_loc = seq;
+        //new_subconn.local_port = local_port_new;
+        //new_subconn.ini_seq_loc = new_subconn.cur_seq_loc = seq;
         new_subconn.win_size = 29200*128;
         new_subconn.ack_pacing = ACKPACING;
         new_subconn.ack_sent = 0;
         new_subconn.optim_ack_stop = 1;
         new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+        new_subconn.seq_init = false;
+        // pthread_mutex_unlock(&mutex_subconn_infos);
+
+        struct sockaddr_in server_addr, my_addr;
+
+        // Open socket
+        if ((new_subconn.sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		    perror("Can't open stream socket.");
+            break;
+        }
+
+        // Set server_addr
+        bzero(&server_addr, sizeof(server_addr));
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_addr.s_addr = inet_addr(g_remote_ip);
+        server_addr.sin_port = htons(g_remote_port);
+        
+        // Connect to server
+        if (connect(new_subconn.sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            perror("Connect server error");
+            close(new_subconn.sockfd);
+            break;
+        }
+
+        // Get my port
+        socklen_t len = sizeof(my_addr);
+        bzero(&my_addr, len);
+        if (getsockname(new_subconn.sockfd, (struct sockaddr*)&my_addr, &len) < 0) {
+            perror("getsockname error");
+            close(new_subconn.sockfd);
+            break;
+        }
+        new_subconn.local_port = ntohs(my_addr.sin_port);
         subconn_infos.push_back(new_subconn);
-        // pthread_mutex_unlock(&mutex_subconn_infos);                
+
+        //TODO: iptables too broad??
+        cmd = (char*) malloc(IPTABLESLEN);
+        sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, nfq_queue_num);
+        ret = exec_iptables('A', cmd);
+        iptables_rules.push_back(cmd);
+        debugs(11, 2, cmd << ret);
+
+        //TODO: iptables too broad??
+        cmd = (char*) malloc(IPTABLESLEN);
+        sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, nfq_queue_num);
+        ret = exec_iptables('A', cmd);
+        iptables_rules.push_back(cmd);
+        debugs(11, 2, cmd << ret);
+
+        // probe seq and ack
+        // leave the INPUT rule cleanup to process_tcp_packet
+        char dummy_buffer[] = "Hello";
+        send(new_subconn.sockfd, dummy_buffer, 5, 0);
+
+        //send_SYN(remote_ip, local_ip, remote_port, local_port_new, empty_payload, 0, seq);
+        //debugs(1, DBG_IMPORTANT, "Subconn " << i << ": Sent SYN");
     }
 }
 

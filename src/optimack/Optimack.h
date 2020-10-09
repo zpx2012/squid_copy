@@ -18,12 +18,14 @@ class Optimack;
 
 struct subconn_info
 {
+    int sockfd;
     unsigned short local_port;
     unsigned int ini_seq_rem;  //remote sequence number
     unsigned int ini_seq_loc;  //local sequence number
     unsigned int cur_seq_rem;
     unsigned int cur_seq_loc;
     short ack_sent;
+    bool seq_init;
 
     pthread_t thread;
     pthread_mutex_t mutex_opa;
@@ -61,7 +63,7 @@ class Optimack
 public:
     ~Optimack();
     void init();
-    int setup_nfq(void* data);
+    int setup_nfq(unsigned short id);
     int setup_nfqloop();
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, 
             unsigned short local_port);
