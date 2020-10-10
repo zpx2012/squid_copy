@@ -131,7 +131,7 @@ optimistic_ack(void* arg)
     unsigned int last_speedup_ack = 0;
     for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
         send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start);
-        if(conn->cur_seq_rem > 5000000 && k-last_speedup_ack > 1460*200 && conn->cur_seq_rem >= k ){
+        if(conn->cur_seq_rem-opa_ack_start > 5000000 && k-last_speedup_ack > 1460*200 && conn->cur_seq_rem >= k ){
             speedup_optimack_by_ack_step(conn, id, 100);
             last_speedup_ack = k;
         }
