@@ -107,7 +107,7 @@ void speedup_optimack_by_ack_interval(struct subconn_info* conn, int id, int off
 void speedup_optimack_by_ack_step(struct subconn_info* conn, int id, int offset)
 {
     conn->payload_len += offset;
-    printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->ack_step);
+    printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->payload_len);
 }
 
 void* 
