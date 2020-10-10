@@ -198,31 +198,31 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
 
 Optimack::~Optimack()
 {
+    // clear iptables rules
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+    }
     // stop nfq_loop thread
     nfq_stop = 1;
     pthread_join(nfq_thread, NULL);
     printf("NFQ %d nfq_thread exited\n", nfq_queue_num);
-    // stop the optimistic_ack thread
+    // clear thr_pool
+    thr_pool_destroy(pool);
+    // stop the optimistic_ack thread and close fd
     for (size_t i=0; i < subconn_infos.size(); i++) {
         // TODO: mutex?
         subconn_infos[i].optim_ack_stop = 1;
-    }
-    for (size_t i=0; i < subconn_infos.size(); i++)
         pthread_join(subconn_infos[i].thread, NULL);
+        close(subconn_infos[i].sockfd);
+    }
     printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
-    // clear thr_pool
-    thr_pool_destroy(pool);
 
     teardown_nfq();
     pthread_mutex_destroy(&mutex_seq_next_global);
     pthread_mutex_destroy(&mutex_seq_gaps);
     pthread_mutex_destroy(&mutex_subconn_infos);
     pthread_mutex_destroy(&mutex_optim_ack_stop);
-    // TODO: clear iptables rules
-    for (size_t i=0; i<iptables_rules.size(); i++) {
-        exec_iptables('D', iptables_rules[i]);
-        free(iptables_rules[i]);
-    }
 }
 
 void
@@ -501,6 +501,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         subconn_infos[subconn_i].ini_seq_loc = seq - 1;
                         subconn_infos[subconn_i].seq_init = true;
                         printf("Subconn %d seq_init done\n", subconn_i);
+                        // reply to our send
+                        char empty_payload[] = "";
+                        send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
                     }
                     // TODO: clear iptables or always update
                     // subconn_infos[subconn_i].cur_seq_rem = ack;
@@ -650,7 +653,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
             {
                 if (!payload_len) {
-                    printf("P%d-Squid-in: server ack %d\n", thr_data->pkt_id, ack);
+                    printf("P%d-S%d-in: server or our ack %d\n", thr_data->pkt_id, subconn_i, ack);
                     return -1;
                 }
 
