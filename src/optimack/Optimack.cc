@@ -96,6 +96,20 @@ pool_handler(void* arg)
     return NULL;
 }
 
+void speedup_optimack_by_ack_interval(struct subconn_info* conn, int id, int offset)
+{
+    if(conn->ack_pacing - offset > 10){
+        con->ack_pacing -= offset;
+        printf("S%d: speed up by ack_interval by %d to %d!\n", id, offset, con->ack_pacing);
+    }
+}
+
+void speedup_optimack_by_ack_step(struct subconn_info* conn, int id, int offset)
+{
+    con->payload_len += offset;
+    printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, con->ack_step);
+}
+
 void* 
 optimistic_ack(void* arg)
 {
@@ -114,8 +128,10 @@ optimistic_ack(void* arg)
     //debugs(1, DBG_CRITICAL, "S" << id << ": Optim ack starts");
     char empty_payload[] = "";
     printf("S%d: optimistic ack started\n", id);   
-    for (int k = 0; !conn->optim_ack_stop; k++) {
-        send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, opa_ack_start+k*ack_step, opa_seq_start);
+    for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
+        send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start);
+        if(conn->cur_seq_rem > 5000000 && conn->cur_seq_rem >= k)
+            speedup_optimack_by_ack_step(conn, id, 100);
         usleep(conn->ack_pacing);
     }
     // TODO: why 0???
@@ -645,6 +661,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn_infos[subconn_i].mutex_opa);
                 }
 
+                if(subconn_infos[subconn_i].cur_seq_rem < seq_rel)
+                    subconn_infos[subconn_i].cur_seq_rem = seq_rel;
 
                 if (seq_next_global < seq_rel + payload_len)
                     seq_next_global = seq_rel + payload_len;
