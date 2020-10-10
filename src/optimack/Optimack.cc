@@ -503,8 +503,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         printf("Subconn %d seq_init done\n", subconn_i);
                     }
                     // TODO: clear iptables or always update
-                    subconn_infos[subconn_i].cur_seq_rem = ack;
-                    subconn_infos[subconn_i].cur_seq_loc = seq;
+                    // subconn_infos[subconn_i].cur_seq_rem = ack;
+                    // subconn_infos[subconn_i].cur_seq_loc = seq;
 
                     if (subconn_i == 0) {
                         if (!payload_len) {
@@ -664,8 +664,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn_infos[subconn_i].mutex_opa);
                 }
 
-                if(subconn_infos[subconn_i].cur_seq_rem < seq_rel)
-                    subconn_infos[subconn_i].cur_seq_rem = seq_rel;
+                if(subconn_infos[subconn_i].cur_seq_rem < seq)
+                    subconn_infos[subconn_i].cur_seq_rem = seq;
 
                 if (seq_next_global < seq_rel + payload_len)
                     seq_next_global = seq_rel + payload_len;
