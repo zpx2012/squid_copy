@@ -99,15 +99,15 @@ pool_handler(void* arg)
 void speedup_optimack_by_ack_interval(struct subconn_info* conn, int id, int offset)
 {
     if(conn->ack_pacing - offset > 10){
-        con->ack_pacing -= offset;
-        printf("S%d: speed up by ack_interval by %d to %d!\n", id, offset, con->ack_pacing);
+        conn->ack_pacing -= offset;
+        printf("S%d: speed up by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
     }
 }
 
 void speedup_optimack_by_ack_step(struct subconn_info* conn, int id, int offset)
 {
-    con->payload_len += offset;
-    printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, con->ack_step);
+    conn->payload_len += offset;
+    printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->ack_step);
 }
 
 void* 
