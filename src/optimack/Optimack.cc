@@ -504,9 +504,11 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         subconn_infos[subconn_i].ini_seq_loc = seq - 1;
                         subconn_infos[subconn_i].seq_init = true;
                         printf("Subconn %d seq_init done\n", subconn_i);
-                        // reply to our send
-                        char empty_payload[] = "";
-                        send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
+                        // reply to our send()
+                        if (subconn_i) {
+                            char empty_payload[] = "";
+                            send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
+                        }
                     }
                     // TODO: clear iptables or always update
                      subconn_infos[subconn_i].cur_seq_rem = ack;
