@@ -509,8 +509,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
                     }
                     // TODO: clear iptables or always update
-                    // subconn_infos[subconn_i].cur_seq_rem = ack;
-                    // subconn_infos[subconn_i].cur_seq_loc = seq;
+                     subconn_infos[subconn_i].cur_seq_rem = ack;
+                     subconn_infos[subconn_i].cur_seq_loc = seq;
 
                     if (subconn_i == 0) {
                         if (!payload_len) {
@@ -556,8 +556,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                             subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
                         }
                         pthread_mutex_unlock(&mutex_subconn_infos);
-                        return -1;
                     }
+                    return -1;
                     break;
                 }
             default:
@@ -656,6 +656,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
             {
                 if (!payload_len) {
+                    // TODO: let our reply through...for now
+                    if (subconn_i)
+                        return 0;
                     printf("P%d-S%d-in: server or our ack %d\n", thr_data->pkt_id, subconn_i, ack);
                     return -1;
                 }
