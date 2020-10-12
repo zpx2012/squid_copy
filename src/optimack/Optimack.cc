@@ -511,8 +511,6 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                     }
                     // TODO: clear iptables or always update
-                     subconn_infos[subconn_i].cur_seq_rem = ack;
-                     subconn_infos[subconn_i].cur_seq_loc = seq;
 
                     if (subconn_i == 0) {
                         if (!payload_len) {
