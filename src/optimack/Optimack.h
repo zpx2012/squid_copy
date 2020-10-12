@@ -25,7 +25,6 @@ struct subconn_info
     unsigned int ini_seq_loc;  //local sequence number
     unsigned int cur_seq_rem;
     unsigned int cur_seq_loc;
-    unsigned int cur_win;
     short ack_sent;
     bool seq_init;
 
@@ -36,7 +35,7 @@ struct subconn_info
     unsigned int opa_ack_start;  // local ack number for optim ack to start
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
-    unsigned int win_size;
+    unsigned int rwnd;
     int ack_pacing;
     unsigned int payload_len;
 };
