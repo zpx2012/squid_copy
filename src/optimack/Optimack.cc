@@ -130,7 +130,7 @@ optimistic_ack(void* arg)
     printf("S%d: optimistic ack started\n", id);   
     unsigned int last_speedup_ack = 0;
     for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
-        send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start);
+        send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start, conn->win_size);
         if(conn->cur_seq_rem-opa_ack_start > 50000 && k-last_speedup_ack > 1460*300 && conn->cur_seq_rem >= k ){
             if(conn->ack_pacing > 500)
                 speedup_optimack_by_ack_interval(conn, id, 100);
@@ -515,6 +515,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     if (subconn_i == 0) {
                         if (!payload_len) {
                             int win_size = ntohs(tcphdr->th_win);
+                            subconn_infos[subconn_i].cur_win = win_size;
                             if(win_size > max_win_size)
                                 max_win_size = win_size;
                             int ack_rel = ack - subconn_infos[0].ini_seq_rem;
