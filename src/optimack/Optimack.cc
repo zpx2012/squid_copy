@@ -522,7 +522,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     if (subconn_i == 0) {
                         if (!payload_len) {
                             int win_size = ntohs(tcphdr->th_win);
-                            subconn_infos[0].cwnd = win_size;                            
+                            subconn_infos[0].rwnd = win_size;                            
                             if(win_size > max_win_size)
                                 max_win_size = win_size;
                             int ack_rel = ack - subconn_infos[0].ini_seq_rem;
@@ -817,7 +817,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         memset(&new_subconn, 0, sizeof(struct subconn_info));
         //new_subconn.local_port = local_port_new;
         //new_subconn.ini_seq_loc = new_subconn.cur_seq_loc = seq;
-        new_subconn.win_size = 29200*128;
+        new_subconn.rwnd = 365;
         new_subconn.ack_pacing = ACKPACING;
         new_subconn.ack_sent = 0;
         new_subconn.optim_ack_stop = 1;
