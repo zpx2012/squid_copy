@@ -51,43 +51,235 @@ nfq_loop(void *arg)
 void* 
 pool_handler(void* arg)
 {
-    //char log[LOGSIZE];
     struct thread_data* thr_data = (struct thread_data*)arg;
-    Optimack* obj = (Optimack*)(thr_data->obj);
-    u_int32_t id = thr_data->pkt_id;
+    Optimack* obj = thr_data->obj;
+    u_int32_t pkt_id = thr_data->pkt_id;
     int ret = -1;
 
-    //debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
-
     short protocol = ip_hdr(thr_data->buf)->protocol;
-    if (protocol == 6)
-        ret = obj->process_tcp_packet(thr_data);
-    else{ 
-        //sprintf(log, "Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
-        //debugs(0, DBG_CRITICAL, log);
+    if (protocol != 6) {
+        printf("Invalid protocol: 0x%04x, len %d\n", protocol, thr_data->len);
+        //char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
+        //debugs(0, DBG_CRITICAL, hex_str);
+        //free(hex_str);
+        ret = -1;
+    }
+    else {
         struct myiphdr *iphdr = ip_hdr(thr_data->buf);
         struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-        //unsigned char *payload = tcp_payload(thr_data->buf);
-        unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
-        char sip[16], dip[16];
-        ip2str(iphdr->saddr, sip);
-        ip2str(iphdr->daddr, dip);
+        unsigned char *payload = tcp_payload(thr_data->buf);
+        unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
+        unsigned short sport = ntohs(tcphdr->th_sport);
+        unsigned short dport = ntohs(tcphdr->th_dport);
+        unsigned int seq = htonl(tcphdr->th_seq);
+        unsigned int ack = htonl(tcphdr->th_ack);
+        // check remote ip, local ip
+        // and set key_port
+        bool incoming = true;
+        int subconn_i = thr_data->id;
+        subconn_info* subconn = &(obj->subconn_infos[subconn_i]);
+        char *sip, *dip;
+        if (obj->g_remote_ip_int == iphdr->saddr) {
+            incoming = true;
+            sip = obj->g_remote_ip;
+            dip = obj->g_local_ip;
+        }
+        else if (obj->g_remote_ip_int == iphdr->daddr) {
+            incoming = false;
+            sip = obj->g_local_ip;
+            dip = obj->g_remote_ip;
+        }
 
-        //memset(log, 0, LOGSIZE);
-        //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        //debugs(0, DBG_CRITICAL, log);
-        char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
-        //debugs(0, DBG_CRITICAL, hex_str);
-        free(hex_str);
+        // Outgoing Packets
+        if (!incoming) 
+        {   
+            switch (tcphdr->th_flags) {
+                case TH_ACK:
+                case TH_ACK | TH_PUSH:
+                case TH_ACK | TH_URG:
+                    {
+                        // init seq and ack if haven't
+                        if (!subconn->seq_init) {
+                            subconn->ini_seq_rem = ack - 1;
+                            subconn->ini_seq_loc = seq - 1;
+                            subconn->seq_init = true;
+                            printf("Subconn %d seq_init done\n", subconn_i);
+                            // reply to our send()
+                            if (subconn_i) {
+                                char empty_payload[] = "";
+                                send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
+                            }
+                        }
+                        // TODO: clear iptables?
+
+                        if (subconn_i == 0) {
+                            if (!payload_len) {
+                                int win_size = ntohs(tcphdr->th_win);
+                                subconn->rwnd = win_size;                            
+                                if (win_size > obj->max_win_size)
+                                    obj->max_win_size = win_size;
+                                int ack_rel = ack - subconn->ini_seq_rem;
+                                float off_packet_num = (obj->seq_next_global - ack_rel)/1460.0;
+                                printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", pkt_id, ack_rel, obj->seq_next_global, off_packet_num, win_size, obj->max_win_size);
+
+                                //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
+                                //pthread_mutex_lock(&mutex_subconn_infos);
+                                //if (ack_rel > 4*last_speedup_ack_rel){
+                                //last_speedup_ack_rel = ack_rel;
+                                //printf("P%d-Squid-out: ack pacing speed up by 100!\n", thr_data->pkt_id);
+                                //for (size_t i = 0; i < subconn_infos.size(); ++i)
+                                //{
+                                //if(subconn_infos[i].ack_pacing > 100)
+                                //subconn_infos[i].ack_pacing -= 100;
+                                //}
+                                //}
+                                //pthread_mutex_unlock(&mutex_subconn_infos);
+                                //}
+                                ret = -1;
+                                break;
+                            }
+                            // if payload_len != 0, assume it's request
+                            // squid connection with payload -> copy request, our connection -> only update seq/ack 
+                            memset(obj->request, 0, 1000);
+                            memcpy(obj->request, payload, payload_len);
+                            obj->request_len = payload_len;
+                            obj->request_recved = true;
+                            printf("P%d-Squid-out: request sent to server %d\n", pkt_id, payload_len);
+                            // check if we can send request now
+                            pthread_mutex_lock(&(obj->mutex_subconn_infos));
+                            for (size_t i=1; i<obj->subconn_infos.size(); i++)
+                                if (obj->subconn_infos[i].seq_init == false) {
+                                    pthread_mutex_unlock(&(obj->mutex_subconn_infos));
+                                    ret = -1;
+                                    break;
+                                }
+                            // all done, start to send request
+                            for (size_t i=0; i<obj->subconn_infos.size(); i++) {
+                                send_ACK(dip, sip, dport, obj->subconn_infos[i].local_port, obj->request, obj->subconn_infos[i].ini_seq_rem+1, obj->subconn_infos[i].ini_seq_loc+1);
+                                obj->subconn_infos[i].cur_seq_loc = obj->subconn_infos[i].ini_seq_loc + 1 + obj->request_len;
+                            }
+                            pthread_mutex_unlock(&(obj->mutex_subconn_infos));
+                        }
+                        ret = -1;
+                        break;
+                    }
+                default:
+                    ret = 0;
+                    break;
+            }
+        }
+        // Incoming Packets
+        else        
+        {
+            printf("P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, \
+                    seq - subconn->ini_seq_rem, tcphdr->th_ack, ack - subconn->ini_seq_loc, iphdr->ttl, payload_len);
+            unsigned int seq_rel = seq - subconn->ini_seq_rem;
+            switch (tcphdr->th_flags) {
+                case TH_ACK:
+                case TH_ACK | TH_PUSH:
+                case TH_ACK | TH_URG:
+                    {
+                        if (!payload_len) {
+                            printf("P%d-S%d-in: server or our ack %d\n", pkt_id, subconn_i, ack);
+                            ret = -1;
+                            break;
+                        }
+
+                        if (!subconn->payload_len && subconn->optim_ack_stop) {
+                            pthread_mutex_lock(&(subconn->mutex_opa));
+                            if (!subconn->payload_len && subconn->optim_ack_stop) {
+                                subconn->payload_len = payload_len;
+                                obj->start_optim_ack(subconn_i, subconn->ini_seq_rem + 1, subconn->cur_seq_loc, payload_len, 0); //TODO: read MTU
+                                printf("P%d-S%d: Start optimistic_ack\n", pkt_id, subconn_i); 
+                            }
+                            pthread_mutex_unlock(&(subconn->mutex_opa));
+                        }
+
+                        if(subconn->cur_seq_rem < seq)
+                            subconn->cur_seq_rem = seq;
+
+                        if (obj->seq_next_global < seq_rel + payload_len)
+                            obj->seq_next_global = seq_rel + payload_len;
+
+                        // if (subconn_infos[subconn_i].optim_ack_stop) {
+                        //     // TODO: what if payload_len changes?
+                        //     printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
+                        // }
+
+                        // pthread_mutex_lock(&mutex_seq_next_global);
+
+                        // int offset = seq_rel - seq_next_global;
+                        // unsigned int append = 0;
+                        // if (offset > 0) {
+                        //     printf("P%d-S%d: > Insert gaps %d -> %d\n", thr_data->pkt_id, subconn_i, seq_next_global, seq_rel);
+                        //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Insert gaps: " << seq_next_global << ", to: " << seq_rel);
+                        //     // pthread_mutex_lock(&mutex_seq_gaps);
+                        //     insert_seq_gaps(seq_next_global, seq_rel, payload_len);
+                        //     // pthread_mutex_unlock(&mutex_seq_gaps);
+                        //     append = offset + payload_len;
+                        // }
+                        // else if (offset < 0){
+
+                        //     int ret = find_seq_gaps(seq_rel);
+                        //     if (!ret){
+                        //         //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": recv " << seq_rel << " < wanting " << seq_next_global);
+                        //         pthread_mutex_unlock(&mutex_seq_next_global);
+                        //         return -1;
+                        //     }
+                        //     // pthread_mutex_lock(&mutex_seq_gaps);
+                        //     delete_seq_gaps(seq_rel);
+                        //     // pthread_mutex_unlock(&mutex_seq_gaps);
+                        //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found gap " << seq_rel << ". Delete gap");
+                        //     printf("P%d-S%d: < Found gaps %d. Deleted\n", thr_data->pkt_id, subconn_i, seq_rel);
+                        // }
+                        // else {
+                        //     append = payload_len;
+                        //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Found seg " << seq_rel);
+                        //     printf("P%d-S%d: = In order %d\n", thr_data->pkt_id, subconn_i, seq_rel);
+                        // }
+
+                        // if(append){
+                        //     seq_next_global += append;
+                        //     printf("P%d-S%d: Update seq_next_global to %d\n", thr_data->pkt_id, subconn_i, seq_next_global);
+                        //     //debugs(1, DBG_CRITICAL, "Subconn " << subconn_i << "-" << thr_data->pkt_id << ": Update seq_global to " << seq_next_global);
+                        // }
+
+                        // pthread_mutex_unlock(&mutex_seq_next_global);
+
+                        // // send to squid 
+                        // // 1. dest port -> sub1->localport
+                        // // 2. seq -> sub1->init_seq_rem + seq_rel
+                        // // 3. ack -> sub1->cur_seq_loc
+                        // // 4. checksum(IP,TCP)
+                        if (subconn_i) {
+                            tcphdr->th_dport = htons(obj->subconn_infos[0].local_port);
+                            tcphdr->th_seq = htonl(obj->subconn_infos[0].ini_seq_rem+seq_rel);
+                            tcphdr->th_ack = htonl(obj->subconn_infos[0].cur_seq_loc);
+                            compute_checksums(thr_data->buf, 20, thr_data->len);
+                        }
+                        ret = 0;
+                        break;
+                    }
+                case TH_ACK | TH_FIN:
+                    {
+                        //send_FIN_ACK("", seq+1, ack, dport);
+                        subconn->optim_ack_stop = 1;
+                        ret = 0;
+                        break;
+                    }
+                default:
+                    //debugs(0, DBG_CRITICAL, "Invalid tcp flags: " << tcp_flags_str(tcphdr->th_flags));
+                    ret = 0;
+                    break;
+            }
+        }
     }
 
-    if (ret == 0){
-        nfq_set_verdict(obj->subconn_infos[thr_data->id].nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        //debugs(0, DBG_CRITICAL, "Verdict: Accept");
+    if (ret == 0) {
+        nfq_set_verdict(obj->subconn_infos[thr_data->id].nfq_qh, pkt_id, NF_ACCEPT, thr_data->len, thr_data->buf);
     }
-    else{
-        nfq_set_verdict(obj->subconn_infos[thr_data->id].nfq_qh, id, NF_DROP, 0, NULL);
-        //debugs(0, DBG_CRITICAL, "Verdict: Drop");
+    else {
+        nfq_set_verdict(obj->subconn_infos[thr_data->id].nfq_qh, pkt_id, NF_DROP, 0, NULL);
     }
 
     free(thr_data->buf);
@@ -156,13 +348,13 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     unsigned char* packet;
     int packet_len = nfq_get_payload(nfa, &packet);
 
-    struct myiphdr *iphdr = ip_hdr(packet);
-    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    //struct myiphdr *iphdr = ip_hdr(packet);
+    //struct mytcphdr *tcphdr = tcp_hdr(packet);
     //unsigned char *payload = tcp_payload(thr_data->buf);
-    unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
-    char sip[16], dip[16];
-    ip2str(iphdr->saddr, sip);
-    ip2str(iphdr->daddr, dip);
+    //unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
+    //char sip[16], dip[16];
+    //ip2str(iphdr->saddr, sip);
+    //ip2str(iphdr->daddr, dip);
 
     //char log[LOGSIZE];
     //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
@@ -190,13 +382,15 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     thr_data->obj = obj;
     thr_data->id = nfq_id;
     if (!thr_data->buf) {
-            debugs(0, DBG_CRITICAL, "cb: error during malloc");
+            //debugs(0, DBG_CRITICAL, "cb: error during malloc");
+            printf("cb: error during malloc\n");
             return -1;
     }
     memcpy(thr_data->buf, packet, packet_len);
 
     if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-        debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
+        //debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
+        printf("cb: error during thr_pool_queue\n");
         return -1;
     }
 
