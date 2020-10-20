@@ -38,6 +38,7 @@ struct subconn_info
     unsigned int rwnd;
     int ack_pacing;
     unsigned int payload_len;
+    float off_pkt_num;
 };
 
 // Multithread

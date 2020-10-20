@@ -119,9 +119,8 @@ pool_handler(void* arg)
                                 if (win_size > obj->max_win_size)
                                     obj->max_win_size = win_size;
                                 int ack_rel = ack - subconn->ini_seq_rem;
-                                float off_packet_num = (obj->seq_next_global - ack_rel)/1460.0;
-                                printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", pkt_id, ack_rel, obj->seq_next_global, off_packet_num, win_size, obj->max_win_size);
-
+                                subconn_infos[0].off_pkt_num = (seq_next_global-ack_rel)/1460.0;
+                                printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, subconn_infos[0].off_pkt_num, win_size, max_win_size);
                                 //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
                                 //pthread_mutex_lock(&mutex_subconn_infos);
                                 //if (ack_rel > 4*last_speedup_ack_rel){
@@ -323,7 +322,7 @@ optimistic_ack(void* arg)
     unsigned int last_speedup_ack = 0;
     for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
         send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start, obj->subconn_infos[0].rwnd);
-        if(conn->cur_seq_rem-opa_ack_start > 1460*100 && k-last_speedup_ack > 1460*2000 && conn->cur_seq_rem >= k ){
+        if(conn->cur_seq_rem-opa_ack_start > 1460*100 && k-last_speedup_ack > 1460*2000 && conn->cur_seq_rem >= k && obj->subconn_infos[0].off_pkt_num < 2){
             if(conn->ack_pacing > 500)
                 speedup_optimack_by_ack_interval(conn, id, 100);
             else
