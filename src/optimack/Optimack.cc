@@ -119,8 +119,8 @@ pool_handler(void* arg)
                                 if (win_size > obj->max_win_size)
                                     obj->max_win_size = win_size;
                                 int ack_rel = ack - subconn->ini_seq_rem;
-                                subconn_infos[0].off_pkt_num = (seq_next_global-ack_rel)/1460.0;
-                                printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, subconn_infos[0].off_pkt_num, win_size, max_win_size);
+                                subconn->off_pkt_num = (seq_next_global-ack_rel)/1460.0;
+                                printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, subconn->off_pkt_num, win_size, obj->max_win_size);
                                 //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
                                 //pthread_mutex_lock(&mutex_subconn_infos);
                                 //if (ack_rel > 4*last_speedup_ack_rel){
