@@ -83,11 +83,11 @@ pool_handler(void* arg)
     }
 
     if (ret == 0){
-        nfq_set_verdict(obj->subconn_infos[thr_data->id].nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
+        nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
         //debugs(0, DBG_CRITICAL, "Verdict: Accept");
     }
     else{
-        nfq_set_verdict(obj->subconn_infos[thr_data->id].nfq_qh, id, NF_DROP, 0, NULL);
+        nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
         //debugs(0, DBG_CRITICAL, "Verdict: Drop");
     }
 
@@ -151,9 +151,7 @@ optimistic_ack(void* arg)
 static int 
 cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
-    cb_thr_data* cb_data = (cb_thr_data*)data;
-    Optimack* obj = cb_data->obj;
-    int nfq_id = cb_data->id;
+    Optimack* obj = (Optimack*)data;
     unsigned char* packet;
     int packet_len = nfq_get_payload(nfa, &packet);
 
@@ -189,8 +187,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len);
     thr_data->obj = obj;
-    thr_data->id = nfq_id;
-    if (!thr_data->buf) {
+    if (!thr_data->buf){
             debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
     }
@@ -200,7 +197,6 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
         debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
         return -1;
     }
-
     return 0;
 }
 
@@ -214,7 +210,7 @@ Optimack::~Optimack()
     // stop nfq_loop thread
     nfq_stop = 1;
     pthread_join(nfq_thread, NULL);
-    printf("nfq_thread exited\n");
+    printf("NFQ %d nfq_thread exited\n", nfq_queue_num);
     // clear thr_pool
     thr_pool_destroy(pool);
     // stop the optimistic_ack thread and close fd
@@ -224,33 +220,16 @@ Optimack::~Optimack()
         pthread_join(subconn_infos[i].thread, NULL);
         close(subconn_infos[i].sockfd);
     }
-    printf("all optimistic threads exited\n");
+    printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
 
-    for (size_t i=0; i < subconn_infos.size(); i++) {
-        debugs(0, DBG_CRITICAL,"unbinding from queue " << subconn_infos[i].local_port);
-        if (nfq_destroy_queue(subconn_infos[i].nfq_qh) != 0) {
-            debugs(0, DBG_CRITICAL,"error during nfq_destroy_queue()");
-        }
-    }
-
-#ifdef INSANE
-    /* normally, applications SHOULD NOT issue this command, since
-     * it detaches other programs/sockets from AF_INET, too ! */
-    debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
-    nfq_unbind_pf(g_nfq_h, AF_INET);
-#endif
-    debugs(0, DBG_CRITICAL,"closing library handle");
-    if (nfq_close(g_nfq_h) != 0) {
-        debugs(0, DBG_CRITICAL,"error during nfq_close()");
-    }
-
+    teardown_nfq();
     pthread_mutex_destroy(&mutex_seq_next_global);
     pthread_mutex_destroy(&mutex_seq_gaps);
     pthread_mutex_destroy(&mutex_subconn_infos);
     pthread_mutex_destroy(&mutex_optim_ack_stop);
 }
 
-int
+void
 Optimack::init()
 {
     // init random seed
@@ -288,65 +267,54 @@ Optimack::init()
             debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
             exit(1);                
     }
+}
 
-    // set up nfq_variable
+int 
+Optimack::setup_nfq(unsigned short id)
+{
     g_nfq_h = nfq_open();
     if (!g_nfq_h) {
         debugs(0, DBG_CRITICAL,"error during nfq_open()");
         return -1;
     }
+
     debugs(0, DBG_CRITICAL,"unbinding existing nf_queue handler for AF_INET (if any)");
     if (nfq_unbind_pf(g_nfq_h, AF_INET) < 0) {
         debugs(0, DBG_CRITICAL,"error during nfq_unbind_pf()");
         return -1;
     }
+
     debugs(0, DBG_CRITICAL,"binding nfnetlink_queue as nf_queue handler for AF_INET");
     if (nfq_bind_pf(g_nfq_h, AF_INET) < 0) {
         debugs(0, DBG_CRITICAL,"error during nfq_bind_pf()");
         return -1;
     }
-    // TODO
-    struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
-    nfnl_rcvbufsiz(nfnl_hl, NFQLENGTH * BUFLENGTH);
-    g_nfq_fd = nfq_fd(g_nfq_h);
-    setup_nfqloop();
-}
-
-int 
-Optimack::setup_nfq(subconn_info* subconn, int subconn_i)
-{
-    struct nfq_q_handle* nfq_qh;
-    struct cb_thr_data* thr_data = (struct cb_thr_data*)malloc(sizeof(struct cb_thr_data));
-    if (!thr_data)
-    {
-        debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
-        return -1;
-    }
-    memset(thr_data, 0, sizeof(struct cb_thr_data));
-    thr_data->obj = this;
-    thr_data->id = subconn_i;
 
     // set up a queue
-    debugs(0, DBG_CRITICAL,"binding this socket to queue " << subconn->local_port);
-    nfq_qh = nfq_create_queue(g_nfq_h, subconn->local_port, &cb, (void*)thr_data);
-    if (!nfq_qh) {
+    nfq_queue_num = id;
+    debugs(0, DBG_CRITICAL,"binding this socket to queue " << nfq_queue_num);
+    g_nfq_qh = nfq_create_queue(g_nfq_h, nfq_queue_num, &cb, (void*)this);
+    if (!g_nfq_qh) {
         debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
         return -1;
     }
-    debugs(0, DBG_CRITICAL,"nfq queue handler: " << nfq_qh);
+    debugs(0, DBG_CRITICAL,"nfq queue handler: " << g_nfq_qh);
 
     debugs(0, DBG_CRITICAL,"setting copy_packet mode");
-    if (nfq_set_mode(nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
+    if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
         debugs(0, DBG_CRITICAL,"can't set packet_copy mode");
         return -1;
     }
 
-    if (nfq_set_queue_maxlen(nfq_qh, NFQLENGTH) < 0) {
+    if (nfq_set_queue_maxlen(g_nfq_qh, NFQLENGTH) < 0) {
         debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
         return -1;
     }
+    struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
+    nfnl_rcvbufsiz(nfnl_hl, NFQLENGTH * BUFLENGTH);
 
-    subconn->nfq_qh = nfq_qh;
+    g_nfq_fd = nfq_fd(g_nfq_h);
+
     return 0;
 }
 
@@ -358,6 +326,31 @@ Optimack::setup_nfqloop()
         debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
         return -1;
     }
+    return 0;
+}
+
+int 
+Optimack::teardown_nfq()
+{
+    debugs(0, DBG_CRITICAL,"unbinding from queue " << nfq_queue_num);
+    if (nfq_destroy_queue(g_nfq_qh) != 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_destroy_queue()");
+        return -1;
+    }
+
+#ifdef INSANE
+    /* normally, applications SHOULD NOT issue this command, since
+     * it detaches other programs/sockets from AF_INET, too ! */
+    debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
+    nfq_unbind_pf(g_nfq_h, AF_INET);
+#endif
+
+    debugs(0, DBG_CRITICAL,"closing library handle");
+    if (nfq_close(g_nfq_h) != 0) {
+        debugs(0, DBG_CRITICAL,"error during nfq_close()");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -665,6 +658,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
             {
                 if (!payload_len) {
+                    // TODO: let our reply through...for now
+                    if (subconn_i)
+                        return 0;
                     printf("P%d-S%d-in: server or our ack %d\n", thr_data->pkt_id, subconn_i, ack);
                     return -1;
                 }
@@ -773,22 +769,16 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
-    // either way
-    cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "INPUT -p tcp -s %s --sport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
 
     //TODO: iptables too broad??
     cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, local_port);
+    sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
 
     cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, local_port);
+    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
@@ -799,6 +789,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
     g_remote_port = remote_port;
 
+    // pthread_mutex_lock(&mutex_subconn_infos);
     // TODO: how to deal with conns by other applications?
     struct subconn_info squid_conn;
     memset(&squid_conn, 0, sizeof(struct subconn_info));
@@ -807,11 +798,9 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     squid_conn.ack_sent = 1; //Assume squid will send ACK
     squid_conn.optim_ack_stop = 1;
     squid_conn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-
-    setup_nfq(&squid_conn, 0);
-
     subconn_infos.push_back(squid_conn);
-    
+    // pthread_mutex_unlock(&mutex_subconn_infos);
+
     for (int i = 1; i <= 7; i++) {
         // pthread_mutex_lock(&mutex_subconn_infos);
         struct subconn_info new_subconn;
@@ -856,20 +845,18 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
             break;
         }
         new_subconn.local_port = ntohs(my_addr.sin_port);
-
-        setup_nfq(&new_subconn, i);
         subconn_infos.push_back(new_subconn);
 
         //TODO: iptables too broad??
         cmd = (char*) malloc(IPTABLESLEN);
-        sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, new_subconn.local_port);
+        sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, nfq_queue_num);
         ret = exec_iptables('A', cmd);
         iptables_rules.push_back(cmd);
         debugs(11, 2, cmd << ret);
 
         //TODO: iptables too broad??
         cmd = (char*) malloc(IPTABLESLEN);
-        sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, new_subconn.local_port);
+        sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, nfq_queue_num);
         ret = exec_iptables('A', cmd);
         iptables_rules.push_back(cmd);
         debugs(11, 2, cmd << ret);

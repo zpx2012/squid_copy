@@ -57,8 +57,9 @@ Http::One::Server::start()
 
     // Our code
     optimack_server.init();
-    //optimack_server.setup_nfq(clientConnection->remote.port());
+    optimack_server.setup_nfq(clientConnection->remote.port());
     optimack_server.nfq_stop = 0;
+    optimack_server.setup_nfqloop();
 }
 
 void

@@ -19,7 +19,6 @@ class Optimack;
 struct subconn_info
 {
     int sockfd;
-    struct nfq_q_handle *nfq_qh;
     unsigned short local_port;
     unsigned int ini_seq_rem;  //remote sequence number
     unsigned int ini_seq_loc;  //local sequence number
@@ -47,17 +46,11 @@ struct thread_data {
     unsigned int  len;
     unsigned char *buf;
     Optimack* obj;
-    int id;
 };
 
 struct ack_thread {
     int thread_id;
     Optimack* obj;
-};
-
-struct cb_thr_data {
-    Optimack* obj;
-    int id;
 };
 
 // Thread wrapper
@@ -70,13 +63,15 @@ class Optimack
 {
 public:
     ~Optimack();
-    int init();
-    int setup_nfq(subconn_info* subconn, int i);
+    void init();
+    int setup_nfq(unsigned short id);
     int setup_nfqloop();
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, 
             unsigned short local_port);
+    int teardown_nfq();
     int exec_iptables(char action, char* rule);
     struct nfq_handle *g_nfq_h;
+    struct nfq_q_handle *g_nfq_qh;
     int g_nfq_fd;
     int nfq_stop;
     pthread_t nfq_thread;
@@ -104,6 +99,7 @@ public:
     // locals
     bool request_recved = false;
     const int MARK = 666;
+    int nfq_queue_num;
     
     thr_pool_t* pool;
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
