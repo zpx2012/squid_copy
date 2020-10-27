@@ -202,11 +202,6 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
 
 Optimack::~Optimack()
 {
-    // clear iptables rules
-    for (size_t i=0; i<iptables_rules.size(); i++) {
-        exec_iptables('D', iptables_rules[i]);
-        free(iptables_rules[i]);
-    }
     // stop nfq_loop thread
     nfq_stop = 1;
     pthread_join(nfq_thread, NULL);
@@ -221,7 +216,11 @@ Optimack::~Optimack()
         close(subconn_infos[i].sockfd);
     }
     printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
-
+    // clear iptables rules
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+    }
     teardown_nfq();
     pthread_mutex_destroy(&mutex_seq_next_global);
     pthread_mutex_destroy(&mutex_seq_gaps);
