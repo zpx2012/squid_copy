@@ -521,6 +521,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                                 max_win_size = win_size;
                             int ack_rel = ack - subconn_infos[0].ini_seq_rem;
                             float off_packet_num = (seq_next_global-ack_rel)/1460.0;
+                            subconn_infos[0].off_pkt_num = off_packet_num;
                             printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
 
                             //if(off_packet_num < 0.01 && ack_rel > last_speedup_ack_rel+500000 && ack_rel > 5000000){
