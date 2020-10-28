@@ -490,6 +490,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
         return -1;
     }
 
+    sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
+
     // Outgoing Packets
     if (!incoming) 
     {   
@@ -563,6 +565,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                         pthread_mutex_unlock(&mutex_subconn_infos);
                     }
+                    else{
+                        printf("P%d-S%d-out: ack\n", thr_data->pkt_id, subconn_i);
+                    }
                     return -1;
                     break;
                 }
@@ -573,7 +578,6 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     // Incoming Packets
     else        
     {
-        sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
         printf("%s\n", log);
         //debugs(1, DBG_CRITICAL, log);
         unsigned int seq_rel = seq - subconn_infos[subconn_i].ini_seq_rem;
@@ -741,7 +745,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem+seq_rel);
                 tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
-                printf("P%d-S%d: \n", thr_data->pkt_id, subconn_i); 
+                printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
                 return 0;
 
                 break;
