@@ -511,7 +511,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                             // reply to our send()
                             if (subconn_i) {
                                 char empty_payload[] = "";
-                                send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
+                                send_ACK(sip, dip, sport, dport, empty_payload, seq+payload_len, ack);
                             }
                         }
                         pthread_mutex_unlock(&subconn_infos[subconn_i].mutex_opa);
