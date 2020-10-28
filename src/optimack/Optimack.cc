@@ -499,16 +499,19 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_URG:
                 {
                     // init seq and ack if haven't
-                    if (!subconn_infos[subconn_i].seq_init) {
-                        subconn_infos[subconn_i].ini_seq_rem = ack - 1;
-                        subconn_infos[subconn_i].ini_seq_loc = seq - 1;
-                        subconn_infos[subconn_i].seq_init = true;
-                        printf("Subconn %d seq_init done\n", subconn_i);
-                        // reply to our send()
-                        if (subconn_i) {
-                            char empty_payload[] = "";
-                            send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
-                        }
+                    if (!subconn_infos[subconn_i].seq_init && payload_len) {
+                        pthread_mutex_lock(&subconn_infos[subconn_i].mutex_opa);
+                        if (!subconn_infos[subconn_i].seq_init && payload_len) {
+                            subconn_infos[subconn_i].ini_seq_rem = ack - 1;
+                            subconn_infos[subconn_i].ini_seq_loc = seq - 1;
+                            subconn_infos[subconn_i].seq_init = true;
+                            printf("Subconn %d seq_init done\n", subconn_i);
+                            // reply to our send()
+                            if (subconn_i) {
+                                char empty_payload[] = "";
+                                send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
+                            }
+                        pthread_mutex_unlock(&subconn_infos[subconn_i].mutex_opa);
                     }
                     // TODO: clear iptables or always update
 
@@ -737,6 +740,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem+seq_rel);
                 tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
+                printf("P%d-S%d: \n", thr_data->pkt_id, subconn_i); 
                 return 0;
 
                 break;
