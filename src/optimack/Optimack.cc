@@ -111,6 +111,11 @@ void speedup_optimack_by_ack_step(struct subconn_info* conn, int id, int offset)
     printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->payload_len);
 }
 
+
+##ifndef SPEEDUP_CONFIG
+#define SPEEDUP_CONFIG 0
+#endif
+
 void* 
 optimistic_ack(void* arg)
 {
@@ -132,12 +137,14 @@ optimistic_ack(void* arg)
     unsigned int last_speedup_ack = 0;
     for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
         send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start, obj->subconn_infos[0].rwnd);
-        if(conn->cur_seq_rem-opa_ack_start > 1460*100 && k-last_speedup_ack > 1460*2000 && conn->cur_seq_rem >= k && obj->subconn_infos[0].off_pkt_num < 2){
-            if(conn->ack_pacing > 500)
-                speedup_optimack_by_ack_interval(conn, id, 100);
-            else
-                speedup_optimack_by_ack_step(conn, id, 50);
-            last_speedup_ack = k;
+        if (SPEEDUP_CONFIG){
+            if(conn->cur_seq_rem-opa_ack_start > 1460*100 && k-last_speedup_ack > 1460*2000 && conn->cur_seq_rem >= k && obj->subconn_infos[0].off_pkt_num < 2){
+                if(conn->ack_pacing > 500)
+                    speedup_optimack_by_ack_interval(conn, id, 100);
+                else
+                    speedup_optimack_by_ack_step(conn, id, 50);
+                last_speedup_ack = k;
+            }
         }
         usleep(conn->ack_pacing);
     }
