@@ -112,7 +112,7 @@ void speedup_optimack_by_ack_step(struct subconn_info* conn, int id, int offset)
 }
 
 
-##ifndef SPEEDUP_CONFIG
+#ifndef SPEEDUP_CONFIG
 #define SPEEDUP_CONFIG 0
 #endif
 
