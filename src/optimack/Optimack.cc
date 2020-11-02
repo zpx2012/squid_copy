@@ -746,7 +746,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
                 printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
-                result = sendto(sockraw, thr_data->buf, thr_data->len, 0, (struct sockaddr*)&dstAddr, sizeof(struct sockaddr));
+                int result = sendto(sockraw, thr_data->buf, thr_data->len, 0, (struct sockaddr*)&dstAddr, sizeof(struct sockaddr));
                 if(result < 0){
                     printf("P%d-S%d: sendto error\n", thr_data->pkt_id, subconn_i);
                 }
