@@ -106,7 +106,7 @@ void adjust_optimack_speed(struct subconn_info* conn, int id, int mode, int offs
         else if(mode == -1)
             printf("S%d: slow down by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
         else
-            printf("S%d: unknown mode!\n", );
+            printf("S%d: unknown mode!\n", id);
     }
     else {
         conn->payload_len += mode*offset;
