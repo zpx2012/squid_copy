@@ -110,10 +110,13 @@ public:
     pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
     
     // seq
-    unsigned int seq_next_global = 1;
     std::set<unsigned int> seq_gaps;
-    unsigned int max_win_size = 0;
-    unsigned int last_speedup_ack_rel = 1;
+    unsigned int seq_next_global = 1,
+                 max_win_size = 0,
+                 last_ack_rel = 0,
+                 last_speedup_ack_rel = 1,
+                 last_slowdown_ack_rel = 0,
+                 same_ack_cnt = 0; 
 };
 
 #endif

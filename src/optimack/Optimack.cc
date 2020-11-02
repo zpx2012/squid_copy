@@ -97,7 +97,24 @@ pool_handler(void* arg)
     return NULL;
 }
 
-void speedup_optimack_by_ack_interval(struct subconn_info* conn, int id, int offset)
+void adjust_optimack_speed(struct subconn_info* conn, int id, int mode, int offset){
+    //mode: 1 - speedup, -1 - slowdown
+    if(conn->ack_pacing > 500 && conn->ack_pacing - offset > 10){
+        conn->ack_pacing -= mode*offset;
+        if(mode == 1)
+            printf("S%d: speed up by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
+        else if(mode == -1)
+            printf("S%d: slow down by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
+        else
+            printf("S%d: unknown mode!\n", );
+    }
+    else {
+        conn->payload_len += mode*offset;
+        printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->payload_len);
+    }
+}
+
+void adjust_optimack_speed_by_ack_interval(struct subconn_info* conn, int id, int offset)
 {
     if(conn->ack_pacing - offset > 10){
         conn->ack_pacing -= offset;
@@ -105,7 +122,7 @@ void speedup_optimack_by_ack_interval(struct subconn_info* conn, int id, int off
     }
 }
 
-void speedup_optimack_by_ack_step(struct subconn_info* conn, int id, int offset)
+void adjust_optimack_speed_by_ack_step(struct subconn_info* conn, int id, int offset)
 {
     conn->payload_len += offset;
     printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->payload_len);
@@ -138,11 +155,8 @@ optimistic_ack(void* arg)
     for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
         send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, k, opa_seq_start, obj->subconn_infos[0].rwnd);
         if (SPEEDUP_CONFIG){
-            if(conn->cur_seq_rem-opa_ack_start > 1460*100 && k-last_speedup_ack > 1460*2000 && conn->cur_seq_rem >= k && obj->subconn_infos[0].off_pkt_num < 2){
-                if(conn->ack_pacing > 500)
-                    speedup_optimack_by_ack_interval(conn, id, 100);
-                else
-                    speedup_optimack_by_ack_step(conn, id, 50);
+            if(conn->cur_seq_rem-opa_ack_start > 1460*100 && k-last_speedup_ack > 1460*600 && conn->cur_seq_rem >= k && obj->subconn_infos[0].off_pkt_num < 2){
+                adjust_optimack_speed(conn, id, 1, 10);//low frequence
                 last_speedup_ack = k;
             }
         }
@@ -533,6 +547,29 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                             if(win_size > max_win_size)
                                 max_win_size = win_size;
                             int ack_rel = ack - subconn_infos[0].ini_seq_rem;
+                            if(SPEEDUP_CONFIG){
+                                if (ack_rel == last_ack_rel){
+                                    same_ack_cnt++;
+                                    if(same_ack_cnt >= 4){
+                                        bool can_slow_down = false;
+                                        if (ack_rel - last_slowdown_ack_rel > 1460*100){
+                                            same_ack_cnt = 0;
+                                            can_slow_down = true;
+                                        }
+                                        else if( last_slowdown_ack_rel == ack_rel && same_ack_cnt % 20 == 0)
+                                            can_slow_down = true;
+
+                                        if(can_slow_down){
+                                            for (size_t i=1; i<subconn_infos.size(); i++)
+                                                adjust_optimack_speed(&subconn_infos[i], i, -1, 100);
+                                            last_slowdown_ack_rel = ack_rel;
+                                        }
+                                    }
+                                }
+                                else
+                                    last_ack_rel = ack_rel;
+                            }
+
                             float off_packet_num = (seq_next_global-ack_rel)/1460.0;
                             subconn_infos[0].off_pkt_num = off_packet_num;
                             printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, ack_rel, seq_next_global, off_packet_num, win_size, max_win_size);
@@ -792,11 +829,11 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     debugs(11, 2, cmd << ret);
 
     //TODO: iptables too broad??
-    cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    // cmd = (char*) malloc(IPTABLESLEN);
+    // sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
+    // ret = exec_iptables('A', cmd);
+    // iptables_rules.push_back(cmd);
+    // debugs(11, 2, cmd << ret);
 
     cmd = (char*) malloc(IPTABLESLEN);
     sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
@@ -873,7 +910,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
 
         //TODO: iptables too broad??
         cmd = (char*) malloc(IPTABLESLEN);
-        sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, nfq_queue_num);
+        sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, new_subconn.local_port, nfq_queue_num);
         ret = exec_iptables('A', cmd);
         iptables_rules.push_back(cmd);
         debugs(11, 2, cmd << ret);
