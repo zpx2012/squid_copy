@@ -185,6 +185,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     // sanity check, could be abbr later
     struct nfqnl_msg_packet_hdr *ph;
     ph = nfq_get_msg_packet_hdr(nfa);
+    printf("P%d: hook %d\n", ph->packet_id, ph->hook);
     if (!ph) {
         debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
         return -1;
