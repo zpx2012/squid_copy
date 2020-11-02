@@ -6,7 +6,7 @@
 #include <vector>
 
 /** Our code **/
-#define ACKPACING 2000
+#define ACKPACING 5000
 #define LOGSIZE 1024
 #define IPTABLESLEN 128
 // nfq
