@@ -566,7 +566,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         pthread_mutex_unlock(&mutex_subconn_infos);
                     }
                     else{
-                        printf("P%d-S%d-out: ack\n", thr_data->pkt_id, subconn_i);
+                        printf("P%d-S%d-out: ack \n", thr_data->pkt_id, subconn_i);
                     }
                     return -1;
                     break;
@@ -693,7 +693,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //     // TODO: what if payload_len changes?
                 //     printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
                 // }
-
+ 
                 // pthread_mutex_lock(&mutex_seq_next_global);
 
                 // int offset = seq_rel - seq_next_global;
@@ -746,6 +746,10 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
                 printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
+                result = sendto(sockraw, thr_data->buf, thr_data->len, 0, (struct sockaddr*)&dstAddr, sizeof(struct sockaddr));
+                if(result < 0){
+                    printf("P%d-S%d: sendto error\n", thr_data->pkt_id, subconn_i);
+                }
                 return 0;
 
                 break;
@@ -797,6 +801,9 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     inet_pton(AF_INET, local_ip, &g_local_ip_int);
     inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
     g_remote_port = remote_port;
+    
+    dstAddr.sin_family = AF_INET;
+    memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
 
     // pthread_mutex_lock(&mutex_subconn_infos);
     // TODO: how to deal with conns by other applications?

@@ -70,6 +70,7 @@ public:
             unsigned short local_port);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
+
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
     int g_nfq_fd;
@@ -91,6 +92,7 @@ public:
     unsigned short g_remote_port;
     char request[1000];
     unsigned short request_len;
+    struct sockaddr_in dstAddr;
     
     std::vector<struct subconn_info> subconn_infos;
 
