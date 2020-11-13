@@ -556,12 +556,16 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                                     same_ack_cnt++;
                                     if(same_ack_cnt >= 4){
                                         bool can_slow_down = false;
-                                        if (ack_rel - last_slowdown_ack_rel > 1460*100){
+                                        unsigned int interval = 100, dup = 100;
+                                        if (ack_rel - last_slowdown_ack_rel > 1460*interval){
                                             same_ack_cnt = 0;
                                             can_slow_down = true;
+                                            printf("P%d-Squid-out: can slow down, new ack with interval %d\n", thr_data->pkt_id, interval);
                                         }
-                                        else if( last_slowdown_ack_rel == ack_rel && same_ack_cnt % 20 == 0)
+                                        else if( last_slowdown_ack_rel == ack_rel && same_ack_cnt % dup == 0){
                                             can_slow_down = true;
+                                            printf("P%d-Squid-out: can slow down, dup ack %d\n", thr_data->pkt_id, same_ack_cnt);
+                                        }
 
                                         if(can_slow_down){
                                             for (size_t i=1; i<subconn_infos.size(); i++)
