@@ -102,16 +102,20 @@ void adjust_optimack_speed(struct subconn_info* conn, int id, int mode, int offs
     if(conn->ack_pacing > 500 && conn->ack_pacing - offset > 10){
         conn->ack_pacing -= mode*offset;
         if(mode == 1)
-            printf("S%d: speed up by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
+            printf("S%d: adjust - speed up by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
         else if(mode == -1)
-            printf("S%d: slow down by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
+            printf("S%d: adjust - slow down by ack_interval by %d to %d!\n", id, offset, conn->ack_pacing);
         else
             printf("S%d: unknown mode!\n", id);
     }
     else {
         conn->payload_len += mode*offset;
-        printf("S%d: speed up by ack_step by %d to %d!\n", id, offset, conn->payload_len);
-    }
+        if(mode == 1)
+            printf("S%d: adjust - speed up by ack_pace by %d to %d!\n", id, offset, conn->ack_pacing);
+        else if(mode == -1)
+            printf("S%d: adjust - slow down by ack_pace by %d to %d!\n", id, offset, conn->ack_pacing);
+        else
+            printf("S%d: unknown mode!\n", id);    }
 }
 
 void adjust_optimack_speed_by_ack_interval(struct subconn_info* conn, int id, int offset)
@@ -130,7 +134,7 @@ void adjust_optimack_speed_by_ack_step(struct subconn_info* conn, int id, int of
 
 
 #ifndef SPEEDUP_CONFIG
-#define SPEEDUP_CONFIG 0
+#define SPEEDUP_CONFIG 1
 #endif
 
 void* 
