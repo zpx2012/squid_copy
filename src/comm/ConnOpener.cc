@@ -342,10 +342,10 @@ Comm::ConnOpener::connected()
     lookupLocalAddress();
 
     /* Our code */
-    int size = 3145728;
-    if (setsockopt(conn_->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+    unsigned int size = 3145728;
+    if (setsockopt(temporaryFd_, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
         int xerrno = errno;
-        debugs(50, DBG_IMPORTANT, MYNAME << "FD " << conn_->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
+        debugs(50, DBG_IMPORTANT, MYNAME << "FD " << temporaryFd_ << ", SIZE " << size << ": " << xstrerr(xerrno));
     }
     //serverConnection.remote.toStr(buf, len)
     //serverConnection.remote.port()
