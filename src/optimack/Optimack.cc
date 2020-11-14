@@ -39,7 +39,7 @@ nfq_loop(void *arg)
         else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 debugs(0, DBG_CRITICAL,"recv() ret " << rv << "errno " << errno);
-                printf("recv() ret %s errno %d\n", rv, errno);
+                printf("recv() ret %d errno %d\n", rv, errno);
             }
             usleep(100); //10000
         }
@@ -66,10 +66,10 @@ pool_handler(void* arg)
         //sprintf(log, "Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
         //debugs(0, DBG_CRITICAL, log);
         struct myiphdr *iphdr = ip_hdr(thr_data->buf);
-        struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
+        // struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
 
         //unsigned char *payload = tcp_payload(thr_data->buf);
-        unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
+        // unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
         char sip[16], dip[16];
         ip2str(iphdr->saddr, sip);
         ip2str(iphdr->daddr, dip);
@@ -144,11 +144,11 @@ optimistic_ack(void* arg)
     int id = ack_thr->thread_id;
     Optimack* obj = ack_thr->obj;
     struct subconn_info* conn = &(obj->subconn_infos[id]);
-    unsigned int ack_step = conn->payload_len;
+    // unsigned int ack_step = conn->payload_len;
     unsigned int opa_seq_start = conn->opa_seq_start;
     unsigned int opa_ack_start = conn->opa_ack_start;
     unsigned int local_port = conn->local_port;
-    unsigned int ack_pacing = conn->ack_pacing;
+    // unsigned int ack_pacing = conn->ack_pacing;
 
     free(ack_thr);
 
@@ -181,9 +181,9 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     int packet_len = nfq_get_payload(nfa, &packet);
 
     struct myiphdr *iphdr = ip_hdr(packet);
-    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    // struct mytcphdr *tcphdr = tcp_hdr(packet);
     //unsigned char *payload = tcp_payload(thr_data->buf);
-    unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
+    // unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
     char sip[16], dip[16];
     ip2str(iphdr->saddr, sip);
     ip2str(iphdr->daddr, dip);
@@ -203,7 +203,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     // sanity check, could be abbr later
     struct nfqnl_msg_packet_hdr *ph;
     ph = nfq_get_msg_packet_hdr(nfa);
-    printf("P%d: hook %d\n", ph->packet_id, ph->hook);
+    // printf("P%d: hook %d\n", ph->packet_id, ph->hook);
     if (!ph) {
         debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
         return -1;
@@ -546,11 +546,11 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                     if (subconn_i == 0) {
                         if (!payload_len) {
-                            int win_size = ntohs(tcphdr->th_win);
+                            unsigned int win_size = ntohs(tcphdr->th_win);
                             subconn_infos[0].rwnd = win_size;                            
                             if(win_size > max_win_size)
                                 max_win_size = win_size;
-                            int ack_rel = ack - subconn_infos[0].ini_seq_rem;
+                            unsigned int ack_rel = ack - subconn_infos[0].ini_seq_rem;
                             if(SPEEDUP_CONFIG){
                                 if (ack_rel == last_ack_rel){
                                     same_ack_cnt++;
@@ -870,7 +870,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    for (int i = 1; i <= 7; i++) {
+    for (int i = 1; i <= 8; i++) {
         // pthread_mutex_lock(&mutex_subconn_infos);
         struct subconn_info new_subconn;
         memset(&new_subconn, 0, sizeof(struct subconn_info));
