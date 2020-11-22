@@ -238,8 +238,10 @@ Optimack::~Optimack()
     for (size_t i=0; i < subconn_infos.size(); i++) {
         // TODO: mutex?
         subconn_infos[i].optim_ack_stop = 1;
-        pthread_join(subconn_infos[i].thread, NULL);
+        if (subconn_infos[i].thread)
+            pthread_join(subconn_infos[i].thread, NULL);
         close(subconn_infos[i].sockfd);
+        printf("Port %d\n", subconn_infos[i].local_port);
     }
     printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
     // clear iptables rules

@@ -896,20 +896,21 @@ FwdState::connectStart()
     const bool openedPconn = Comm::IsConnOpen(temp);
     pconnRace = openedPconn ? racePossible : raceImpossible;
 
+    // Our code remove this check for reuse
     // if we found an open persistent connection to use. use it.
-    if (openedPconn) {
-        serverConn = temp;
-        flags.connected_okay = true;
-        debugs(17, 3, HERE << "reusing pconn " << serverConnection());
-        ++n_tries;
+    //if (openedPconn) {
+        //serverConn = temp;
+        //flags.connected_okay = true;
+        //debugs(17, 3, HERE << "reusing pconn " << serverConnection());
+        //++n_tries;
 
-        closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
+        //closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
 
-        syncWithServerConn(request->url.host());
+        //syncWithServerConn(request->url.host());
 
-        dispatch();
-        return;
-    }
+        //dispatch();
+        //return;
+    //}
 
     // We will try to open a new connection, possibly to the same destination.
     // We reset serverDestinations[0] in case we are using it again because
