@@ -896,21 +896,37 @@ FwdState::connectStart()
     const bool openedPconn = Comm::IsConnOpen(temp);
     pconnRace = openedPconn ? racePossible : raceImpossible;
 
-    // Our code remove this check for reuse
     // if we found an open persistent connection to use. use it.
-    //if (openedPconn) {
-        //serverConn = temp;
-        //flags.connected_okay = true;
-        //debugs(17, 3, HERE << "reusing pconn " << serverConnection());
-        //++n_tries;
+    if (openedPconn) {
+        serverConn = temp;
+        flags.connected_okay = true;
+        debugs(17, 3, HERE << "reusing pconn " << serverConnection());
+        ++n_tries;
 
-        //closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
+        closeHandler = comm_add_close_handler(serverConnection()->fd,  fwdServerClosedWrapper, this);
 
-        //syncWithServerConn(request->url.host());
+        syncWithServerConn(request->url.host());
 
-        //dispatch();
-        //return;
-    //}
+        dispatch();
+
+        /* Our code */
+        unsigned int size = 83886080;
+        if (setsockopt(serverConn->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+            int xerrno = errno;
+            debugs(50, DBG_IMPORTANT, MYNAME << "FD " << serverConn->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
+        }
+        //serverConnection.remote.toStr(buf, len)
+        //serverConnection.remote.port()
+        char remote_ip[16], local_ip[16];
+        serverConn->remote.toStr(remote_ip, 16);
+        serverConn->local.toStr(local_ip, 16);
+        unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
+
+        server_conn->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port);
+        /* end */
+
+        return;
+    }
 
     // We will try to open a new connection, possibly to the same destination.
     // We reset serverDestinations[0] in case we are using it again because
