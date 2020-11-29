@@ -1716,10 +1716,21 @@ SquidMain(int argc, char **argv)
     /* at this point we are finished the synchronous startup. */
     starting_up = 0;
 
+    /* Our code */
+    char cmd[128];
+    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT");
+    system(cmd);
+    /* end */
+
     mainLoop.run();
 
     if (mainLoop.errcount == 10)
         fatal_dump("Event loop exited with failure.");
+
+    /* Our code */
+    cmd[15] = 'D';
+    system(cmd);
+    /* end */
 
     /* shutdown squid now */
     SquidShutdown();

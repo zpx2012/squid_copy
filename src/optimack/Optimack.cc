@@ -832,11 +832,11 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     int ret;
 
     // if marked, let through
-    cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    //cmd = (char*) malloc(IPTABLESLEN);
+    //sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
+    //ret = exec_iptables('A', cmd);
+    //iptables_rules.push_back(cmd);
+    //debugs(11, 2, cmd << ret);
 
     //TODO: iptables too broad??
     // cmd = (char*) malloc(IPTABLESLEN);
