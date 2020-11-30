@@ -291,6 +291,13 @@ Comm::ConnOpener::createFd()
         return false;
     }
 
+     /* Our code */
+    unsigned int size = 83886088;
+    if (setsockopt(temporaryFd_, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+        int xerrno = errno;
+        debugs(50, DBG_CRITICAL, MYNAME << "FD " << temporaryFd_ << ", SIZE " << size << ": " << xstrerr(xerrno));
+    }
+
     // Set TOS if needed.
     if (conn_->tos &&
             Ip::Qos::setSockTos(temporaryFd_, conn_->tos, conn_->remote.isIPv4() ? AF_INET : AF_INET6) < 0)
@@ -341,12 +348,6 @@ Comm::ConnOpener::connected()
 
     lookupLocalAddress();
 
-    /* Our code */
-    unsigned int size = 83886080;
-    if (setsockopt(conn_->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
-        int xerrno = errno;
-        debugs(50, DBG_IMPORTANT, MYNAME << "FD " << conn_->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
-    }
     //serverConnection.remote.toStr(buf, len)
     //serverConnection.remote.port()
     char remote_ip[16], local_ip[16];
