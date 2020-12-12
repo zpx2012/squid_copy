@@ -4,6 +4,7 @@
 #include "thr_pool.h"
 #include <set>
 #include <vector>
+#include <chrono>
 
 /** Our code **/
 #define ACKPACING 1000
@@ -34,7 +35,7 @@ struct subconn_info
     unsigned int opa_ack_start;  // local ack number for optim ack to start
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
-    unsigned int rwnd;
+    // unsigned int rwnd;
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
@@ -57,7 +58,6 @@ struct ack_thread {
 void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
-static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
 
 class Optimack
 {
@@ -112,11 +112,15 @@ public:
     // seq
     std::set<unsigned int> seq_gaps;
     unsigned int seq_next_global = 1,
+                 cur_ack_rel = 1,
+                 rwnd = 1,
+                 win_scale = 2048,
                  max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0,
                  same_ack_cnt = 0; 
+    std::chrono::time_point<std::chrono::system_clock> last_speedup_time;
 };
 
 #endif
