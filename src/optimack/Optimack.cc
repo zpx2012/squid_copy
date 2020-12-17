@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <ctime>
+#include <sys/time.h>
 #include <iostream>
 using namespace std;
 
@@ -302,6 +303,10 @@ Optimack::init()
             debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
             exit(1);                
     }
+    char log_file_name[100];
+    sprintf(log_file_name, "/root/off_packet_%s.csv", cur_time.time_in_HH_MM_SS());
+    log_file = fopen(log_file_name, "w");
+    fprintf(log_file, "time, off_packet_num\n");
 }
 
 int 
@@ -486,10 +491,10 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
             return -1;
     }
     memcpy(thr_data->buf, packet, packet_len);
-    printf("in cb: packet_len %d\nthr_data->buf", packet_len);
-    hex_dump(thr_data->buf, packet_len);
-    printf("packet:\n");
-    hex_dump(packet, packet_len);
+    // printf("in cb: packet_len %d\nthr_data->buf", packet_len);
+    // hex_dump(thr_data->buf, packet_len);
+    // printf("packet:\n");
+    // hex_dump(packet, packet_len);
 
     pool_handler((void *)thr_data);
     // if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
@@ -513,8 +518,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
 
-    printf("right in process_tcp_packet\n");
-    hex_dump(payload, payload_len);
+    // printf("right in process_tcp_packet\n");
+    // hex_dump(payload, payload_len);
 
     // check remote ip, local ip
     // and set key_port
@@ -553,7 +558,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
         printf("%s\n", log);
         return -1;
     }
-    
+
     // Outgoing Packets
     if (!incoming) 
     {   
@@ -590,21 +595,25 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                                 float off_packet_num = (seq_next_global-cur_ack_rel)/subconn_infos[0].payload_len;
                                 subconn_infos[0].off_pkt_num = off_packet_num;
 
-                                // if (last_ack_rel != cur_ack_rel)
+                                if (last_ack_rel != cur_ack_rel) {
                                     printf("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d\n", thr_data->pkt_id, cur_ack_rel, seq_next_global, off_packet_num, rwnd, max_win_size);
-
+                                    fprintf(log_file, "%s, %.2f\n", cur_time.time_in_HH_MM_SS_NS(), off_packet_num);
+                                }
                                 // Packet lost on all connections
-                                // bool is_all_lost = true;
-                                // for(size_t i = 1; i < subconn_infos.size(); i++){
-                                //     // printf("cur_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].cur_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
-                                //     if (subconn_infos[i].cur_seq_rem < cur_ack_rel + subconn_infos[0].payload_len * 20){
-                                //         is_all_lost = false;
-                                //     }
-                                // }
-                                // if (is_all_lost){
-                                //     printf("\n\n###################\nPacket lost on all connections. \n###################\n\n");
-                                //     exit(-1);
-                                // }
+                                bool is_all_lost = true;
+                                for(size_t i = 1; i < subconn_infos.size(); i++){
+                                    // printf("cur_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].cur_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
+                                    if (subconn_infos[i].cur_seq_rem < cur_ack_rel + subconn_infos[0].payload_len * 10000){
+                                        is_all_lost = false;
+                                    }
+                                }
+                                if (is_all_lost){
+                                    printf("\n\n###################\nPacket lost on all connections. \n###################\n\n");
+                                    for(size_t i = 1; i < subconn_infos.size(); i++){
+                                        printf("S%d: %d\n", i, subconn_infos[i].cur_seq_rem);
+                                    }
+                                    exit(-1);
+                                }
                             }
                             
                             if (cur_ack_rel == last_ack_rel){
@@ -789,12 +798,18 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn_infos[subconn_i].mutex_opa);
                 }
 
-                // if (seq_rel < cur_ack_rel)
-                //     return -1;
-
                 sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn_infos[subconn_i].ini_seq_rem, tcphdr->th_ack, ack-subconn_infos[subconn_i].ini_seq_loc, iphdr->ttl, payload_len);
                 printf("%s\n", log);
 
+                if(payload_len != subconn_infos[0].payload_len)
+                    sprintf(log, "%s - unusal payload_len!", log);
+
+                if (seq_rel < cur_ack_rel - subconn_infos[0].payload_len*5){
+                    printf("P%d-S%d: discarded\n", thr_data->pkt_id, subconn_i); 
+                    // printf("%s - discarded\n", log);
+                    return -1;
+                }
+                    
 
                 if(subconn_infos[subconn_i].cur_seq_rem < seq_rel){
                     subconn_infos[subconn_i].cur_seq_rem = seq_rel;
@@ -860,6 +875,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
                 printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
+                // printf("%s - forwarded to squid\n", log); 
                 // printf("before sendto\n");
                 // hex_dump(thr_data->buf, thr_data->len);
                 // int result = sendto(sockraw, thr_data->buf, thr_data->len, 0, (struct sockaddr*)&dstAddr, sizeof(struct sockaddr));
@@ -868,6 +884,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // }
                 // printf("after sendto\n");
                 // hex_dump(thr_data->buf, thr_data->len);
+                // if(subconn_i == 8)
+                //     return 0;
                 return 0;
 
                 break;
@@ -902,12 +920,12 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     //debugs(11, 2, cmd << ret);
 
     //TODO: iptables too broad??
-    cmd = (char*) malloc(IPTABLESLEN);
+    // cmd = (char*) malloc(IPTABLESLEN);
     // sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j DROP", remote_ip, remote_port, local_port);
-    sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    // sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
+    // ret = exec_iptables('A', cmd);
+    // iptables_rules.push_back(cmd);
+    // debugs(11, 2, cmd << ret);
 
     cmd = (char*) malloc(IPTABLESLEN);
     sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);

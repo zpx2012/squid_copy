@@ -5,6 +5,31 @@
 #include <set>
 #include <vector>
 #include <chrono>
+#include <ctime>
+#include <sys/time.h>
+
+class CurrentTime{
+public:
+    CurrentTime() {}
+    char* time_in_HH_MM_SS(){
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+        return time_str;
+    }
+    char* time_in_HH_MM_SS_NS(){
+        gettimeofday(&cur_timeval, NULL);
+        sprintf(time_str, "%s.%09ld", time_in_HH_MM_SS(), cur_timeval.tv_usec);
+        return time_str;
+    }
+
+private:
+    char time_str[64];
+    time_t rawtime;
+    struct tm * timeinfo;
+    timeval cur_timeval;
+};
+
 
 /** Our code **/
 #define ACKPACING 1000
@@ -114,13 +139,17 @@ public:
     unsigned int seq_next_global = 1,
                  cur_ack_rel = 1,
                  rwnd = 1,
-                 win_scale = 2048,
+                 win_scale = 1 << 11,
                  max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0,
                  same_ack_cnt = 0; 
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time;
+    FILE *log_file;
+
+    CurrentTime cur_time;
 };
+
 
 #endif
