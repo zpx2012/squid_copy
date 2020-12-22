@@ -12,14 +12,17 @@ class CurrentTime{
 public:
     CurrentTime() {}
     char* time_in_HH_MM_SS(){
-        time(&rawtime);
-        timeinfo = localtime(&rawtime);
+        // time(&rawtime);
+        gettimeofday (&cur_timeval, NULL);
+        timeinfo = localtime(&cur_timeval.tv_sec);
         strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
         return time_str;
     }
-    char* time_in_HH_MM_SS_NS(){
+    char* time_in_HH_MM_SS_US(){
         gettimeofday(&cur_timeval, NULL);
-        sprintf(time_str, "%s.%09ld", time_in_HH_MM_SS(), cur_timeval.tv_usec);
+        timeinfo = localtime(&cur_timeval.tv_sec);
+        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+        sprintf(time_str, "%s.%06ld", time_str, cur_timeval.tv_usec);
         return time_str;
     }
 
@@ -139,14 +142,15 @@ public:
     unsigned int seq_next_global = 1,
                  cur_ack_rel = 1,
                  rwnd = 1,
-                 win_scale = 1 << 11,
+                 win_scale = 1 << 8,
                  max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0,
                  same_ack_cnt = 0; 
-    std::chrono::time_point<std::chrono::system_clock> last_speedup_time;
-    FILE *log_file;
+    float last_off_packet = 0.0;
+    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time;
+    FILE *log_file, *rwnd_file, *adjust_rwnd_file;
 
     CurrentTime cur_time;
 };
