@@ -922,6 +922,7 @@ FwdState::connectStart()
         serverConn->local.toStr(local_ip, 16);
         unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
 
+        server_conn->optimack_server.cleanup();
         server_conn->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port);
         /* end */
 
