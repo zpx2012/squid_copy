@@ -35,7 +35,7 @@ private:
 
 
 /** Our code **/
-#define ACKPACING 1000
+#define ACKPACING 3000
 #define LOGSIZE 1024
 #define IPTABLESLEN 128
 // nfq
@@ -142,7 +142,7 @@ public:
     unsigned int seq_next_global = 1,
                  cur_ack_rel = 1,
                  rwnd = 1,
-                 win_scale = 1 << 8,
+                 win_scale = 1 << 11,
                  max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,

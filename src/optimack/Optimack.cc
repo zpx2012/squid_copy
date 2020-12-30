@@ -176,10 +176,10 @@ optimistic_ack(void* arg)
     // for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
     while (!conn->optim_ack_stop) {
         cur_win = obj->cur_ack_rel+obj->rwnd - k;
-        if (elapsed(last_adjust_rwnd_write) >= 1){
-            fprintf(obj->adjust_rwnd_file, "%s, %u\n", obj->cur_time.time_in_HH_MM_SS_US(), cur_win);
-            last_adjust_rwnd_write = std::chrono::system_clock::now();
-        }
+        // if (elapsed(last_adjust_rwnd_write) >= 1){
+        //     fprintf(obj->adjust_rwnd_file, "%s, %u\n", obj->cur_time.time_in_HH_MM_SS_US(), cur_win);
+        //     last_adjust_rwnd_write = std::chrono::system_clock::now();
+        // }
         if (cur_win/2048 <= 1) {
             // printf("cur win is 0\n");
             sleep(1);
@@ -409,57 +409,6 @@ Optimack::teardown_nfq()
     return 0;
 }
 
-int
-Optimack::exec_iptables(char action, char* rule)
-{
-    char cmd[IPTABLESLEN+32];
-    sprintf(cmd, "sudo iptables -%c %s", action, rule);
-    return system(cmd);
-}
-
-int 
-Optimack::find_seq_gaps(unsigned int seq)
-{
-    if (seq < *seq_gaps.begin())
-        return 0;
-    return seq_gaps.find(seq) != seq_gaps.end();
-    // for (size_t i = 0; i < seq_gaps.size(); i++)
-    // {
-    //     if (seq < seq_gaps.at(i))
-    //         return -1;
-    //     else if(seq == seq_gaps.at(i))
-    //         return i;
-    // }
-    // return -1;
-}
-
-void 
-Optimack::insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step)
-{
-    printf("insert gap: ");
-    for(; start < end; start += step){
-        printf("%d ", start);
-        //debugs(1, DBG_CRITICAL, "insert gap u" << start);
-        seq_gaps.insert(start);
-    }
-    printf("\n");
-    // unsigned int last = seq_gaps.at(seq_gaps.size()-1);
-    // if (start > last){
-    //     for(; start < end; start += step)
-    //         seq_gaps.push_back(start);
-    // }
-    // else if (start < last) {
-    //     for(; start < end; start += step){
-
-    //     }       
-    // }
-}
-
-void 
-Optimack::delete_seq_gaps(unsigned int val)
-{
-    seq_gaps.erase(val);
-}
 
 static int 
 cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
@@ -605,10 +554,10 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         if(rwnd > max_win_size)
                             max_win_size = rwnd;
                         cur_ack_rel = ack - subconn_infos[0].ini_seq_rem;
-                        if (elapsed(last_rwnd_write_time) >= 1){
-                            fprintf(rwnd_file, "%s, %u\n", cur_time.time_in_HH_MM_SS_US(), ntohs(tcphdr->th_win)*2048);
-                            last_rwnd_write_time = std::chrono::system_clock::now();
-                        }                       
+                        // if (elapsed(last_rwnd_write_time) >= 1){
+                        //     fprintf(rwnd_file, "%s, %u\n", cur_time.time_in_HH_MM_SS_US(), ntohs(tcphdr->th_win)*2048);
+                        //     last_rwnd_write_time = std::chrono::system_clock::now();
+                        // }                       
 
                         if (!payload_len) {                            
                             if (subconn_infos[0].payload_len) {
@@ -679,7 +628,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                             //}
                             //pthread_mutex_unlock(&mutex_subconn_infos);
                             //}
-                            return 0;
+                            return -1;
                         }
                         // if payload_len != 0, assume it's request
                         // squid connection with payload -> copy request, our connection -> only update seq/ack 
@@ -705,7 +654,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     else{
                         printf("P%d-S%d-out: ack \n", thr_data->pkt_id, subconn_i);
                     }
-                    return 0;
+                    return -1;
                     break;
                 }
             default:
@@ -978,8 +927,8 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    /*
-    for (int i = 1; i <= 0; i++) {
+
+    for (int i = 1; i <= 8; i++) {
         // pthread_mutex_lock(&mutex_subconn_infos);
         struct subconn_info new_subconn;
         memset(&new_subconn, 0, sizeof(struct subconn_info));
@@ -1054,7 +1003,60 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         //send_SYN(remote_ip, local_ip, remote_port, local_port_new, empty_payload, 0, seq);
         //debugs(1, DBG_IMPORTANT, "Subconn " << i << ": Sent SYN");
     }
-    */
 }
+
+
+int
+Optimack::exec_iptables(char action, char* rule)
+{
+    char cmd[IPTABLESLEN+32];
+    sprintf(cmd, "sudo iptables -%c %s", action, rule);
+    return system(cmd);
+}
+
+int 
+Optimack::find_seq_gaps(unsigned int seq)
+{
+    if (seq < *seq_gaps.begin())
+        return 0;
+    return seq_gaps.find(seq) != seq_gaps.end();
+    // for (size_t i = 0; i < seq_gaps.size(); i++)
+    // {
+    //     if (seq < seq_gaps.at(i))
+    //         return -1;
+    //     else if(seq == seq_gaps.at(i))
+    //         return i;
+    // }
+    // return -1;
+}
+
+void 
+Optimack::insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step)
+{
+    printf("insert gap: ");
+    for(; start < end; start += step){
+        printf("%d ", start);
+        //debugs(1, DBG_CRITICAL, "insert gap u" << start);
+        seq_gaps.insert(start);
+    }
+    printf("\n");
+    // unsigned int last = seq_gaps.at(seq_gaps.size()-1);
+    // if (start > last){
+    //     for(; start < end; start += step)
+    //         seq_gaps.push_back(start);
+    // }
+    // else if (start < last) {
+    //     for(; start < end; start += step){
+
+    //     }       
+    // }
+}
+
+void 
+Optimack::delete_seq_gaps(unsigned int val)
+{
+    seq_gaps.erase(val);
+}
+
 
 /** end **/
