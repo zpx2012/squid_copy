@@ -243,6 +243,26 @@ Optimack::start_optim_ack(int id, unsigned int opa_ack_start, unsigned int opa_s
     return 0;
 }
 
+void
+Optimack::cleanup()
+{
+    // stop other optimistic_ack threads and close fd
+    for (size_t i=1; i < subconn_infos.size(); i++) {
+        // TODO: mutex?
+        subconn_infos[i].optim_ack_stop = 1;
+        pthread_join(subconn_infos[i].thread, NULL);
+        close(subconn_infos[i].sockfd);
+    }
+    printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
+    subconn_infos.clear();
+    // clear iptables rules
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+    }
+    iptables_rules.clear();
+}
+
 Optimack::~Optimack()
 {
     // stop nfq_loop thread
@@ -251,20 +271,9 @@ Optimack::~Optimack()
     printf("NFQ %d nfq_thread exited\n", nfq_queue_num);
     // clear thr_pool
     thr_pool_destroy(pool);
-    // stop the optimistic_ack thread and close fd
-    for (size_t i=1; i < subconn_infos.size(); i++) {
-        // TODO: mutex?
-        subconn_infos[i].optim_ack_stop = 1;
-        pthread_join(subconn_infos[i].thread, NULL);
-        close(subconn_infos[i].sockfd);
-    }
-    subconn_infos.clear();
-    printf("NFQ %d all optimistic threads exited\n", nfq_queue_num);
-    // clear iptables rules
-    for (size_t i=0; i<iptables_rules.size(); i++) {
-        exec_iptables('D', iptables_rules[i]);
-        free(iptables_rules[i]);
-    }
+
+    cleanup();
+
     teardown_nfq();
     pthread_mutex_destroy(&mutex_seq_next_global);
     pthread_mutex_destroy(&mutex_seq_gaps);

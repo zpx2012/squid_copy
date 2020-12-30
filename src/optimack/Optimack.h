@@ -98,6 +98,7 @@ public:
             unsigned short local_port);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
+    void cleanup();
 
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
