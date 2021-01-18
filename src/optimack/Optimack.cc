@@ -29,7 +29,11 @@ using namespace std;
 
 // Utility
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start){
-    return std::chrono::duration<double>(std::chrono::system_clock::now() - start).count();
+    auto now = std::chrono::system_clock::now();
+    if (now > start)
+        return std::chrono::duration<double>(now - start).count();
+    else 
+        return 0;
 }
 
 bool is_timeout_and_update(std::chrono::time_point<std::chrono::system_clock> &start, double timeout){
@@ -83,6 +87,7 @@ nfq_loop(void *arg)
     //void * placeholder = 0;
 
     Optimack* obj = (Optimack*)arg;
+    log_info("nfq_loop thread starts");
     while (!(obj->nfq_stop)) {
         rv = recv(obj->g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
         if (rv >= 0) {
@@ -99,6 +104,7 @@ nfq_loop(void *arg)
             usleep(100); //10000
         }
     }
+    log_info("nfq_loop thread ends");
     pthread_exit(NULL);
     //return placeholder;
 }
@@ -223,7 +229,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 
     if (is_all_lost){
         std::string rst_str = exec("cat /proc/net/netfilter/nfnetlink_queue");
-        cout << "cat /proc/net/netfilter/nfnetlink_queue: " << rst_str << endl;
+        cout << "cat /proc/net/netfilter/nfnetlink_queue:\n " << rst_str << endl;
         std::vector<std::string> fields = split(rst_str, ' ');
         if(fields.size() > 7){
             if(fields.at(5) != "0" || fields.at(6) != "0"){
@@ -258,14 +264,40 @@ bool Optimack::does_packet_lost_on_all_conns(){
 
 void* overrun_detector(void* arg){
     Optimack* obj = (Optimack* )arg;
-    int num_conns = obj->subconn_infos.size();
+    uint num_conns = obj->subconn_infos.size(), timeout = 5;
+    uint *last_seq_rems = new uint[num_conns];
     std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
-    uint *last_seq_rem = new uint[num_conns];
 
-    while(!obj->overrun_stop){
-        
+    sleep(10);//Wait for the packets to come
+    log_info("Start overrun_detector thread");
+
+    for(uint i = 0; i < num_conns; i++){
+        last_seq_rems[i] = 0;
+        timers[i] = std::chrono::system_clock::now();
     }
 
+    while(!obj->overrun_stop){
+        for(uint i = 1; i < num_conns; i++){
+            struct subconn_info* subconn = &obj->subconn_infos[i];
+            if(!subconn->cur_seq_rem)
+                continue;
+            if(last_seq_rems[i] != subconn->cur_seq_rem){
+                last_seq_rems[i] = subconn->cur_seq_rem;
+                timers[i] = std::chrono::system_clock::now();
+            }
+            else if (is_timeout_and_update(timers[i], timeout)){
+                //Restart
+                printf("S%d: idle for %ds from %u\n", i, timeout, subconn->cur_seq_rem); 
+                obj->restart_optim_ack(i, subconn->cur_seq_rem+subconn->ini_seq_rem, subconn->cur_seq_loc, subconn->payload_len, subconn->cur_seq_rem);
+                timers[i] += std::chrono::seconds(5);
+            }
+        }
+        sleep(1);
+    }
+    free(last_seq_rems);
+    free(timers);
+    log_info("ovverrun_detector thread ends");
+    pthread_exit(NULL);
 }
 
 
@@ -374,6 +406,19 @@ Optimack::start_optim_ack(int id, unsigned int opa_ack_start, unsigned int opa_s
     return 0;
 }
 
+int Optimack::restart_optim_ack(int id, unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max)
+{
+    struct subconn_info* subconn = &subconn_infos[id];
+    uint seq_rel = opa_ack_start - subconn->ini_seq_rem;
+
+    subconn->optim_ack_stop = 1;
+    subconn->ack_pacing += 10;
+    pthread_join(subconn->thread, NULL);
+    printf("S%d: Restart optim ack from %u\n\n", id, seq_rel);
+    log_info("S%d: Restart optim ack from %u", id, seq_rel);
+    start_optim_ack(id, opa_ack_start, opa_seq_start, payload_len, seq_max);//subconn->cur_seq_rem
+}
+
 void
 Optimack::cleanup()
 {
@@ -400,6 +445,11 @@ Optimack::~Optimack()
     nfq_stop = 1;
     pthread_join(nfq_thread, NULL);
     log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+
+    overrun_stop = 1;
+    pthread_join(overrun_thread, NULL);
+    log_info("overrun_thread exited");
+
     // clear thr_pool
     thr_pool_destroy(pool);
 
@@ -465,6 +515,8 @@ Optimack::init()
     fprintf(adjust_rwnd_file, "time,adjust_rwnd\n");
 
     last_speedup_time = last_rwnd_write_time = last_restart_time = std::chrono::system_clock::now();
+
+    nfq_stop = overrun_stop = 1;
 }
 
 int 
@@ -531,6 +583,7 @@ int
 Optimack::setup_nfqloop()
 {
     // pass the Optimack obj
+    nfq_stop = 0;
     if (pthread_create(&nfq_thread, NULL, nfq_loop, (void*)this) != 0) {
         debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
         return -1;
@@ -951,7 +1004,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
 
                 if(!subconn->payload_len && subconn->optim_ack_stop){
-                    log_debugv("P%d-S%d: process_tcp_packet:942: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
+                    log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                     pthread_mutex_lock(&subconn->mutex_opa);
                     if(!subconn->payload_len && subconn->optim_ack_stop){
                         subconn->payload_len = payload_len;
@@ -960,7 +1013,27 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         // printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i); 
                     }
                     pthread_mutex_unlock(&subconn->mutex_opa);
-                    log_debugv("P%d-S%d: process_tcp_packet:942: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
+                    log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
+                }
+
+                if(overrun_stop) {
+                    log_debugv("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
+                    pthread_mutex_lock(&mutex_subconn_infos);
+                    size_t i;
+                    for (i = 1; i < subconn_infos.size(); i++)
+                        if (subconn->optim_ack_stop == 1) {
+                            break;
+                        }
+                    if (i == subconn_infos.size()){
+                        if(overrun_stop){
+                            overrun_stop = 0;
+                            if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
+                                log_error("Fail to create overrun_detector thread.");
+                            }
+                        }
+                    }
+                    pthread_mutex_unlock(&mutex_subconn_infos);
+                    log_debugv("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
                 }
 
                 sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
@@ -970,7 +1043,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     sprintf(log, "%s - unusal payload_len!", log);
                 }
 
-                log_debugv("P%d-S%d: process_tcp_packet:961: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
+                log_debugv("P%d-S%d: process_tcp_packet:1021: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                 pthread_mutex_lock(&subconn->mutex_opa);
                 if(subconn->cur_seq_rem < seq_rel){
                     subconn->cur_seq_rem = seq_rel;
@@ -991,22 +1064,17 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                         //print dup_seqs
 
-                        printf("S%d: Restart optim ack from %u\n", subconn_i, seq_rel);
-                        log_info("S%d: Restart optim ack from %u", subconn_i, seq_rel);
-
                         //Restart
-                        subconn->optim_ack_stop = 1;
-                        subconn->ack_pacing += 10;
+                        printf("P%d-S%d: retrx detected %u\n", thr_data->pkt_id, subconn_i, seq_rel);
                         send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, "", seq, ack, (cur_ack_rel-seq_rel+rwnd)/2048);
-                        pthread_join(subconn->thread, NULL);
-                        start_optim_ack(subconn_i, seq, ack, payload_len, subconn->cur_seq_rem);//subconn->cur_seq_rem
+                        restart_optim_ack(subconn_i, seq, ack, payload_len, seq);
                         subconn->cur_seq_rem = seq_rel;
                 //         last_restart_time = std::chrono::system_clock::now();
 
                     }
                 }
                 pthread_mutex_unlock(&subconn->mutex_opa);
-                log_debugv("P%d-S%d: process_tcp_packet:961: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
+                log_debugv("P%d-S%d: process_tcp_packet:1021: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
                 //Retrnx the whole window
                 // if(subconn->cur_seq_rem >= seq_rel && seq >= subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){
 
@@ -1032,7 +1100,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                 }
 
-                log_debugv("P%d-S%d: process_tcp_packet:1020: mutex_seq_gaps - trying lock", thr_data->pkt_id, subconn_i); 
+                log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - trying lock", thr_data->pkt_id, subconn_i); 
                 pthread_mutex_lock(&mutex_seq_gaps);
                 if(seq_next_global < seq_rel){
                     seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
@@ -1045,7 +1113,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     seq_next_global = seq_rel + payload_len;
                 
                 pthread_mutex_unlock(&mutex_seq_gaps);
-                log_debugv("P%d-S%d: process_tcp_packet:1020: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
+                log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
 
                 // if (subconn->optim_ack_stop) {
                 //     // TODO: what if payload_len changes?

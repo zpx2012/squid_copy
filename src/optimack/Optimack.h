@@ -112,15 +112,15 @@ public:
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
     int g_nfq_fd;
-    int nfq_stop;
-    pthread_t nfq_thread;
+    int nfq_stop, overrun_stop;
+    pthread_t nfq_thread, overrun_thread;
 
     bool does_packet_lost_on_all_conns();
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
-    int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, 
-            unsigned int seq_max);
+    int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
+    int restart_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int process_tcp_packet(struct thread_data* thr_data);
 
     // variables

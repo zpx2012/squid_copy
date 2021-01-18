@@ -75,7 +75,7 @@ void log_func(int level, const char *fmt, ...)
     struct timespec ts;
     double time_ts;
 
-    if (level > opt_logging_level) {
+    if (level == 99) {
         /* experiment log */
         time(&rawtime);
         timeinfo = localtime(&rawtime);
