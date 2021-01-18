@@ -5,3 +5,5 @@
 Makefile
 .deps/
 .libs/
+*Makefile.in
+*Makefile.am

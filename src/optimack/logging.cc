@@ -6,17 +6,17 @@
 #include <sys/stat.h>
 
 
-#define LOG_FILE "./log"
+#define LOG_FILE "/root/rs/optack.log"
 
 
 static FILE *log_file;
 static FILE *exp_log_file;
 
 // 0 - print log to stdout, 1 - output log to file
-int opt_logging_to_file = 0;
+int opt_logging_to_file = 1;
 
 // Logging level: 0 - error, 1 - warning, 2 - info, 3 - debug, 4 - debug (verbose)
-int opt_logging_level = 4;
+int opt_logging_level = 3;
 
 
 int init_log()
@@ -75,7 +75,7 @@ void log_func(int level, const char *fmt, ...)
     struct timespec ts;
     double time_ts;
 
-    if (level == 99) {
+    if (level > opt_logging_level) {
         /* experiment log */
         time(&rawtime);
         timeinfo = localtime(&rawtime);
@@ -109,19 +109,19 @@ void log_func(int level, const char *fmt, ...)
 
     va_start(ap, fmt);
     vsnprintf(buffer, sizeof(buffer), fmt, ap);
-    if (exp_log_file != NULL) {
-        fprintf(exp_log_file, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
-        if (opt_logging_to_file == 0) {
-            fprintf(stdout, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
-        }
-    }
-    // if (opt_logging_to_file && log_file != NULL) {
-    //     //fprintf(log_file, "%lf [%s] %s\n", time_ts, LEVEL_STR[level], buffer);
+    // if (log_file != NULL) {
     //     fprintf(log_file, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
-    // } else {
-    //     //fprintf(stdout, "%lf [%s] %s\n", time_ts, LEVEL_STR[level], buffer);
-    //     fprintf(stdout, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
+    //     if (opt_logging_to_file == 0) {
+    //         fprintf(stdout, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
+    //     }
     // }
+    if (opt_logging_to_file && log_file != NULL) {
+        //fprintf(log_file, "%lf [%s] %s\n", time_ts, LEVEL_STR[level], buffer);
+        fprintf(log_file, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
+    } else {
+        //fprintf(stdout, "%lf [%s] %s\n", time_ts, LEVEL_STR[level], buffer);
+        fprintf(stdout, "%s [%s] %s\n", time_str, LEVEL_STR[level], buffer);
+    }
     va_end(ap);
 }
 

@@ -3,10 +3,14 @@
 
 #include "thr_pool.h"
 #include <set>
+#include <map>
 #include <vector>
 #include <chrono>
 #include <ctime>
 #include <sys/time.h>
+#include "interval.h"
+// #include <bits/stdc++.h>
+// using namespace std;
 
 class CurrentTime{
 public:
@@ -34,13 +38,14 @@ private:
 };
 
 
+
 /** Our code **/
-#define ACKPACING 3000
+#define ACKPACING 2000
 #define LOGSIZE 1024
 #define IPTABLESLEN 128
 // nfq
 #define NF_QUEUE_NUM 6
-#define NFQLENGTH 1024*200
+#define NFQLENGTH 204800
 #define BUFLENGTH 4096
 
 class Optimack;
@@ -51,8 +56,9 @@ struct subconn_info
     unsigned short local_port;
     unsigned int ini_seq_rem;  //remote sequence number
     unsigned int ini_seq_loc;  //local sequence number
-    unsigned int cur_seq_rem;
-    unsigned int cur_seq_loc;
+    unsigned int cur_seq_rem;  //rel
+    unsigned int last_cur_seq_rem;
+    unsigned int cur_seq_loc;  //TODO: absolute
     short ack_sent;
     bool seq_init;
 
@@ -67,6 +73,8 @@ struct subconn_info
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
+
+    std::map<uint, uint> dup_seqs;
 };
 
 // Multithread
@@ -86,6 +94,7 @@ struct ack_thread {
 void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
+void* overrun_detector(void* arg);
 
 class Optimack
 {
@@ -106,9 +115,10 @@ public:
     int nfq_stop;
     pthread_t nfq_thread;
 
-    int find_seq_gaps(unsigned int seq);
-    void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
-    void delete_seq_gaps(unsigned int val);
+    bool does_packet_lost_on_all_conns();
+    // int find_seq_gaps(unsigned int seq);
+    // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
+    // void delete_seq_gaps(unsigned int val);
     int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, 
             unsigned int seq_max);
     int process_tcp_packet(struct thread_data* thr_data);
@@ -137,20 +147,23 @@ public:
     pthread_mutex_t mutex_seq_gaps = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t mutex_cur_ack_rel = PTHREAD_MUTEX_INITIALIZER;
     
     // seq
-    std::set<unsigned int> seq_gaps;
+    std::vector<Interval> seq_gaps;
+
+    // std::std::vector<unsigned int*> seq_gaps;
     unsigned int seq_next_global = 1,
                  cur_ack_rel = 1,
                  rwnd = 1,
-                 win_scale = 1 << 11,
+                 win_scale = 1 << 10,
                  max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0,
                  same_ack_cnt = 0; 
     float last_off_packet = 0.0;
-    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time;
+    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_same_ack_time, last_restart_time;
     FILE *log_file, *rwnd_file, *adjust_rwnd_file;
 
     CurrentTime cur_time;
