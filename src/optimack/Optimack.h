@@ -47,6 +47,10 @@ private:
 #define NF_QUEUE_NUM 6
 #define NFQLENGTH 204800
 #define BUFLENGTH 4096
+// range
+#define MAX_REQUEST_LEN 1024
+#define MAX_RANGE_REQ_LEN 1536
+#define MAX_RANGE_SIZE 102400
 
 class Optimack;
 
@@ -85,7 +89,7 @@ struct thread_data {
     Optimack* obj;
 };
 
-struct ack_thread {
+struct int_thread {
     int thread_id;
     Optimack* obj;
 };
@@ -95,6 +99,7 @@ void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
+void* range_watch(void* arg);
 
 class Optimack
 {
@@ -167,6 +172,13 @@ public:
     FILE *log_file, *rwnd_file, *adjust_rwnd_file;
 
     CurrentTime cur_time;
+
+    // range
+    int init_range();
+    pthread_mutex_t mutex_req_max = PTHREAD_MUTEX_INITIALIZER;
+    int req_max;
+    int range_sockfd;
+    //char range_request[MAX_RANGE_REQ_LEN];
 };
 
 
