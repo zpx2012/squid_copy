@@ -69,6 +69,7 @@ struct subconn_info
     unsigned int opa_ack_start;  // local ack number for optim ack to start
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
+    std::chrono::time_point<std::chrono::system_clock> last_restart_time;
     // unsigned int rwnd;
     int ack_pacing;
     unsigned int payload_len;
@@ -120,7 +121,7 @@ public:
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
     int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
-    int restart_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
+    int restart_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max, std::chrono::time_point<std::chrono::system_clock> &timer);
     int process_tcp_packet(struct thread_data* thr_data);
 
     // variables
@@ -164,7 +165,7 @@ public:
                  same_ack_cnt = 0; 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_same_ack_time, last_restart_time;
-    FILE *log_file, *rwnd_file, *adjust_rwnd_file;
+    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file;
 
     CurrentTime cur_time;
 };
