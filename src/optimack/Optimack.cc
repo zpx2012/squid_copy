@@ -28,7 +28,7 @@ using namespace std;
 #include "Optimack.h"
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 // Utility
@@ -959,7 +959,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                                 // if (last_ack_rel != cur_ack_rel) {
                                 if (last_off_packet != off_packet_num) {
-                                    // log_debug("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d", thr_data->pkt_id, cur_ack_rel, seq_next_global, off_packet_num, rwnd, max_win_size);
+                                    log_debug("P%d-Squid-out: squid ack %d, seq_global %d, off %.2f packets, win_size %d, max win_size %d", thr_data->pkt_id, cur_ack_rel, seq_next_global, off_packet_num, rwnd, max_win_size);
                                     // fprintf(log_file, "%s, %.2f\n", cur_time.time_in_HH_MM_SS_US(), off_packet_num);
                                     last_off_packet = off_packet_num;
                                 }
@@ -1130,7 +1130,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // TODO: let our reply through...for now
                     if (subconn_i)
                         return 0;
-                    log_info("P%d-S%d-in: server or our ack %d", thr_data->pkt_id, subconn_i, ack);
+                    log_info("P%d-S%d-in: server or our ack %u", thr_data->pkt_id, subconn_i, ack - subconn->ini_seq_loc);
                     return -1;
                 }
 
@@ -1318,13 +1318,13 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // // 2. seq -> sub1->init_seq_rem + seq_rel
                 // // 3. ack -> sub1->cur_seq_loc
                 // // 4. checksum(IP,TCP)
+                log_debug("%s - forwarded to squid", log); 
                 if(!subconn_i)
                     return 0; //Main subconn, return directly
                 tcphdr->th_dport = htons(subconn_infos[0].local_port);
                 tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem+seq_rel);
                 tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
-                log_debug("%s - forwarded to squid", log); 
                 // printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
                 // printf("before sendto\n");
                 // hex_dump(thr_data->buf, thr_data->len);
@@ -1408,7 +1408,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     int conn_num = 15;
     // range
     if (RANGE_MODE) {
-        conn_num = 1;
+        conn_num = 0;
         range_sockfd = 0;
         req_max = 0;
     }
