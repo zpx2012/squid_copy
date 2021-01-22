@@ -27,6 +27,10 @@ using namespace std;
 
 #include "Optimack.h"
 
+#ifndef RANGE_MODE
+#define RANGE_MODE 0
+#endif
+
 // Utility
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start){
     auto now = std::chrono::system_clock::now();
@@ -304,7 +308,7 @@ void* overrun_detector(void* arg){
 void* 
 optimistic_ack(void* arg)
 {
-    struct ack_thread* ack_thr = (struct ack_thread*)arg;
+    struct int_thread* ack_thr = (struct int_thread*)arg;
     int id = ack_thr->thread_id;
     Optimack* obj = ack_thr->obj;
     struct subconn_info* conn = &(obj->subconn_infos[id]);
@@ -389,13 +393,13 @@ Optimack::start_optim_ack(int id, unsigned int opa_ack_start, unsigned int opa_s
 
     // ack thread data
     // TODO: Remember to free in cleanup
-    struct ack_thread* ack_thr = (struct ack_thread*)malloc(sizeof(struct ack_thread));
+    struct int_thread* ack_thr = (struct int_thread*)malloc(sizeof(struct int_thread));
     if (!ack_thr)
     {
         debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
         return -1;
     }
-    memset(ack_thr, 0, sizeof(struct ack_thread));
+    memset(ack_thr, 0, sizeof(struct int_thread));
     ack_thr->thread_id = id;
     ack_thr->obj = this;
 
@@ -441,6 +445,7 @@ Optimack::cleanup()
         free(iptables_rules[i]);
     }
     iptables_rules.clear();
+    request_recved = false;
 }
 
 Optimack::~Optimack()
@@ -626,7 +631,6 @@ Optimack::teardown_nfq()
     return 0;
 }
 
-
 static int 
 cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
@@ -685,6 +689,122 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     return 0;
 }
 
+void*
+range_watch(void* arg)
+{
+    int rv, received, range_sockfd, start, end, local_port, remote_port, seq_offset, seq_loc;
+    char response[MAX_RANGE_SIZE];
+    char data[MAX_RANGE_SIZE];
+    char *range, *body, *local_ip, *remote_ip;
+    bool req_max_get = false;
+
+    Optimack* obj = ((struct int_thread*)arg)->obj;
+    range_sockfd = ((struct int_thread*)arg)->thread_id;
+    local_ip = obj->g_local_ip;
+    remote_ip = obj->g_remote_ip;
+    local_port = obj->subconn_infos[0].local_port;
+    remote_port = obj->g_remote_port;
+    seq_offset = obj->subconn_infos[0].ini_seq_rem;
+    seq_loc = obj->subconn_infos[0].cur_seq_loc;
+
+    received = 0;
+    do {
+        // blocking sock
+        memset(response, 0, MAX_RANGE_SIZE);
+        rv = recv(range_sockfd, response, MAX_RANGE_SIZE, 0);
+        if (rv > 0) {
+            if (!req_max_get) {
+                range = strstr(response, "Keep-Alive: ");
+                if (range) {
+                    body = strstr(range, "max=");
+                    if (body) {
+                        body += 4;
+                        pthread_mutex_lock(&(obj->mutex_req_max));
+                        obj->req_max += (int)strtol(body, &body, 10);
+                        pthread_mutex_unlock(&(obj->mutex_req_max));
+                        req_max_get = true;
+                    }
+                }
+            }
+            // parse and ready for data buffer
+            // TODO: error handler
+            range = strstr(response, "Content-Range: bytes ");
+            if (range) {
+                range += 21;
+                start = (int)strtol(range, &range, 10);
+                range++;
+                end = (int)strtol(range, &range, 10);
+                body = strstr(response, "\r\n\r\n");
+                if (body) {
+                    body += 4;
+                    received = strlen(response);
+                    received -= body - response;
+                    memset(data, 0, MAX_RANGE_SIZE);
+                    memcpy(data, body, received);
+                    // TODO: keep receiving
+                    while (received < end-start+1) {
+                        rv = recv(range_sockfd, data+received, MAX_RANGE_SIZE-received, MSG_DONTWAIT);
+                        if (rv > 0)
+                            received += rv;
+                    }
+                    // we get all our data
+                    send_ACK(local_ip, remote_ip, remote_port, local_port, data, seq_loc, seq_offset+start);
+                }
+            }
+        }
+        else {
+            printf("range_watch ret %d errno %d\n", rv, errno);
+        }
+    } while (rv > 0);
+
+    // sock is closed
+    close(range_sockfd);
+    pthread_exit(NULL);
+}
+
+int
+Optimack::init_range()
+{
+    pthread_t range_thread;
+    int range_sockfd;
+    struct sockaddr_in server_addr;
+
+    // Open socket
+    if ((range_sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Can't open stream socket.");
+    }
+
+    // Set server_addr
+    bzero(&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(g_remote_ip);
+    server_addr.sin_port = htons(g_remote_port);
+
+    // Connect to server
+    if (connect(range_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connect server error");
+        close(range_sockfd);
+    }
+
+    // range thread data
+    struct int_thread* range_thr = (struct int_thread*)malloc(sizeof(struct int_thread));
+    if (!range_thr)
+    {
+        debugs(0, DBG_CRITICAL, "init_range: error during thr_data malloc");
+        return -1;
+    }
+    memset(range_thr, 0, sizeof(struct int_thread));
+    range_thr->thread_id = range_sockfd;
+    range_thr->obj = this;
+
+    if (pthread_create(&range_thread, NULL, range_watch, (void *)range_thr) != 0) {
+        //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
+        perror("Can't create range_watch thread\n");
+        return -1;
+    }
+
+    return range_sockfd;
+}
 
 int 
 Optimack::process_tcp_packet(struct thread_data* thr_data)
@@ -773,9 +893,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                         pthread_mutex_unlock(&subconn->mutex_opa);
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
+                        // TODO: should we drop if subconn_i==0 ?
                         return -1;
                     }
-                    // TODO: clear iptables or always update
 
                     if (subconn_i == 0) {
                         rwnd = ntohs(tcphdr->th_win) * win_scale;                            
@@ -1108,7 +1228,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //     }
                 // }
 
-                if (seq_rel + subconn_infos[0].payload_len*5 < cur_ack_rel){
+                if (seq_rel + subconn_infos[0].payload_len*5 < cur_ack_rel) {
                     // printf("P%d-S%d: discarded\n", thr_data->pkt_id, subconn_i); 
                     log_debug("%s - discarded", log);
                     return -1;
@@ -1116,10 +1236,29 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - trying lock", thr_data->pkt_id, subconn_i); 
                 pthread_mutex_lock(&mutex_seq_gaps);
-                if(seq_next_global < seq_rel){
+
+                if (seq_next_global < seq_rel) {
+                    if (RANGE_MODE) {
+                        int start = seq_next_global;
+                        pthread_mutex_lock(&mutex_req_max);
+                        // we allow negative here
+                        // tricky & risky
+                        if (req_max == 0) {
+                            range_sockfd = init_range();
+                            req_max = -1;
+                        }
+                        else
+                            req_max--;
+                        char range_request[MAX_RANGE_REQ_LEN];
+                        memcpy(range_request, request, request_len);
+                        // assume last characters are \r\n\r\n
+                        sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
+                        send(range_sockfd, range_request, strlen(range_request), 0);
+                        pthread_mutex_unlock(&mutex_req_max);
+                    }
                     seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
                 }
-                else if(seq_next_global > seq_rel){
+                else if (seq_next_global > seq_rel) {
                     seq_gaps = removeInterval(seq_gaps, Interval(seq_rel, seq_rel+payload_len));
                 }
 
@@ -1266,8 +1405,15 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
+    int conn_num = 15;
+    // range
+    if (RANGE_MODE) {
+        conn_num = 1;
+        range_sockfd = 0;
+        req_max = 0;
+    }
 
-    for (int i = 1; i <= 15; i++) {
+    for (int i = 1; i <= conn_num; i++) {
         // pthread_mutex_lock(&mutex_subconn_infos);
         struct subconn_info new_subconn;
         memset(&new_subconn, 0, sizeof(struct subconn_info));
