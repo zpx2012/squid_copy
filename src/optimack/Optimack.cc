@@ -354,6 +354,7 @@ optimistic_ack(void* arg)
         log_debug("O%d: ack %u, seq %u, win_scaled %d", id, opa_ack_start - conn->ini_seq_rem, opa_seq_start - conn->ini_seq_loc, cur_win_scale);
         opa_ack_start += conn->payload_len;
 
+        // TODO: casue BUG in local machine
         if(!id)
             fprintf(obj->ack_file, "%s, %u\n", obj->cur_time.time_in_HH_MM_SS_US(), opa_ack_start - conn->ini_seq_rem);
 
@@ -748,12 +749,13 @@ range_watch(void* arg)
                             received += rv;
                     }
                     // we get all our data
+                    log_debug("ready to send %d - %d", start, end);
                     send_ACK(local_ip, remote_ip, remote_port, local_port, data, seq_loc, seq_offset+start);
                 }
             }
         }
-        else {
-            printf("range_watch ret %d errno %d\n", rv, errno);
+        else if (rv < 0) {
+            log_debug("range_watch ret %d errno %d", rv, errno);
         }
     } while (rv > 0);
 
