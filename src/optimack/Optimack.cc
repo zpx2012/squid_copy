@@ -28,7 +28,7 @@ using namespace std;
 #include "Optimack.h"
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 1
+#define RANGE_MODE 0
 #endif
 
 // Utility
@@ -329,7 +329,8 @@ optimistic_ack(void* arg)
     bool is_zero_window = true;
     // for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
     while (!conn->optim_ack_stop) {
-        cur_win_scale = (obj->cur_ack_rel + obj->rwnd - opa_ack_start + conn->ini_seq_rem) / 2048;
+        cur_win_scale = obj->rwnd / 2048;
+        // cur_win_scale = (obj->cur_ack_rel + obj->rwnd - opa_ack_start + conn->ini_seq_rem) / 2048;
         // if (elapsed(last_adjust_rwnd_write) >= 1){
         //     fprintf(obj->adjust_rwnd_file, "%s, %u\n", obj->cur_time.time_in_HH_MM_SS_US(), cur_win_scale);
         //     last_adjust_rwnd_write = std::chrono::system_clock::now();
@@ -1186,7 +1187,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if(seq_rel == subconn->next_seq_rem)
                     subconn->next_seq_rem = seq_rel + payload_len;
                 else if(seq_rel > subconn->next_seq_rem){ // Out of order or packet loss, create gaps
-                    if (RANGE_MODE) {
+                    if (RANGE_MODE) {// TODO: mutil optack conn? Still need seq_next_global
                         int start = subconn->next_seq_rem;
                         pthread_mutex_lock(&mutex_req_max);
                         // we allow negative here
