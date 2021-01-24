@@ -217,17 +217,17 @@ bool Optimack::does_packet_lost_on_all_conns(){
     log_debugv("does_packet_lost_on_all_conns: mutex_seq_gaps - trying lock"); 
     pthread_mutex_lock(&mutex_seq_gaps);
     for(size_t i = 1; i < subconn_infos.size(); i++){
-        // printf("cur_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].cur_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
-        if ( (!seq_gaps.empty() && subconn_infos[i].cur_seq_rem < seq_gaps.at(0).start) || subconn_infos[i].cur_seq_rem <= cur_ack_rel){//Why seq_gaps? because squid might drop some packets forwarded to it
-            if (subconn_infos[i].cur_seq_rem != subconn_infos[i].last_cur_seq_rem){
-                log_debug("S%u: cur_seq_rem %u, seq_gaps[0].start %u", i, subconn_infos[i].cur_seq_rem, seq_gaps[0].start);  
-                subconn_infos[i].last_cur_seq_rem = subconn_infos[i].cur_seq_rem;
+        // printf("next_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].next_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
+        if ( (!seq_gaps.empty() && subconn_infos[i].next_seq_rem < seq_gaps.at(0).start) || subconn_infos[i].next_seq_rem <= cur_ack_rel){//Why seq_gaps? because squid might drop some packets forwarded to it
+            if (subconn_infos[i].next_seq_rem != subconn_infos[i].last_next_seq_rem){
+                log_debug("S%u: next_seq_rem %u, seq_gaps[0].start %u", i, subconn_infos[i].next_seq_rem, seq_gaps[0].start);  
+                subconn_infos[i].last_next_seq_rem = subconn_infos[i].next_seq_rem;
             }
             is_all_lost = false;
             break;
         }
-        else if(!seq_gaps.empty() && subconn_infos[i].cur_seq_rem == seq_gaps.at(0).start){
-            log_error("S%u: Didn't remove [%u, %u], cur_seq_rem %u", i, seq_gaps[0].start, seq_gaps[0].end, subconn_infos[i].cur_seq_rem);
+        else if(!seq_gaps.empty() && subconn_infos[i].next_seq_rem == seq_gaps.at(0).start){
+            log_error("S%u: Didn't remove [%u, %u], next_seq_rem %u", i, seq_gaps[0].start, seq_gaps[0].end, subconn_infos[i].next_seq_rem);
         }
     }
 
@@ -246,7 +246,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 
         printf("\n\n###################\nPacket lost on all connections. \n###################\n\nlast ack:%d\n", cur_ack_rel);
         for(size_t i = 1; i < subconn_infos.size(); i++){
-            printf("S%d: %d\n", i, subconn_infos[i].cur_seq_rem);
+            printf("S%d: %d\n", i, subconn_infos[i].next_seq_rem);
         }
         if(seq_gaps[0].start < cur_ack_rel){
             printf("ACK packet, gap removal wrong!!!\n");
@@ -268,7 +268,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 
 void* overrun_detector(void* arg){
     Optimack* obj = (Optimack* )arg;
-    uint num_conns = obj->subconn_infos.size(), timeout = 3;
+    uint num_conns = obj->subconn_infos.size(), timeout = 2;
     uint *last_seq_rems = new uint[num_conns];
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
 
@@ -283,16 +283,16 @@ void* overrun_detector(void* arg){
     while(!obj->overrun_stop){
         for(uint i = 0; i < num_conns; i++){
             struct subconn_info* subconn = &obj->subconn_infos[i];
-            if(!subconn->cur_seq_rem)
+            if(!subconn->next_seq_rem)
                 continue;
-            if(last_seq_rems[i] != subconn->cur_seq_rem){
-                last_seq_rems[i] = subconn->cur_seq_rem;
+            if(last_seq_rems[i] != subconn->next_seq_rem){
+                last_seq_rems[i] = subconn->next_seq_rem;
                 subconn->last_restart_time = std::chrono::system_clock::now();
             }
             else if (is_timeout_and_update(subconn->last_restart_time, timeout)){
                 //Restart
-                printf("S%d: idle for %ds from %u\n", i, timeout, subconn->cur_seq_rem); 
-                obj->restart_optim_ack(i, subconn->cur_seq_rem+subconn->ini_seq_rem, subconn->cur_seq_loc, subconn->payload_len, subconn->cur_seq_rem, subconn->last_restart_time);
+                printf("S%d: idle for %ds from %u\n", i, timeout, subconn->next_seq_rem); 
+                obj->restart_optim_ack(i, subconn->next_seq_rem+subconn->ini_seq_rem, subconn->next_seq_loc+subconn->ini_seq_loc, subconn->payload_len, subconn->next_seq_rem, subconn->last_restart_time);
                 // obj->subconn_infos[i].last_restart_time += std::chrono::seconds(5);
             }
         }
@@ -343,7 +343,7 @@ optimistic_ack(void* arg)
                 is_zero_window = true;
             }
             if (elapsed(last_zero_window) >= 10){
-                obj->does_packet_lost_on_all_conns();
+                // obj->does_packet_lost_on_all_conns();
                 // printIntervals(obj->seq_gaps);
             }
             sleep(1);
@@ -358,10 +358,10 @@ optimistic_ack(void* arg)
             fprintf(obj->ack_file, "%s, %u\n", obj->cur_time.time_in_HH_MM_SS_US(), opa_ack_start - conn->ini_seq_rem);
 
         if (SPEEDUP_CONFIG){
-            if(conn->cur_seq_rem-opa_ack_start > 1460*100 && conn->cur_seq_rem > opa_ack_start && obj->subconn_infos[0].off_pkt_num < 1 && elapsed(obj->last_speedup_time) > 10){
+            if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && obj->subconn_infos[0].off_pkt_num < 1 && elapsed(obj->last_speedup_time) > 10){
                 log_debugv("optimistic_ack: mutex_subconn_infos - tring lock");
                 pthread_mutex_lock(&obj->mutex_subconn_infos);
-                if(conn->cur_seq_rem-opa_ack_start > 1460*100 && conn->cur_seq_rem > opa_ack_start && obj->subconn_infos[0].off_pkt_num < 1 && elapsed(obj->last_speedup_time) > 10){
+                if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && obj->subconn_infos[0].off_pkt_num < 1 && elapsed(obj->last_speedup_time) > 10){
                     for (int i = 0; i < obj->subconn_infos.size(); i++)
                         adjust_optimack_speed(&(obj->subconn_infos[i]), i, 1, 10);//low frequence
                     obj->last_speedup_ack_rel = opa_ack_start - conn->ini_seq_rem;
@@ -423,7 +423,7 @@ int Optimack::restart_optim_ack(int id, unsigned int opa_ack_start, unsigned int
     pthread_join(subconn->thread, NULL);
     printf("S%d: Restart optim ack from %u\n\n", id, seq_rel);
     log_info("S%d: Restart optim ack from %u", id, seq_rel);
-    start_optim_ack(id, opa_ack_start, opa_seq_start, payload_len, seq_max);//subconn->cur_seq_rem
+    start_optim_ack(id, opa_ack_start, opa_seq_start, payload_len, seq_max);//subconn->next_seq_rem
     timer += std::chrono::seconds(2);
 }
 
@@ -705,7 +705,7 @@ range_watch(void* arg)
     local_port = obj->subconn_infos[0].local_port;
     remote_port = obj->g_remote_port;
     seq_offset = obj->subconn_infos[0].ini_seq_rem;
-    seq_loc = obj->subconn_infos[0].cur_seq_loc;
+    seq_loc = obj->subconn_infos[0].next_seq_loc+obj->subconn_infos[0].ini_seq_loc;
 
     received = 0;
     do {
@@ -881,7 +881,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         pthread_mutex_lock(&subconn->mutex_opa);
                         if (!subconn->seq_init && payload_len) {
                             subconn->ini_seq_rem = ack - 1;
-                            subconn->cur_seq_rem = 1;
+                            subconn->next_seq_rem = 1;
                             subconn->ini_seq_loc = seq - 1;
                             subconn->seq_init = true;
                             log_info("Subconn %d seq_init done", subconn_i);
@@ -952,7 +952,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         //     last_rwnd_write_time = std::chrono::system_clock::now();
                         // }                       
 
-                        if (!payload_len) {                            
+                        if (!payload_len) {      
+
                             if (subconn_infos[0].payload_len && seq_next_global > cur_ack_rel) { ////packet received from subconn 0
                                 float off_packet_num = (seq_next_global-cur_ack_rel)/subconn_infos[0].payload_len;
                                 subconn_infos[0].off_pkt_num = off_packet_num;
@@ -971,15 +972,15 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                                 // // Packet lost on all connections
                                 // bool is_all_lost = true;
                                 // for(size_t i = 1; i < subconn_infos.size(); i++){
-                                //     // printf("cur_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].cur_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
-                                //     if (subconn_infos[i].cur_seq_rem < cur_ack_rel + subconn_infos[0].payload_len * 10000){
+                                //     // printf("next_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].next_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
+                                //     if (subconn_infos[i].next_seq_rem < cur_ack_rel + subconn_infos[0].payload_len * 10000){
                                 //         is_all_lost = false;
                                 //     }
                                 // }
                                 // if (is_all_lost){
                                 //     printf("\n\n###################\nPacket lost on all connections. \n###################\n\nlast ack:%d\n", cur_ack_rel);
                                 //     for(size_t i = 1; i < subconn_infos.size(); i++){
-                                //         printf("S%d: %d\n", i, subconn_infos[i].cur_seq_rem);
+                                //         printf("S%d: %d\n", i, subconn_infos[i].next_seq_rem);
                                 //     }
 
                                 //     exit(-1);
@@ -1021,8 +1022,10 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         // all done, start to send request
                         for (size_t i=0; i<subconn_infos.size(); i++) {
                             send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
-                            subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
+                            subconn_infos[i].next_seq_loc = 1 + request_len;
+                            subconn_infos[i].next_seq_rem = 1;
                         }
+                        seq_next_global = 1;
                         pthread_mutex_unlock(&mutex_subconn_infos);
                         log_debugv("P%d-S%d-out: process_tcp_packet:817: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
                     }
@@ -1066,7 +1069,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             //         struct subconn_info new_subconn;
             //         new_subconn.local_port = sport;//No nfq callback will interfere because iptable rules haven't been added
             //         new_subconn.ini_seq_loc = seq; //unknown
-            //         new_subconn.cur_seq_loc = seq;
+            //         new_subconn.next_seq_loc = seq;
             //         new_subconn.win_size = 29200*128;
             //         new_subconn.ack_pacing = 5000;
             //         new_subconn.ack_sent = 1; //Assume squid will send ACK
@@ -1091,7 +1094,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 //char empty_payload[] = "";
                 //send_ACK(sip, dip, sport, dport, empty_payload, seq+1, ack);
-                //subconn->ini_seq_rem = subconn->cur_seq_rem = seq; //unknown
+                //subconn->ini_seq_rem = subconn->next_seq_rem = seq; //unknown
                 ////debugs(1, DBG_IMPORTANT, "S" << subconn_i << ": Received SYN/ACK. Sent ACK");
 
                 //pthread_mutex_lock(&mutex_subconn_infos);
@@ -1111,7 +1114,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //if (i == subconn_infos.size()) {
                     //for (size_t i = 0; i < subconn_infos.size(); i++) {
                         //send_ACK(sip, dip, sport, subconn_infos[i].local_port, request, subconn_infos[i].ini_seq_rem+1, subconn_infos[i].ini_seq_loc+1);
-                        //subconn_infos[i].cur_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
+                        //subconn_infos[i].next_seq_loc = subconn_infos[i].ini_seq_loc + 1 + request_len;
                     //}
                     ////debugs(1, DBG_IMPORTANT, "S" << subconn_i << "All ACK sent, sent request");
                 //}
@@ -1140,7 +1143,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     if(!subconn->payload_len && subconn->optim_ack_stop){
                         subconn->payload_len = payload_len;
                         // subconn_infos[0].payload_len = payload_len;
-                        start_optim_ack(subconn_i, subconn->ini_seq_rem + 1, subconn->cur_seq_loc, payload_len, 0); //TODO: read MTU
+                        start_optim_ack(subconn_i, subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                         // printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i); 
                     }
                     pthread_mutex_unlock(&subconn->mutex_opa);
@@ -1179,38 +1182,50 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 log_debugv("P%d-S%d: process_tcp_packet:1021: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                 pthread_mutex_lock(&subconn->mutex_opa);
-                if(subconn->cur_seq_rem < seq_rel){
-                    subconn->cur_seq_rem = seq_rel;
+                uint seq_subconn_next =  + subconn->payload_len;
+                if(seq_rel == subconn->next_seq_rem)
+                    subconn->next_seq_rem = seq_rel + payload_len;
+                else if(seq_rel > subconn->next_seq_rem){ // Out of order or packet loss, create gaps
+                    subconn->seq_gaps = insertNewInterval(subconn->seq_gaps, Interval(subconn->next_seq_rem, seq_rel-1));
+                    subconn->next_seq_rem = seq_rel + payload_len;
                 }
+                else { // gaps arrives or retrnx
+                    subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(seq_rel, seq_rel+payload_len));
+                    if (subconn->next_seq_rem < seq_rel + payload_len) //overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+                        subconn->next_seq_rem = seq_rel + payload_len;
+                }
+
+                if (subconn->next_seq_rem > seq_next_global)
+                    seq_next_global = subconn->next_seq_rem;
                 // Dup Retrnx
-                else if(seq_rel > 1 && subconn->cur_seq_rem >= seq_rel){// && seq > subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){ //TODO: out-of-order?
-                    log_info("P%d-S%d: cur_seq_rem(%u) >= seq_rel(%u)", thr_data->pkt_id, subconn_i, subconn->cur_seq_rem, seq_rel);
-                    //print dup_seqs
-                    if(++subconn->dup_seqs[seq_rel] >= 2){
-                        // subconn->dup_seqs.clear();                       
-                        std::map<uint, uint>::iterator it = subconn->dup_seqs.begin(); 
-                        while (it != subconn->dup_seqs.end()){
-                            if(it->first <= seq_rel){
-                                it = subconn->dup_seqs.erase(it);
-                            }
-                            else
-                                it++;
-                        }
-                        //print dup_seqs
+                // else if(seq_rel > 1 && subconn->next_seq_rem >= seq_rel){// && seq > subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){ //TODO: out-of-order?
+                //     log_info("P%d-S%d: next_seq_rem(%u) >= seq_rel(%u)", thr_data->pkt_id, subconn_i, subconn->next_seq_rem, seq_rel);
+                //     //print dup_seqs
+                //     if(++subconn->dup_seqs[seq_rel] >= 2){
+                //         // subconn->dup_seqs.clear();                       
+                //         std::map<uint, uint>::iterator it = subconn->dup_seqs.begin(); 
+                //         while (it != subconn->dup_seqs.end()){
+                //             if(it->first <= seq_rel){
+                //                 it = subconn->dup_seqs.erase(it);
+                //             }
+                //             else
+                //                 it++;
+                //         }
+                //         //print dup_seqs
 
-                        //Restart
-                        printf("P%d-S%d: retrx detected %u\n", thr_data->pkt_id, subconn_i, seq_rel);
-                        send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, "", seq, ack, (cur_ack_rel-seq_rel+rwnd)/2048);
-                        restart_optim_ack(subconn_i, seq, ack, payload_len, seq, subconn->last_restart_time);
-                        subconn->cur_seq_rem = seq_rel;
-                //         last_restart_time = std::chrono::system_clock::now();
+                //         //Restart
+                //         printf("P%d-S%d: retrx detected %u\n", thr_data->pkt_id, subconn_i, seq_rel);
+                //         send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, "", seq, ack, (cur_ack_rel-seq_rel+rwnd)/2048);
+                //         restart_optim_ack(subconn_i, seq, ack, payload_len, seq, subconn->last_restart_time);
+                //         subconn->next_seq_rem = seq_rel;
+                // //         last_restart_time = std::chrono::system_clock::now();
 
-                    }
-                }
+                //     }
+                // }
                 pthread_mutex_unlock(&subconn->mutex_opa);
                 log_debugv("P%d-S%d: process_tcp_packet:1021: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
                 //Retrnx the whole window
-                // if(subconn->cur_seq_rem >= seq_rel && seq >= subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){
+                // if(subconn->next_seq_rem >= seq_rel && seq >= subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){
 
                 //     subconn->opa_retrx_counter++;
                 //     if (subconn->opa_retrx_counter >= 3){
@@ -1220,8 +1235,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //         // printf("S%d: before join\n", subconn_i);
                 //         pthread_join(subconn->thread, NULL);
                 //         printf("S%d: Restart optim ack from %u\n", subconn_i, seq_rel);
-                //         start_optim_ack(subconn_i, seq, ack, payload_len, subconn->cur_seq_rem);//subconn->cur_seq_rem
-                //         subconn->cur_seq_rem = seq_rel;
+                //         start_optim_ack(subconn_i, seq, ack, payload_len, subconn->next_seq_rem);//subconn->next_seq_rem
+                //         subconn->next_seq_rem = seq_rel;
 
                 //         subconn->opa_retrx_counter = 0;
                 //         last_restart_time = std::chrono::system_clock::now();
@@ -1234,39 +1249,40 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                 }
 
-                log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - trying lock", thr_data->pkt_id, subconn_i); 
-                pthread_mutex_lock(&mutex_seq_gaps);
+                // log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - trying lock", thr_data->pkt_id, subconn_i); 
+                // pthread_mutex_lock(&mutex_seq_gaps);
 
-                if (seq_next_global < seq_rel) {
-                    if (RANGE_MODE) {
-                        int start = seq_next_global;
-                        pthread_mutex_lock(&mutex_req_max);
-                        // we allow negative here
-                        // tricky & risky
-                        if (req_max == 0) {
-                            range_sockfd = init_range();
-                            req_max = -1;
-                        }
-                        else
-                            req_max--;
-                        char range_request[MAX_RANGE_REQ_LEN];
-                        memcpy(range_request, request, request_len);
-                        // assume last characters are \r\n\r\n
-                        sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
-                        send(range_sockfd, range_request, strlen(range_request), 0);
-                        pthread_mutex_unlock(&mutex_req_max);
-                    }
-                    seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
-                }
-                else if (seq_next_global > seq_rel) {
-                    seq_gaps = removeInterval(seq_gaps, Interval(seq_rel, seq_rel+payload_len));
-                }
-
-                if (seq_next_global < seq_rel + payload_len)
-                    seq_next_global = seq_rel + payload_len;
-                
-                pthread_mutex_unlock(&mutex_seq_gaps);
-                log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
+                // if (seq_rel == seq_next_global)
+                //     seq_next_global = seq_rel + payload_len;
+                // else if (seq_rel > seq_next_global) {
+                //     if (RANGE_MODE) {
+                //         int start = seq_next_global;
+                //         pthread_mutex_lock(&mutex_req_max);
+                //         // we allow negative here
+                //         // tricky & risky
+                //         if (req_max == 0) {
+                //             range_sockfd = init_range();
+                //             req_max = -1;
+                //         }
+                //         else
+                //             req_max--;
+                //         char range_request[MAX_RANGE_REQ_LEN];
+                //         memcpy(range_request, request, request_len);
+                //         // assume last characters are \r\n\r\n
+                //         sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
+                //         send(range_sockfd, range_request, strlen(range_request), 0);
+                //         pthread_mutex_unlock(&mutex_req_max);
+                //     }
+                //     seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
+                //     seq_next_global = seq_rel + payload_len;
+                // }
+                // else {
+                //     seq_gaps = removeInterval(seq_gaps, Interval(seq_rel, seq_rel+payload_len));
+                //     if (seq_next_global < seq_rel + payload_len) //overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+                //         seq_next_global = seq_rel + payload_len;
+                // }
+                // pthread_mutex_unlock(&mutex_seq_gaps);
+                // log_debugv("P%d-S%d: process_tcp_packet:1078: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
 
                 // if (subconn->optim_ack_stop) {
                 //     // TODO: what if payload_len changes?
@@ -1316,14 +1332,14 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // // send to squid 
                 // // 1. dest port -> sub1->localport
                 // // 2. seq -> sub1->init_seq_rem + seq_rel
-                // // 3. ack -> sub1->cur_seq_loc
+                // // 3. ack -> sub1->next_seq_loc
                 // // 4. checksum(IP,TCP)
                 log_debug("%s - forwarded to squid", log); 
                 if(!subconn_i)
                     return 0; //Main subconn, return directly
                 tcphdr->th_dport = htons(subconn_infos[0].local_port);
-                tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem+seq_rel);
-                tcphdr->th_ack = htonl(subconn_infos[0].cur_seq_loc);
+                tcphdr->th_seq = htonl(subconn_infos[0].ini_seq_rem + seq_rel);
+                tcphdr->th_ack = htonl(subconn_infos[0].ini_seq_loc + subconn_infos[0].next_seq_loc);
                 compute_checksums(thr_data->buf, 20, thr_data->len);
                 // printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
                 // printf("before sendto\n");
@@ -1397,7 +1413,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     struct subconn_info squid_conn;
     memset(&squid_conn, 0, sizeof(struct subconn_info));
     squid_conn.local_port = local_port;
-    squid_conn.ini_seq_loc = squid_conn.cur_seq_loc = 0;
+    squid_conn.ini_seq_loc = squid_conn.next_seq_loc = 0;
     squid_conn.ack_pacing = ACKPACING;
     squid_conn.ack_sent = 1; //Assume squid will send ACK
     squid_conn.optim_ack_stop = 1;
@@ -1418,8 +1434,8 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         struct subconn_info new_subconn;
         memset(&new_subconn, 0, sizeof(struct subconn_info));
         //new_subconn.local_port = local_port_new;
-        new_subconn.ini_seq_loc = new_subconn.cur_seq_loc = 0;
-        new_subconn.last_cur_seq_rem = 0;
+        new_subconn.ini_seq_loc = new_subconn.next_seq_loc = 0;
+        new_subconn.last_next_seq_rem = 0;
         // new_subconn.rwnd = 365;
         new_subconn.ack_pacing = ACKPACING;
         new_subconn.ack_sent = 0;
