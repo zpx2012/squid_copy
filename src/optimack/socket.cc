@@ -10,6 +10,20 @@
 #include "util.h"
 #include "logging.h"
 
+void send_ACK_payload(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, int payload_len, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 128)
+{
+    struct tcphdr_opts opts;
+    opts.size = 0;
+
+    struct tcphdr_bsd header;
+    header.th_flags = TH_ACK;
+    header.th_seq = seq;
+    header.th_ack = ack;
+    header.th_win = win_size;
+
+    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, payload_len, 1);
+}
+
 void send_SYN(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
 {
     struct tcphdr_opts opts;

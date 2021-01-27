@@ -25,6 +25,9 @@ using namespace std;
 #include "Debug.h"
 #include "logging.h"
 
+#include <cstring> // for http parsing
+#include <algorithm>
+
 #include "Optimack.h"
 
 #ifndef RANGE_MODE
@@ -690,13 +693,58 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     return 0;
 }
 
+const char header_field[] = "HTTP/1.1 206";
+const char range_field[] = "Content-Range: bytes ";
+const char tail_field[] = "\r\n\r\n";
+const char keep_alive_field[] = "Keep-Alive: ";
+const char max_field[] = "max=";
+
+struct http_header {
+    int parsed;
+    int remain;
+    int start;
+    int end;
+};
+
+int
+parse_response(http_header *head, char *response, int unread)
+{
+    char *recv_end = response + unread;
+    char *parse_head;
+    if (head->parsed) {
+        log_debug("[Range] error: header should have been parsed");
+        return -1;
+    }
+    // check header
+    parse_head = std::search(response, recv_end, header_field, header_field+12);
+    if (parse_head < recv_end) {
+        // check range
+        parse_head = std::search(parse_head, recv_end, range_field, range_field+21);
+        if (parse_head < recv_end) {
+            parse_head += 21;
+            head->start = (int)strtol(parse_head, &parse_head, 10);
+            parse_head++;
+            head->end = (int)strtol(parse_head, &parse_head, 10);
+            head->remain = head->end - head->start + 1;
+            parse_head = std::search(parse_head, recv_end, tail_field, tail_field+4);
+            if (parse_head < recv_end) {
+                parse_head += 4;
+                head->parsed = 1;
+                log_debug("[Range] Header received %d - %d", head->start, head->end);
+                return parse_head-response;
+            }
+        }
+    }
+    return 0;
+}
+
 void*
 range_watch(void* arg)
 {
-    int rv, received, range_sockfd, start, end, local_port, remote_port, seq_offset, seq_loc;
+    int rv, range_sockfd, local_port, remote_port, seq_offset, seq_loc;
     char response[MAX_RANGE_SIZE];
     char data[MAX_RANGE_SIZE];
-    char *range, *body, *local_ip, *remote_ip;
+    char *local_ip, *remote_ip;
     bool req_max_get = false;
 
     Optimack* obj = ((struct int_thread*)arg)->obj;
@@ -708,55 +756,81 @@ range_watch(void* arg)
     seq_offset = obj->subconn_infos[0].ini_seq_rem;
     seq_loc = obj->subconn_infos[0].cur_seq_loc;
 
-    received = 0;
+    int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0;
+    http_header* header = (http_header*)malloc(sizeof(http_header));
+    memset(header, 0, sizeof(http_header));
+    char *tmp;
+
     do {
         // blocking sock
-        memset(response, 0, MAX_RANGE_SIZE);
-        rv = recv(range_sockfd, response, MAX_RANGE_SIZE, 0);
+        memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
+        rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, 0);
         if (rv > 0) {
+            unread += rv;
+            consumed = 0;
+
             if (!req_max_get) {
-                range = strstr(response, "Keep-Alive: ");
-                if (range) {
-                    body = strstr(range, "max=");
-                    if (body) {
-                        body += 4;
+                //range = strstr(response, "Keep-Alive: ");
+                tmp = std::search(response, response+unread, keep_alive_field, keep_alive_field+12);
+                if (tmp < response+unread) {
+                    //body = strstr(range, "max=");
+                    tmp = std::search(tmp, response+unread, max_field, max_field+4);
+                    if (tmp < response+unread) {
+                        tmp += 4;
                         pthread_mutex_lock(&(obj->mutex_req_max));
-                        obj->req_max += (int)strtol(body, &body, 10);
+                        obj->req_max += (int)strtol(tmp, &tmp, 10);
                         pthread_mutex_unlock(&(obj->mutex_req_max));
                         req_max_get = true;
                     }
                 }
             }
-            // parse and ready for data buffer
-            // TODO: error handler
-            range = strstr(response, "Content-Range: bytes ");
-            if (range) {
-                range += 21;
-                start = (int)strtol(range, &range, 10);
-                range++;
-                end = (int)strtol(range, &range, 10);
-                body = strstr(response, "\r\n\r\n");
-                if (body) {
-                    body += 4;
-                    received = strlen(response);
-                    received -= body - response;
-                    memset(data, 0, MAX_RANGE_SIZE);
-                    memcpy(data, body, received);
-                    // TODO: keep receiving
-                    while (received < end-start+1) {
-                        rv = recv(range_sockfd, data+received, MAX_RANGE_SIZE-received, MSG_DONTWAIT);
-                        if (rv > 0)
-                            received += rv;
+
+            while (unread > 0) {
+                if (header->parsed) {
+                    // collect data
+                    if (header->remain <= unread) {
+                        // we have all the data
+                        memcpy(data+offset, response+consumed, header->remain);
+                        header->parsed = 0;
+                        unread -= header->remain;
+                        consumed += header->remain;
+                        offset = 0;
+                        send_ACK_payload(local_ip, remote_ip, remote_port, local_port, data, \
+                                header->end - header->start + 1, seq_loc, seq_offset + header->start);
+                        log_debug("[Range] retrieved %d - %d", header->start, header->end);
                     }
-                    // we get all our data
-                    log_debug("ready to send %d - %d", start, end);
-                    send_ACK(local_ip, remote_ip, remote_port, local_port, data, seq_loc, seq_offset+start);
+                    else {
+                        // still need more data
+                        memcpy(data+offset, response+consumed, unread); 
+                        header->remain -= unread;
+                        consumed += unread;
+                        unread = 0;
+                        offset += unread;
+                    }
+                }
+                else {
+                    // parse header
+                    parsed = parse_response(header, response+consumed, unread);
+                    if (parsed <= 0) {
+                        // incomplete http header
+                        // keep receiving and parse in next response
+                        memmove(response, response+consumed, unread);
+                        recv_offset += unread;
+                        break;
+                    }
+                    else {
+                        recv_offset = 0;
+                        consumed += parsed;
+                        unread -= parsed;
+                    }
                 }
             }
+            // TODO: debug
+            if (unread < 0)
+                log_debug("[Range] error: unread < 0");
         }
-        else if (rv < 0) {
-            log_debug("range_watch ret %d errno %d", rv, errno);
-        }
+        else if (rv < 0)
+            log_debug("[Range] error: ret %d errno %d", rv, errno);
     } while (rv > 0);
 
     // sock is closed
@@ -1256,6 +1330,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         // assume last characters are \r\n\r\n
                         sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
                         send(range_sockfd, range_request, strlen(range_request), 0);
+                        log_debug("[Range] request sent: %d - %d", start, seq_rel-1);
                         pthread_mutex_unlock(&mutex_req_max);
                     }
                     seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
