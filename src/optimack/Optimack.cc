@@ -795,7 +795,7 @@ range_watch(void* arg)
                         unread -= header->remain;
                         consumed += header->remain;
                         offset = 0;
-                        send_ACK_payload(local_ip, remote_ip, remote_port, local_port, data, \
+                        send_ACK_payload(local_ip, remote_ip, local_port, remote_port, data, \
                                 header->end - header->start + 1, seq_loc, seq_offset + header->start);
                         log_debug("[Range] retrieved %d - %d", header->start, header->end);
                     }
@@ -1259,7 +1259,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     subconn->cur_seq_rem = seq_rel;
                 }
                 // Dup Retrnx
-                else if(seq_rel > 1 && subconn->cur_seq_rem >= seq_rel){// && seq > subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){ //TODO: out-of-order?
+                else if(!RANGE_MODE && seq_rel > 1 && subconn->cur_seq_rem >= seq_rel){// && seq > subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){ //TODO: out-of-order?
                     log_info("P%d-S%d: cur_seq_rem(%u) >= seq_rel(%u)", thr_data->pkt_id, subconn_i, subconn->cur_seq_rem, seq_rel);
                     //print dup_seqs
                     if(++subconn->dup_seqs[seq_rel] >= 2){
