@@ -741,7 +741,7 @@ parse_response(http_header *head, char *response, int unread)
 void*
 range_watch(void* arg)
 {
-    int rv, range_sockfd, local_port, remote_port, seq_offset, seq_loc;
+    int rv, range_sockfd, local_port, remote_port, seq_offset, seq_loc, ini_seq_loc;
     char response[MAX_RANGE_SIZE];
     char data[MAX_RANGE_SIZE];
     char *local_ip, *remote_ip;
@@ -755,6 +755,7 @@ range_watch(void* arg)
     remote_port = obj->g_remote_port;
     seq_offset = obj->subconn_infos[0].ini_seq_rem;
     seq_loc = obj->subconn_infos[0].cur_seq_loc;
+    ini_seq_loc = obj->subconn_infos[0].ini_seq_loc;
 
     int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0;
     http_header* header = (http_header*)malloc(sizeof(http_header));
@@ -797,7 +798,10 @@ range_watch(void* arg)
                         offset = 0;
                         send_ACK_payload(local_ip, remote_ip, local_port, remote_port, data, \
                                 header->end - header->start + 1, seq_loc, seq_offset + header->start);
-                        log_debug("[Range] retrieved %d - %d", header->start, header->end);
+                        //log_debug("[Range] retrieved %d - %d", header->start, header->end);
+                        log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
+                                ntohl(seq_offset+header->start), header->start, \
+                                ntohl(seq_loc), seq_loc - ini_seq_loc);
                     }
                     else {
                         // still need more data
