@@ -757,7 +757,7 @@ range_watch(void* arg)
     seq_loc = obj->subconn_infos[0].cur_seq_loc;
     ini_seq_loc = obj->subconn_infos[0].ini_seq_loc;
 
-    int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0;
+    int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0, unsent=0, packet_len=0;
     http_header* header = (http_header*)malloc(sizeof(http_header));
     memset(header, 0, sizeof(http_header));
     char *tmp;
@@ -791,17 +791,29 @@ range_watch(void* arg)
                     // collect data
                     if (header->remain <= unread) {
                         // we have all the data
+                        log_debug("[Range] retrieved %d - %d", header->start, header->end);
                         memcpy(data+offset, response+consumed, header->remain);
                         header->parsed = 0;
                         unread -= header->remain;
                         consumed += header->remain;
                         offset = 0;
-                        send_ACK_payload(local_ip, remote_ip, local_port, remote_port, data, \
-                                header->end - header->start + 1, seq_loc, seq_offset + header->start);
-                        //log_debug("[Range] retrieved %d - %d", header->start, header->end);
-                        log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
-                                ntohl(seq_offset+header->start), header->start, \
-                                ntohl(seq_loc), seq_loc - ini_seq_loc);
+                        unsent = header->end - header->start + 1;
+                        for (int i=0; unsent > 0; i++) {
+                            // TODO: probably unsent won't be smaller than PACKET_SIZE 
+                            if (unsent >= PACKET_SIZE) {
+                                packet_len = PACKET_SIZE;
+                                unsent -= PACKET_SIZE;
+                            }
+                            else
+                                packet_len = unsent;
+                            send_ACK_payload(local_ip, remote_ip, local_port, remote_port, \
+                                    data + i*PACKET_SIZE, packet_len, \
+                                    seq_loc, seq_offset + header->start + i*PACKET_SIZE);
+                            log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
+                                    ntohl(seq_offset+header->start+i*PACKET_SIZE), \
+                                    header->start+i*PACKET_SIZE, \
+                                    ntohl(seq_loc), seq_loc - ini_seq_loc);
+                        }
                     }
                     else {
                         // still need more data

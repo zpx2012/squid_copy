@@ -51,6 +51,7 @@ private:
 #define MAX_REQUEST_LEN 1024
 #define MAX_RANGE_REQ_LEN 1536
 #define MAX_RANGE_SIZE 102400
+#define PACKET_SIZE 1448
 
 class Optimack;
 
