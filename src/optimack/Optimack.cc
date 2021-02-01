@@ -745,7 +745,7 @@ range_watch(void* arg)
     char response[MAX_RANGE_SIZE];
     char data[MAX_RANGE_SIZE];
     char *local_ip, *remote_ip;
-    bool req_max_get = false;
+    //bool req_max_get = false;
 
     Optimack* obj = ((struct int_thread*)arg)->obj;
     range_sockfd = ((struct int_thread*)arg)->thread_id;
@@ -770,21 +770,21 @@ range_watch(void* arg)
             unread += rv;
             consumed = 0;
 
-            if (!req_max_get) {
-                //range = strstr(response, "Keep-Alive: ");
-                tmp = std::search(response, response+unread, keep_alive_field, keep_alive_field+12);
-                if (tmp < response+unread) {
-                    //body = strstr(range, "max=");
-                    tmp = std::search(tmp, response+unread, max_field, max_field+4);
-                    if (tmp < response+unread) {
-                        tmp += 4;
-                        pthread_mutex_lock(&(obj->mutex_req_max));
-                        obj->req_max += (int)strtol(tmp, &tmp, 10);
-                        pthread_mutex_unlock(&(obj->mutex_req_max));
-                        req_max_get = true;
-                    }
-                }
-            }
+            //if (!req_max_get) {
+                ////range = strstr(response, "Keep-Alive: ");
+                //tmp = std::search(response, response+unread, keep_alive_field, keep_alive_field+12);
+                //if (tmp < response+unread) {
+                    ////body = strstr(range, "max=");
+                    //tmp = std::search(tmp, response+unread, max_field, max_field+4);
+                    //if (tmp < response+unread) {
+                        //tmp += 4;
+                        //pthread_mutex_lock(&(obj->mutex_req_max));
+                        //obj->req_max += (int)strtol(tmp, &tmp, 10);
+                        //pthread_mutex_unlock(&(obj->mutex_req_max));
+                        //req_max_get = true;
+                    //}
+                //}
+            //}
 
             while (unread > 0) {
                 if (header->parsed) {
@@ -804,8 +804,10 @@ range_watch(void* arg)
                                 packet_len = PACKET_SIZE;
                                 unsent -= PACKET_SIZE;
                             }
-                            else
+                            else {
                                 packet_len = unsent;
+                                unsent = 0;
+                            }
                             send_ACK_payload(local_ip, remote_ip, local_port, remote_port, \
                                     data + i*PACKET_SIZE, packet_len, \
                                     seq_loc, seq_offset + header->start + i*PACKET_SIZE);
@@ -1332,22 +1334,24 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if (seq_next_global < seq_rel) {
                     if (RANGE_MODE) {
                         int start = seq_next_global;
+
                         pthread_mutex_lock(&mutex_req_max);
                         // we allow negative here
                         // tricky & risky
                         if (req_max == 0) {
                             range_sockfd = init_range();
-                            req_max = -1;
+                            req_max = 96;
                         }
                         else
                             req_max--;
+                        pthread_mutex_unlock(&mutex_req_max);
+
                         char range_request[MAX_RANGE_REQ_LEN];
                         memcpy(range_request, request, request_len);
                         // assume last characters are \r\n\r\n
                         sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
                         send(range_sockfd, range_request, strlen(range_request), 0);
                         log_debug("[Range] request sent: %d - %d", start, seq_rel-1);
-                        pthread_mutex_unlock(&mutex_req_max);
                     }
                     seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
                 }
