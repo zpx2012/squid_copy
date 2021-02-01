@@ -1334,23 +1334,26 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if (seq_next_global < seq_rel) {
                     if (RANGE_MODE) {
                         int start = seq_next_global;
-
-                        pthread_mutex_lock(&mutex_req_max);
-                        // we allow negative here
-                        // tricky & risky
-                        if (req_max == 0) {
-                            range_sockfd = init_range();
-                            req_max = 96;
-                        }
-                        else
-                            req_max--;
-                        pthread_mutex_unlock(&mutex_req_max);
-
                         char range_request[MAX_RANGE_REQ_LEN];
                         memcpy(range_request, request, request_len);
                         // assume last characters are \r\n\r\n
                         sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
-                        send(range_sockfd, range_request, strlen(range_request), 0);
+
+                        pthread_mutex_lock(&mutex_req_max);
+                        while (1) {
+                            if (req_max == 0) {
+                                range_sockfd = init_range();
+                                req_max = 96;
+                            }
+                            else
+                                req_max--;
+                            if (send(range_sockfd, range_request, strlen(range_request), 0) > 0)
+                                break;
+                            // something went wrong so we can no longer use this socket
+                            req_max = 0;
+                        }
+                        pthread_mutex_unlock(&mutex_req_max);
+
                         log_debug("[Range] request sent: %d - %d", start, seq_rel-1);
                     }
                     seq_gaps = insertNewInterval(seq_gaps, Interval(seq_next_global, seq_rel-1));
