@@ -167,8 +167,9 @@ void printIntervals(std::vector<Interval>& Intervals){
     printf("\n");
 }
 
-void logInterval(std::vector<Interval>& Intervals, FILE* log_file){
-     for (int i = 0; i < Intervals.size(); i++)
-        fprintf(log_file, "[%u, %u], ", Intervals[i].start, Intervals[i].end);
-    fprintf(log_file, "\n");   
+std::string Intervals2str(std::vector<Interval>& Intervals){
+    std::string result = "";
+    for (int i = 0; i < Intervals.size(); i++)
+        result += "[" + std::to_string(Intervals[i].start) + ", " + std::to_string(Intervals[i].end) + "], ";
+    return result;
 }

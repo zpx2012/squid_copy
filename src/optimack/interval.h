@@ -2,6 +2,7 @@
 #define INTERVAL_H
 
 #include <vector>
+#include <string>
 
 // Define the structure of interval
 struct Interval
@@ -30,5 +31,5 @@ std::vector<Interval> insertNewInterval(std::vector<Interval>& Intervals, Interv
 std::vector<Interval> removeInterval(std::vector<Interval>& Intervals, Interval newInterval);
 
 void printIntervals(std::vector<Interval>& Intervals);
-
+std::string Intervals2str(std::vector<Interval>& Intervals);
 #endif

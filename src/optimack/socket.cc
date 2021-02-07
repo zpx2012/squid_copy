@@ -270,18 +270,18 @@ unsigned int wait_data(char* remote_ip, char* local_ip, unsigned short remote_po
     //send_tcp(local_port, remote_port, &header, &opts, fake_ip, remote_ip, 128, NULL, (u_char*)payload, strlen(payload), 1);
 //}
 
-//void send_RST(char* payload, unsigned int seq = 1, unsigned char ttl = 128)
-//{
-    //struct tcphdr_opts opts;
-    //opts.size = 0;
+void send_RST(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int seq = 1, unsigned char ttl = 128)
+{
+    struct tcphdr_opts opts;
+    opts.size = 0;
 
-    //struct tcphdr_bsd header;
-    //header.th_flags = TH_RST;
-    //header.th_seq = seq;
-    //header.th_ack = 0;
+    struct tcphdr_bsd header;
+    header.th_flags = TH_RST;
+    header.th_seq = seq;
+    header.th_ack = 0;
 
-    //send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
-//}
+    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
+}
 
 //void send_wrongcsum_RST(char* payload, unsigned int seq = 1)
 //{

@@ -15,6 +15,13 @@
 class CurrentTime{
 public:
     CurrentTime() {}
+    char* time_in_YYYY_MM_DD(){
+        // time(&rawtime);
+        gettimeofday (&cur_timeval, NULL);
+        timeinfo = localtime(&cur_timeval.tv_sec);
+        strftime(time_str, 20, "%Y-%m-%d", timeinfo);
+        return time_str;
+    }
     char* time_in_HH_MM_SS(){
         // time(&rawtime);
         gettimeofday (&cur_timeval, NULL);
@@ -22,6 +29,13 @@ public:
         strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
         return time_str;
     }
+
+    char* time_in_HH_MM_SS_nospace(){
+        // time(&rawtime);
+        gettimeofday (&cur_timeval, NULL);
+        timeinfo = localtime(&cur_timeval.tv_sec);
+        strftime(time_str, 20, "%Y-%m-%dT%H:%M:%S", timeinfo);
+        }
     char* time_in_HH_MM_SS_US(){
         gettimeofday(&cur_timeval, NULL);
         timeinfo = localtime(&cur_timeval.tv_sec);
@@ -64,7 +78,7 @@ struct subconn_info
     unsigned int last_next_seq_rem;
     unsigned int next_seq_loc;  //TODO: rel
     short ack_sent;
-    bool seq_init;
+    bool seq_init, fin_ack_recved;
 
     pthread_t thread;
     pthread_mutex_t mutex_opa;
@@ -102,6 +116,7 @@ void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
 void* range_watch(void* arg);
+void* send_all_requests(void* arg);
 
 class Optimack
 {
@@ -115,6 +130,7 @@ public:
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
     void cleanup();
+    void log_seq_gaps();
 
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
@@ -171,7 +187,7 @@ public:
                  same_ack_cnt = 0; 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_same_ack_time, last_restart_time;
-    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file;
+    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file;
 
     CurrentTime cur_time;
 
