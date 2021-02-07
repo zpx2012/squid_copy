@@ -329,8 +329,8 @@ optimistic_ack(void* arg)
     bool is_zero_window = true;
     // for (unsigned int k = opa_ack_start; !conn->optim_ack_stop; k += conn->payload_len) {
     while (!conn->optim_ack_stop) {
-        cur_win_scale = obj->rwnd / 2048;
-        // cur_win_scale = (obj->cur_ack_rel + obj->rwnd - opa_ack_start + conn->ini_seq_rem) / 2048;
+        // cur_win_scale = obj->rwnd / 2048;
+        cur_win_scale = (obj->cur_ack_rel + obj->rwnd - opa_ack_start + conn->ini_seq_rem) / 2048;
         // if (elapsed(last_adjust_rwnd_write) >= 1){
         //     fprintf(obj->adjust_rwnd_file, "%s, %u\n", obj->cur_time.time_in_HH_MM_SS_US(), cur_win_scale);
         //     last_adjust_rwnd_write = std::chrono::system_clock::now();
@@ -344,7 +344,7 @@ optimistic_ack(void* arg)
                 is_zero_window = true;
             }
             if (elapsed(last_zero_window) >= 10){
-                // obj->does_packet_lost_on_all_conns();
+                obj->does_packet_lost_on_all_conns();
                 // printIntervals(obj->seq_gaps);
             }
             sleep(1);
@@ -839,7 +839,7 @@ range_watch(void* arg)
     local_port = obj->subconn_infos[0].local_port;
     remote_port = obj->g_remote_port;
     seq_offset = obj->subconn_infos[0].ini_seq_rem;
-    seq_loc = obj->subconn_infos[0].cur_seq_loc;
+    seq_loc = obj->subconn_infos[0].next_seq_loc + obj->subconn_infos[0].ini_seq_loc;
     ini_seq_loc = obj->subconn_infos[0].ini_seq_loc;
 
     int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0, unsent=0, packet_len=0;
