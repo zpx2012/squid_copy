@@ -842,6 +842,20 @@ range_watch(void* arg)
     seq_loc = obj->subconn_infos[0].next_seq_loc + obj->subconn_infos[0].ini_seq_loc;
     ini_seq_loc = obj->subconn_infos[0].ini_seq_loc;
 
+    // resend pending requests
+    int request_len = obj->request_len;
+    char request[MAX_RANGE_SIZE];
+    std::vector<std::pair<int, int>> *range_list = &(obj->range_list);
+    memcpy(request, obj->request, request_len);
+    pthread_mutex_lock(&obj->mutex_range);
+    for (auto it = range_list->begin(); it != range_list->end(); it++) {
+        memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
+        sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", (*it).first, (*it).second);
+        send(range_sockfd, request, strlen(request), 0);
+        log_debug("[Range] Resend bytes %d - %d", (*it).first, (*it).second);
+    }
+    pthread_mutex_unlock(&obj->mutex_range);
+
     int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0, unsent=0, packet_len=0;
     http_header* header = (http_header*)malloc(sizeof(http_header));
     memset(header, 0, sizeof(http_header));
@@ -855,28 +869,22 @@ range_watch(void* arg)
             unread += rv;
             consumed = 0;
 
-            //if (!req_max_get) {
-                ////range = strstr(response, "Keep-Alive: ");
-                //tmp = std::search(response, response+unread, keep_alive_field, keep_alive_field+12);
-                //if (tmp < response+unread) {
-                    ////body = strstr(range, "max=");
-                    //tmp = std::search(tmp, response+unread, max_field, max_field+4);
-                    //if (tmp < response+unread) {
-                        //tmp += 4;
-                        //pthread_mutex_lock(&(obj->mutex_req_max));
-                        //obj->req_max += (int)strtol(tmp, &tmp, 10);
-                        //pthread_mutex_unlock(&(obj->mutex_req_max));
-                        //req_max_get = true;
-                    //}
-                //}
-            //}
-
             while (unread > 0) {
                 if (header->parsed) {
                     // collect data
                     if (header->remain <= unread) {
                         // we have all the data
-                        log_debug("[Range] retrieved %d - %d", header->start, header->end);
+                        log_debug("[Range] data retrieved %d - %d", header->start, header->end);
+                        // delet completed request
+                        pthread_mutex_lock(&obj->mutex_range);
+                        auto it = std::find(range_list->begin(), range_list->end(), make_pair(header->start, header->end));
+                        if (it != range_list->end()) {
+                            range_list->erase(it);
+                        }
+                        else
+                            log_debug("[Range] [Warning] pending request not found");
+                        pthread_mutex_unlock(&obj->mutex_range);
+
                         memcpy(data+offset, response+consumed, header->remain);
                         header->parsed = 0;
                         unread -= header->remain;
@@ -884,7 +892,6 @@ range_watch(void* arg)
                         offset = 0;
                         unsent = header->end - header->start + 1;
                         for (int i=0; unsent > 0; i++) {
-                            // TODO: probably unsent won't be smaller than PACKET_SIZE 
                             if (unsent >= PACKET_SIZE) {
                                 packet_len = PACKET_SIZE;
                                 unsent -= PACKET_SIZE;
@@ -1389,21 +1396,19 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 else if(seq_rel > subconn->next_seq_rem){ // Out of order or packet loss, create gaps
                     if (RANGE_MODE) {// TODO: mutil optack conn? Still need seq_next_global
                         int start = subconn->next_seq_rem;
-                        pthread_mutex_lock(&mutex_req_max);
-                        // we allow negative here
-                        // tricky & risky
-                        if (req_max == 0) {
-                            range_sockfd = init_range();
-                            req_max = -1;
-                        }
-                        else
-                            req_max--;
+                        pair<int, int> range(start, seq_rel-1);
+                        pthread_mutex_lock(&mutex_range);
                         char range_request[MAX_RANGE_REQ_LEN];
                         memcpy(range_request, request, request_len);
-                        // assume last characters are \r\n\r\n
                         sprintf(range_request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", start, seq_rel-1);
-                        send(range_sockfd, range_request, strlen(range_request), 0);
-                        pthread_mutex_unlock(&mutex_req_max);
+                        range_list.push_back(range);
+                        if (send(range_sockfd, range_request, strlen(range_request), 0) < 0) {
+                            log_debug("[Range] new range thread created");
+                            range_sockfd = init_range();
+                        }
+                        else
+                            log_debug("[Range] bytes %d - %d requested", start, seq_rel-1);
+                        pthread_mutex_unlock(&mutex_range);
                     }
                     sprintf(log,"%s - insert interval[%u, %u]", log, subconn->next_seq_rem, seq_rel);
                     subconn->seq_gaps = insertNewInterval(subconn->seq_gaps, Interval(subconn->next_seq_rem, seq_rel));
@@ -1683,7 +1688,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     if (RANGE_MODE) {
         conn_num = 0;
         range_sockfd = 0;
-        req_max = 0;
+        range_list.clear();
     }
 
     for (int i = 1; i <= conn_num; i++) {
