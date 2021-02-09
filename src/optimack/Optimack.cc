@@ -215,21 +215,28 @@ bool Optimack::does_packet_lost_on_all_conns(){
     // Packet lost on all connections
     bool is_all_lost = true;
     
-    log_debugv("does_packet_lost_on_all_conns: mutex_seq_gaps - trying lock"); 
-    pthread_mutex_lock(&mutex_seq_gaps);
-    for(size_t i = 1; i < subconn_infos.size(); i++){
+    // log_debugv("does_packet_lost_on_all_conns: mutex_seq_gaps - trying lock"); 
+    // pthread_mutex_lock(&mutex_seq_gaps);
+    for(size_t i = 0; i < subconn_infos.size(); i++){
+        pthread_mutex_lock(&subconn_infos[i].mutex_opa);
         // printf("next_seq_rem %u, cur_ack_rel %u, payload_len %u\n", subconn_infos[i].next_seq_rem, cur_ack_rel, subconn_infos[0].payload_len);
-        if ( (!seq_gaps.empty() && subconn_infos[i].next_seq_rem < seq_gaps.at(0).start) || subconn_infos[i].next_seq_rem <= cur_ack_rel){//Why seq_gaps? because squid might drop some packets forwarded to it
+        if (subconn_infos[i].next_seq_rem <= cur_ack_rel){//Why seq_gaps? because squid might drop some packets forwarded to it
+            if(!subconn_infos[i].seq_gaps.empty() && subconn_infos[i].next_seq_rem < subconn_infos[i].seq_gaps.at(0).start){
+                printf("Error: subconn_infos[i].next_seq_rem(%u) < subconn_infos[i].seq_gaps.at(0).start(%u)\n", subconn_infos[i].next_seq_rem, subconn_infos[i].seq_gaps.at(0).start);
+            }
+            
             if (subconn_infos[i].next_seq_rem != subconn_infos[i].last_next_seq_rem){
-                log_debug("S%u: next_seq_rem %u, seq_gaps[0].start %u", i, subconn_infos[i].next_seq_rem, seq_gaps[0].start);  
+                log_debug("S%u: next_seq_rem %u, subconn_infos[i].seq_gaps[0].start %u", i, subconn_infos[i].next_seq_rem, subconn_infos[i].seq_gaps[0].start);  
                 subconn_infos[i].last_next_seq_rem = subconn_infos[i].next_seq_rem;
             }
             is_all_lost = false;
+            pthread_mutex_unlock(&subconn_infos[i].mutex_opa);
             break;
         }
-        else if(!seq_gaps.empty() && subconn_infos[i].next_seq_rem == seq_gaps.at(0).start){
-            log_error("S%u: Didn't remove [%u, %u], next_seq_rem %u", i, seq_gaps[0].start, seq_gaps[0].end, subconn_infos[i].next_seq_rem);
+        else if(!subconn_infos[i].seq_gaps.empty() && subconn_infos[i].next_seq_rem == subconn_infos[i].seq_gaps.at(0).start){
+            log_error("S%u: Didn't remove [%u, %u], next_seq_rem %u", i, subconn_infos[i].seq_gaps[0].start, subconn_infos[i].seq_gaps[0].end, subconn_infos[i].next_seq_rem);
         }
+        pthread_mutex_unlock(&subconn_infos[i].mutex_opa);
     }
 
     if (is_all_lost){
@@ -249,10 +256,11 @@ bool Optimack::does_packet_lost_on_all_conns(){
         for(size_t i = 1; i < subconn_infos.size(); i++){
             printf("S%d: %d\n", i, subconn_infos[i].next_seq_rem);
         }
-        if(seq_gaps[0].start < cur_ack_rel){
-            printf("ACK packet, gap removal wrong!!!\n");
-        }
-        printIntervals(seq_gaps);
+        // if(seq_gaps[0].start < cur_ack_rel){
+        //     printf("ACK packet, gap removal wrong!!!\n");
+        // }
+        // printIntervals(seq_gaps);
+        log_seq_gaps();
         // for (int i = 0; i < seq_gaps.size(); i++)
         //     log_debugv("[%u, %u], ", seq_gaps[i].start, seq_gaps[i].end);
 
@@ -260,8 +268,8 @@ bool Optimack::does_packet_lost_on_all_conns(){
         sleep(5);
         exit(-1);
     }
-    pthread_mutex_unlock(&mutex_seq_gaps);
-    log_debugv("does_packet_lost_on_all_conns: mutex_seq_gaps - unlock"); 
+    // pthread_mutex_unlock(&mutex_seq_gaps);
+    // log_debugv("does_packet_lost_on_all_conns: mutex_seq_gaps - unlock"); 
     
     return is_all_lost;    
 }
@@ -343,7 +351,7 @@ optimistic_ack(void* arg)
                 last_zero_window = std::chrono::system_clock::now();
                 is_zero_window = true;
             }
-            if (elapsed(last_zero_window) >= 10){
+            if (!RANGE_MODE && elapsed(last_zero_window) >= 10){
                 obj->does_packet_lost_on_all_conns();
                 // printIntervals(obj->seq_gaps);
             }
@@ -443,21 +451,26 @@ void Optimack::log_seq_gaps(){
     // }
     // fflush(seq_gaps_file);
 
-    int* counts = new int[seq_next_global/1460+1];
-    for(size_t j = 1; j < seq_next_global; j+=1460){ //first row
+    pthread_mutex_lock(&mutex_seq_next_global);
+    uint seq_next_global_copy = seq_next_global;
+    pthread_mutex_unlock(&mutex_seq_next_global);
+    int* counts = new int[seq_next_global_copy/1460+1];
+    for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
         counts[j/1460] = 0;
     }
     for(size_t k = 0; k < subconn_infos.size(); k++){
         size_t n = 1;
+        pthread_mutex_lock(&subconn_infos[k].mutex_opa);
         for(size_t m = 0; m < subconn_infos[k].seq_gaps.size(); m++){
             for (; n < subconn_infos[k].seq_gaps[m].start; n+=1460);
             for (; n < subconn_infos[k].seq_gaps[m].end; n+=1460)
                 counts[n/1460]++;
         }
+        pthread_mutex_unlock(&subconn_infos[k].mutex_opa);
     }
     std::string line = "";
     bool lost_on_all = false;
-    for(size_t j = 1; j < seq_next_global; j+=1460){ //first row
+    for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
         if(counts[j/1460] == subconn_infos.size()){
             lost_on_all = true;
             printf("Packet lost on all connections: %d\n", j/1460);
@@ -469,9 +482,13 @@ void Optimack::log_seq_gaps(){
     char cmd[2000];
     char* dir_name = cur_time.time_in_YYYY_MM_DD();
     sprintf(cmd, "cd /root/rs/large_file_succ_rate/%s; echo >> seq_gaps_count_all.csv; echo Start: $(date -u --rfc-3339=second) >> seq_gaps_count_all.csv; cat seq_gaps_count.csv >> seq_gaps_count_all.csv",dir_name);
+    printf(cmd);
+    printf("\n");
     system(cmd);    
     if(lost_on_all){
         sprintf(cmd, "cd /root/rs/large_file_succ_rate/%s; mv seq_gaps_count.csv seq_gaps_count_lost_on_all_%s.csv", dir_name, cur_time.time_in_HH_MM_SS_nospace());
+        printf(cmd);
+        printf("\n");
         system(cmd);
     }
 
@@ -995,7 +1012,7 @@ void* send_all_requests(void* arg){
         pthread_mutex_unlock(&obj->subconn_infos[i].mutex_opa);
         printf("Start optim ack - S%d\n",i);
         // if(i < obj->subconn_infos.size()-2)
-        sleep(3);
+        sleep(1);
     }
 }
 
@@ -1126,17 +1143,17 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                         else{
                             log_debugv("P%d-S%d-out: process_tcp_packet:737: mutex_seq_gaps - trying lock", thr_data->pkt_id, subconn_i); 
-                            pthread_mutex_lock(&mutex_seq_gaps);
-                            if(!seq_gaps.empty()){
-                                // printf("P%d-Squid-out: trying to remove 1-%u\nBefore removing:\n", thr_data->pkt_id, cur_ack_rel);
-                                seq_gaps = removeInterval(seq_gaps, Interval(1, cur_ack_rel)); //packet received from subconn 0
-                                if (!seq_gaps.empty() && seq_gaps.at(0).start < cur_ack_rel) {
-                                    log_error("P%d-Squid-out: Not removing correctly", thr_data->pkt_id);
-                                    printIntervals(seq_gaps);
-                                }
-                            }
-                            pthread_mutex_unlock(&mutex_seq_gaps);
-                            log_debugv("P%d-S%d-out: process_tcp_packet:737: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
+                            // pthread_mutex_lock(&mutex_seq_gaps);
+                            // if(!seq_gaps.empty()){
+                            //     // printf("P%d-Squid-out: trying to remove 1-%u\nBefore removing:\n", thr_data->pkt_id, cur_ack_rel);
+                            //     seq_gaps = removeInterval(seq_gaps, Interval(1, cur_ack_rel)); //packet received from subconn 0
+                            //     if (!seq_gaps.empty() && seq_gaps.at(0).start < cur_ack_rel) {
+                            //         log_error("P%d-Squid-out: Not removing correctly", thr_data->pkt_id);
+                            //         printIntervals(seq_gaps);
+                            //     }
+                            // }
+                            // pthread_mutex_unlock(&mutex_seq_gaps);
+                            // log_debugv("P%d-S%d-out: process_tcp_packet:737: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
                             last_ack_rel = cur_ack_rel;
                         }
                         pthread_mutex_unlock(&mutex_cur_ack_rel);
@@ -1418,8 +1435,11 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         subconn->next_seq_rem = seq_rel + payload_len;
                 }
                 sprintf(log,"%s - update next_seq_rem to %u", log, subconn->next_seq_rem);
+
+                pthread_mutex_lock(&mutex_seq_next_global);
                 if (subconn->next_seq_rem > seq_next_global)
                     seq_next_global = subconn->next_seq_rem;
+                pthread_mutex_unlock(&mutex_seq_next_global);
                 // Dup Retrnx
                 // else if(seq_rel > 1 && subconn->next_seq_rem >= seq_rel){// && seq > subconn->opa_seq_max_restart && elapsed(last_restart_time) >= 1){ //TODO: out-of-order?
                 //     log_info("P%d-S%d: next_seq_rem(%u) >= seq_rel(%u)", thr_data->pkt_id, subconn_i, subconn->next_seq_rem, seq_rel);
@@ -1616,13 +1636,14 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 pthread_mutex_unlock(&mutex_subconn_infos);                               
                 log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
 
+                return -1;
                 break;
             }
             default:
                 // printf("P%d-S%d: Invalid tcp flags: %s\n", thr_data->pkt_id, subconn_i, tcp_flags_str(tcphdr->th_flags));
                 break;
         }
-        return 0;
+        return -1;
     }
 }
 
