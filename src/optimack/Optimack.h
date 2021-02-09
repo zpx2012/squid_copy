@@ -194,10 +194,9 @@ public:
 
     // range
     int init_range();
-    pthread_mutex_t mutex_req_max = PTHREAD_MUTEX_INITIALIZER;
-    int req_max;
+    pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_sockfd;
-    //char range_request[MAX_RANGE_REQ_LEN];
+    std::vector<std::pair<int, int>> range_list;
 };
 
 
