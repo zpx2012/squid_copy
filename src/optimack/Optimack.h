@@ -196,7 +196,6 @@ public:
     int init_range();
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_sockfd;
-    std::vector<std::pair<int, int>> range_list;
 };
 
 
