@@ -863,10 +863,10 @@ range_watch(void* arg)
     char request[MAX_RANGE_SIZE];
     pthread_mutex_t *mutex = &(obj->mutex_seq_gaps);
     subconn_info* subconn = &(obj->subconn_infos[0]);
+
     pthread_mutex_lock(mutex);
-    std::vector<Interval> *range_list = &(subconn->seq_gaps);
     memcpy(request, obj->request, request_len);
-    for (auto it = range_list->begin(); it != range_list->end(); it++) {
+    for (auto it = subconn->seq_gaps.begin(); it != subconn->seq_gaps.end(); it++) {
         memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
         sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", (*it).start, (*it).end-1);
         send(range_sockfd, request, strlen(request), 0);
@@ -897,10 +897,10 @@ range_watch(void* arg)
                         //pthread_mutex_lock(&obj->mutex_range);
                         Interval gap(header->start, header->end);
                         pthread_mutex_lock(mutex);
-                        for (auto it = range_list->begin(); it != range_list->end(); it++) {
+                        for (auto it = subconn->seq_gaps.begin(); it != subconn->seq_gaps.end(); it++) {
                             if (header->start == (*it).start && header->end + 1 == (*it).end) {
-                                subconn->seq_gaps = removeInterval(*range_list, Interval(header->start, header->end+1));
-                                range_list = &(subconn->seq_gaps);
+                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1));
+                                break;
                             }
                         }
                         pthread_mutex_unlock(mutex);
