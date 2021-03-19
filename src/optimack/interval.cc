@@ -79,6 +79,7 @@ std::vector<Interval> insertNewInterval(std::vector<Interval>& Intervals, Interv
         Interval temp;
         temp.start = std::min(newInterval.start,
                          Intervals[i].start);
+        temp.timestamp = Intervals[i].timestamp;
  
         // Traverse the set until intervals are
         // overlapping
@@ -143,11 +144,11 @@ std::vector<Interval> removeInterval(std::vector<Interval>& Intervals, Interval 
     {
         if(doesOverlap(Intervals[i], newInterval)){
             if(Intervals[i].start < newInterval.start){
-                Interval left(Intervals[i].start, newInterval.start);
+                Interval left(Intervals[i].start, newInterval.start, Intervals[i].timestamp);
                 ans.push_back(left);
             }
             if(newInterval.end < Intervals[i].end){
-                Interval right(newInterval.end, Intervals[i].end);
+                Interval right(newInterval.end, Intervals[i].end, Intervals[i].timestamp);
                 ans.push_back(right);
             }
         }

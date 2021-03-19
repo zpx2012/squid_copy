@@ -9,12 +9,17 @@ struct Interval
 {
     unsigned int start;
     unsigned int end;
+    std::string timestamp;
     Interval()
         : start(0), end(0)
     {
     }
-    Interval(unsigned int s, unsigned int e)
-        : start(s), end(e)
+    Interval(unsigned int s, unsigned int e, char* ts)
+        : start(s), end(e), timestamp(ts)
+    {
+    }
+    Interval(unsigned int s, unsigned int e, std::string ts)
+        : start(s), end(e), timestamp(ts)
     {
     }
 };

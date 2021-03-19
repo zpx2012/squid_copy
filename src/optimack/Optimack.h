@@ -12,46 +12,6 @@
 // #include <bits/stdc++.h>
 // using namespace std;
 
-class CurrentTime{
-public:
-    CurrentTime() {}
-    char* time_in_YYYY_MM_DD(){
-        // time(&rawtime);
-        gettimeofday (&cur_timeval, NULL);
-        timeinfo = localtime(&cur_timeval.tv_sec);
-        strftime(time_str, 20, "%Y-%m-%d", timeinfo);
-        return time_str;
-    }
-    char* time_in_HH_MM_SS(){
-        // time(&rawtime);
-        gettimeofday (&cur_timeval, NULL);
-        timeinfo = localtime(&cur_timeval.tv_sec);
-        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
-        return time_str;
-    }
-
-    char* time_in_HH_MM_SS_nospace(){
-        // time(&rawtime);
-        gettimeofday (&cur_timeval, NULL);
-        timeinfo = localtime(&cur_timeval.tv_sec);
-        strftime(time_str, 20, "%Y-%m-%dT%H:%M:%S", timeinfo);
-        }
-    char* time_in_HH_MM_SS_US(){
-        gettimeofday(&cur_timeval, NULL);
-        timeinfo = localtime(&cur_timeval.tv_sec);
-        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
-        sprintf(time_str, "%s.%06ld", time_str, cur_timeval.tv_usec);
-        return time_str;
-    }
-
-private:
-    char time_str[64];
-    time_t rawtime;
-    struct tm * timeinfo;
-    timeval cur_timeval;
-};
-
-
 
 /** Our code **/
 #define ACKPACING 2000
@@ -136,9 +96,10 @@ public:
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
     int g_nfq_fd;
-    int nfq_stop, overrun_stop;
+    int nfq_stop, overrun_stop, cb_stop;
     pthread_t nfq_thread, overrun_thread;
 
+    bool is_nfq_full();
     bool does_packet_lost_on_all_conns();
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
@@ -175,6 +136,7 @@ public:
     
     // seq
     std::vector<Interval> seq_gaps;
+    std::map<std::string, uint> bytes_per_second;
 
     // std::std::vector<unsigned int*> seq_gaps;
     unsigned int seq_next_global = 1,
@@ -188,9 +150,10 @@ public:
                  same_ack_cnt = 0; 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_same_ack_time, last_restart_time;
-    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file;
-
-    CurrentTime cur_time;
+    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
+    char output_dir[100];
+    char *home_dir;
+    char start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100];
 
     // range
     int init_range();
