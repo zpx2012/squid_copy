@@ -521,7 +521,7 @@ void Optimack::log_seq_gaps(){
     std::string line = "";
     bool lost_on_all = false;
     for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
-        if(counts[j/1460] < subconn_infos.size()-6){
+        if(counts[j/1460] < subconn_infos.size()-9){
             lost_on_all = true;
             printf("Packet lost on all connections: %d\n", j/1460);
             break;
@@ -629,9 +629,11 @@ Optimack::cleanup()
     // stop other optimistic_ack threads and close fd
     for (size_t i=0; i < subconn_infos.size(); i++) {
         // TODO: mutex?
-        subconn_infos[i].optim_ack_stop = 1;
-        pthread_join(subconn_infos[i].thread, NULL);
-        close(subconn_infos[i].sockfd);
+        if (!subconn_infos[i].optim_ack_stop) {
+            subconn_infos[i].optim_ack_stop = 1;
+            pthread_join(subconn_infos[i].thread, NULL);
+            close(subconn_infos[i].sockfd);
+        }
     }
     log_info("NFQ %d all optimistic threads exited", nfq_queue_num);
 
@@ -1751,7 +1753,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             {
                 printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq-subconn->ini_seq_rem);
                 log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
-                send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack);
+                // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
                 subconn->fin_ack_recved = true;
 
                 log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
