@@ -910,20 +910,20 @@ FwdState::connectStart()
         dispatch();
 
         /* Our code */
-        unsigned int size = 83886080;
-        if (setsockopt(serverConn->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
-            int xerrno = errno;
-            debugs(50, DBG_IMPORTANT, MYNAME << "FD " << serverConn->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
-        }
+        // unsigned int size = 83886080;
+        // if (setsockopt(serverConn->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+        //     int xerrno = errno;
+        //     debugs(50, DBG_IMPORTANT, MYNAME << "FD " << serverConn->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
+        // }
         //serverConnection.remote.toStr(buf, len)
         //serverConnection.remote.port()
-        char remote_ip[16], local_ip[16];
-        serverConn->remote.toStr(remote_ip, 16);
-        serverConn->local.toStr(local_ip, 16);
-        unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
+        // char remote_ip[16], local_ip[16];
+        // serverConn->remote.toStr(remote_ip, 16);
+        // serverConn->local.toStr(local_ip, 16);
+        // unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
 
         server_conn->optimack_server.cleanup();
-        server_conn->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port);
+        server_conn->optimack_server.open_duplicate_conns(serverConn);
         /* end */
 
         return;

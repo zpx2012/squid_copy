@@ -86,8 +86,7 @@ public:
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
-    void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, 
-            unsigned short local_port);
+    void open_duplicate_conns(Comm::ConnectionPointer conn_);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
     void cleanup();
@@ -109,6 +108,7 @@ public:
     int process_tcp_packet(struct thread_data* thr_data);
 
     // variables
+    Comm::ConnectionPointer conn_;
     char g_local_ip[16]; //TODO: different connection from client
     char g_remote_ip[16];
     unsigned int g_local_ip_int;
