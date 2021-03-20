@@ -521,7 +521,7 @@ void Optimack::log_seq_gaps(){
     std::string line = "";
     bool lost_on_all = false;
     for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
-        if(counts[j/1460] == subconn_infos.size()){
+        if(counts[j/1460] < subconn_infos.size()-6){
             lost_on_all = true;
             printf("Packet lost on all connections: %d\n", j/1460);
             break;
@@ -1003,6 +1003,7 @@ range_watch(void* arg)
     http_header* header = (http_header*)malloc(sizeof(http_header));
     memset(header, 0, sizeof(http_header));
     char *tmp;
+    char time_str[20];
 
     do {
         // blocking sock
@@ -1020,11 +1021,11 @@ range_watch(void* arg)
                         log_debug("[Range] data retrieved %d - %d", header->start, header->end);
                         // delet completed request
                         //pthread_mutex_lock(&obj->mutex_range);
-                        Interval gap(header->start, header->end);
+                        Interval gap(header->start, header->end, time_in_HH_MM_SS(time_str));
                         pthread_mutex_lock(mutex);
                         for (auto it = subconn->seq_gaps.begin(); it != subconn->seq_gaps.end(); it++) {
                             if (header->start == (*it).start && header->end + 1 == (*it).end) {
-                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1));
+                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1), "");
                                 break;
                             }
                         }
@@ -1545,10 +1546,10 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
                 else if(seq_rel > subconn->next_seq_rem){ // Out of order or packet loss, create gaps
                     // TODO: MUTEX?
-                    sprintf(log,"%s - insert interval[%u, %u]", log, subconn->next_seq_rem, seq_rel);
-                    pthread_mutex_lock(&mutex_seq_gaps);
-                    subconn->seq_gaps = insertNewInterval(subconn->seq_gaps, Interval(subconn->next_seq_rem, seq_rel));
-                    pthread_mutex_unlock(&mutex_seq_gaps);
+                    // sprintf(log,"%s - insert interval[%u, %u]", log, subconn->next_seq_rem, seq_rel);
+                    // pthread_mutex_lock(&mutex_seq_gaps);
+                    // subconn->seq_gaps = insertNewInterval(subconn->seq_gaps, Interval(subconn->next_seq_rem, seq_rel));
+                    // pthread_mutex_unlock(&mutex_seq_gaps);
                     // log_debug(Intervals2str(subconn->seq_gaps).c_str());
 
                     if (RANGE_MODE) {
