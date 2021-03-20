@@ -1743,8 +1743,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
             {
                 printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq-subconn->ini_seq_rem);
                 log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
-                send_FIN_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, "", seq+1, ack);
-                send_FIN_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, "", seq+1, ack+1);
+                send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack);
                 subconn->fin_ack_recved = true;
 
                 log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 

@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 
 
-#define LOG_FILE "/root/rs/optack.log"
+#define LOG_FILE "/var/optack.log"
 
 
 static FILE *log_file;
