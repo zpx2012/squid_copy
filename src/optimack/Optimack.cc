@@ -1025,7 +1025,7 @@ range_watch(void* arg)
                         pthread_mutex_lock(mutex);
                         for (auto it = subconn->seq_gaps.begin(); it != subconn->seq_gaps.end(); it++) {
                             if (header->start == (*it).start && header->end + 1 == (*it).end) {
-                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1, "");
+                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1, ""));
                                 break;
                             }
                         }
@@ -1770,6 +1770,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                     if (i == subconn_infos.size()){
                         printf("All subconns received FIN/ACK!\n");
+                        close(main_fd);
                         send_RST(g_remote_ip, g_local_ip, g_remote_port, subconn_infos[0].local_port, "", subconn_infos[0].ini_seq_rem+cur_ack_rel);
                         printf("RST sent\n");
                         
@@ -1798,11 +1799,12 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
 
 void 
-Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port)
+Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
 {
     char* cmd;
     int ret;
 
+    main_fd = fd;
     // if marked, let through
     //cmd = (char*) malloc(IPTABLESLEN);
     //sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d -m mark --mark %d -j ACCEPT", remote_ip, remote_port, MARK);
