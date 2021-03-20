@@ -1,5 +1,5 @@
-#ifndef NETFILTER_QUEUE_H
-#define NETFILTER_QUEUE_H
+#ifndef OPTIMACK_H
+#define OPTIMACK_H
 
 #include "thr_pool.h"
 #include <set>
@@ -9,7 +9,8 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval.h"
-#include "../comm/forward.h"
+// #include "comm/Connection.h"
+// #include "../comm/forward.h"
 // #include <bits/stdc++.h>
 // using namespace std;
 
@@ -87,7 +88,7 @@ public:
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
-    void open_duplicate_conns(Comm::ConnectionPointer conn_);
+    void open_duplicate_conns(Comm::ConnectionPointer &conn_);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
     void cleanup();

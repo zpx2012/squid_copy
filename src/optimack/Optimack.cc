@@ -1025,7 +1025,7 @@ range_watch(void* arg)
                         pthread_mutex_lock(mutex);
                         for (auto it = subconn->seq_gaps.begin(); it != subconn->seq_gaps.end(); it++) {
                             if (header->start == (*it).start && header->end + 1 == (*it).end) {
-                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1), "");
+                                subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1, "");
                                 break;
                             }
                         }
