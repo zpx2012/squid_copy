@@ -1770,7 +1770,6 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                     if (i == subconn_infos.size()){
                         printf("All subconns received FIN/ACK!\n");
-                        close(conn_->fd);
                         send_RST(g_remote_ip, g_local_ip, g_remote_port, subconn_infos[0].local_port, "", subconn_infos[0].ini_seq_rem+cur_ack_rel);
                         printf("RST sent\n");
                         
@@ -1799,15 +1798,10 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
 
 void 
-Optimack::open_duplicate_conns(Comm::ConnectionPointer conn_)
+Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port)
 {
     char* cmd;
     int ret;
-
-    char remote_ip[16], local_ip[16];
-    conn_->remote.toStr(remote_ip, 16);
-    conn_->local.toStr(local_ip, 16);
-    unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
 
     // if marked, let through
     //cmd = (char*) malloc(IPTABLESLEN);
