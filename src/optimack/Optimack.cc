@@ -487,7 +487,7 @@ int Optimack::restart_optim_ack(int id, unsigned int opa_ack_start, unsigned int
 void Optimack::log_seq_gaps(){
     // Print out all seq_gaps, in rows, transpose later
     printf("enter log_seq_gaps\n");
-    // system("killall tcpdump");
+    system("sudo killall tcpdump");
     system("bash ~/squid_copy/src/optimack/test/ks.sh loss_rate");
     system("bash ~/squid_copy/src/optimack/test/ks.sh mtr");
     // pclose(tcpdump_pipe);
@@ -521,12 +521,13 @@ void Optimack::log_seq_gaps(){
     std::string line = "";
     bool lost_on_all = false;
     for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
-        if(counts[j/1460] < subconn_infos.size()-9){
+        if(counts[j/1460] > subconn_infos.size()-9){
             lost_on_all = true;
             printf("Packet lost on all connections: %d\n", j/1460);
             break;
         }
     }
+    // lost_on_all = true;
 
     // char cmd[2000];
     // char* dir_name = cur_time.time_in_YYYY_MM_DD();
@@ -536,13 +537,13 @@ void Optimack::log_seq_gaps(){
     // system(cmd);    
     char time_str[30], tmp_str[1000];
     if(lost_on_all){
-        sprintf(tmp_str, "%s/seq_gaps_count_%s.csv", output_dir, time_in_HH_MM_SS_nospace(time_str));
-        seq_gaps_count_file = fopen(tmp_str, "a");
+        // sprintf(tmp_str, "%s/seq_gaps_count_%s.csv", output_dir, time_in_HH_MM_SS_nospace(time_str));
+        seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
 
         is_nfq_full();
 
         fprintf(seq_gaps_count_file, "Start: %s\n", start_time);
-        fprintf(seq_gaps_count_file, "Stop: %s\n", time_str);
+        fprintf(seq_gaps_count_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
         for(size_t j = 0; j < subconn_infos.size(); j++)
             fprintf(seq_gaps_count_file, "%d, ", subconn_infos[j].local_port);
         fprintf(seq_gaps_count_file,"\n");
@@ -563,14 +564,14 @@ void Optimack::log_seq_gaps(){
         // fprintf(seq_gaps_file,"\n");
         // fflush(seq_gaps_file);
 
-        for(auto it = lost_per_second.begin(); it != lost_per_second.end(); it++){
-            float packets_all_per_second = bytes_per_second[it->first.c_str()]*1.0/subconn_infos[0].payload_len;
-            float packets_lost_per_second = it->second*1.0/subconn_infos[0].payload_len;
-            fprintf(seq_gaps_count_file, "%s, %f, %f, %f\n", it->first.c_str(), packets_lost_per_second, packets_all_per_second, packets_lost_per_second/packets_all_per_second);
+        // for(auto it = lost_per_second.begin(); it != lost_per_second.end(); it++){
+        //     float packets_all_per_second = bytes_per_second[it->first.c_str()]*1.0/subconn_infos[0].payload_len;
+        //     float packets_lost_per_second = it->second*1.0/subconn_infos[0].payload_len;
+        //     fprintf(seq_gaps_count_file, "%s, %f, %f, %f\n", it->first.c_str(), packets_lost_per_second, packets_all_per_second, packets_lost_per_second/packets_all_per_second);
 
-        }
-        fprintf(seq_gaps_count_file,"\n\n");
-        fflush(seq_gaps_count_file);
+        // }
+        // fprintf(seq_gaps_count_file,"\n\n");
+        // fflush(seq_gaps_count_file);
         fclose(seq_gaps_count_file);
 
         std::string cmd_str = "screen -dmS cal_loss bash -c 'python ~/squid_copy/src/optimack/test/loss_rate_optimack_client.py " + string(output_dir) + "/" + tcpdump_file_name + " ";
@@ -746,12 +747,11 @@ Optimack::init()
     fprintf(ack_file, "time,ack_num\n");
 
 
-    // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
-
+    time_in_HH_MM_SS_nospace(start_time);
     
-    // sprintf(tmp_str, "%s/seq_gaps_13_above_all.csv", output_dir);
-    // seq_gaps_file = fopen(tmp_str, "a");
-    // fprintf(seq_gaps_count_file, "seq_gaps_count_file\n");
+    // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
+    sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s.csv", output_dir, start_time);
+    seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
 
     sprintf(tmp_str, "%s/lost_per_second.csv", output_dir);
     lost_per_second_file = fopen(tmp_str, "a");   
@@ -759,8 +759,6 @@ Optimack::init()
     last_speedup_time = last_rwnd_write_time = last_restart_time = std::chrono::system_clock::now();
 
     nfq_stop = overrun_stop = cb_stop = -1;
-
-    time_in_HH_MM_SS(start_time);
 
 }
 
@@ -1838,15 +1836,15 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
 
     char tmp_str[1000], time_str[20];
-    sprintf(tcpdump_file_name, "tcpdump_%s.pcap", time_in_HH_MM_SS_nospace(time_str));
+    sprintf(tcpdump_file_name, "tcpdump_%s.pcap", start_time);
     sprintf(tmp_str,"tcpdump -w %s/%s -s 96 host %s and tcp &", output_dir, tcpdump_file_name, g_remote_ip);
     system(tmp_str);
     
-    sprintf(mtr_file_name, "mtr_modified_tcp_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, time_str);
+    sprintf(mtr_file_name, "mtr_modified_tcp_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
     sprintf(tmp_str, "screen -dmS mtr bash -c 'while true; do sudo /root/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 %s | tee -a %s/%s; done'", g_remote_ip, output_dir, mtr_file_name);
     system(tmp_str);
 
-    sprintf(loss_file_name, "ping_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, time_str);
+    sprintf(loss_file_name, "ping_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
     sprintf(tmp_str, "screen -dmS loss_rate bash -c 'cd %s; while true; do echo $(date --rfc-3339=ns): Start >> %s; ping -W 10 -c 100 -i 0.01 -q %s 2>&1 | tee -a %s; echo >> %s; done'", output_dir, loss_file_name, g_remote_ip, loss_file_name, loss_file_name);
     system(tmp_str);
 
