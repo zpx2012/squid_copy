@@ -34,6 +34,10 @@ using namespace std;
 #define RANGE_MODE 0
 #endif
 
+#ifndef MSS
+#define MSS 1460
+#endif
+
 // Utility
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start){
     auto now = std::chrono::system_clock::now();
@@ -397,11 +401,11 @@ optimistic_ack(void* arg)
                 is_zero_window = true;
             }
             if (!RANGE_MODE && elapsed(last_zero_window) >= 10){
-                // obj->does_packet_lost_on_all_conns();
+                obj->does_packet_lost_on_all_conns();
                 // printIntervals(obj->seq_gaps);
             }
             sleep(1);
-            continue;
+            // continue;
         }
         is_zero_window = false;
         send_ACK(obj->g_remote_ip, obj->g_local_ip, obj->g_remote_port, local_port, empty_payload, opa_ack_start, opa_seq_start, cur_win_scale);
@@ -511,7 +515,7 @@ void Optimack::log_seq_gaps(){
             }
             int len = subconn_infos[k].seq_gaps[m].end - subconn_infos[k].seq_gaps[m].start;
             if(len < 100){
-                printf("len < 100, S%d: seq_gaps[%u] (%u, %u)\n", k, m, subconn_infos[k].seq_gaps[m].start, subconn_infos[k].seq_gaps[m].end);
+                // printf("len < 100, S%d: seq_gaps[%u] (%u, %u)\n", k, m, subconn_infos[k].seq_gaps[m].start, subconn_infos[k].seq_gaps[m].end);
             }
             lost_per_second[subconn_infos[k].seq_gaps[m].timestamp] += len;
             // fprintf(lost_per_second_file, "%s, 1\n", subconn_infos[k].seq_gaps[m].timestamp.c_str());
@@ -527,7 +531,7 @@ void Optimack::log_seq_gaps(){
             break;
         }
     }
-    // lost_on_all = true;
+    lost_on_all = true;
 
     // char cmd[2000];
     // char* dir_name = cur_time.time_in_YYYY_MM_DD();
@@ -538,7 +542,7 @@ void Optimack::log_seq_gaps(){
     char time_str[30], tmp_str[1000];
     if(lost_on_all){
         // sprintf(tmp_str, "%s/seq_gaps_count_%s.csv", output_dir, time_in_HH_MM_SS_nospace(time_str));
-        seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
+        seq_gaps_count_file = fopen(seq_gaps_count_file_name, "w");
 
         is_nfq_full();
 
@@ -577,7 +581,7 @@ void Optimack::log_seq_gaps(){
         std::string cmd_str = "screen -dmS cal_loss bash -c 'python ~/squid_copy/src/optimack/test/loss_rate_optimack_client.py " + string(output_dir) + "/" + tcpdump_file_name + " ";
         for (size_t j = 0; j < subconn_infos.size(); j++)
             cmd_str += std::to_string(subconn_infos[j].local_port) + ",";
-        cmd_str += "; rm " + string(output_dir) + "/" + string(tcpdump_file_name) + "'";
+        cmd_str += "; '";//rm " + string(output_dir) + "/" + string(tcpdump_file_name) + "'";
         system(cmd_str.c_str());
         cout << cmd_str << endl;
     }
@@ -751,7 +755,7 @@ Optimack::init()
     
     // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
     sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s.csv", output_dir, start_time);
-    seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
+    // seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
 
     sprintf(tmp_str, "%s/lost_per_second.csv", output_dir);
     lost_per_second_file = fopen(tmp_str, "a");   
@@ -1493,11 +1497,12 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                 }
 
-                if(!subconn->payload_len && subconn->optim_ack_stop){
+                // if(!subconn->payload_len && subconn->optim_ack_stop){
+                if(subconn->optim_ack_stop){
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                     pthread_mutex_lock(&subconn->mutex_opa);
-                    if(!subconn->payload_len && subconn->optim_ack_stop){
-                        subconn->payload_len = payload_len;
+                    if(subconn->optim_ack_stop){
+                        // subconn->payload_len = payload_len;
                         // subconn_infos[0].payload_len = payload_len;
                         start_optim_ack(subconn_i, subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                         // printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i); 
@@ -1859,6 +1864,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     squid_conn.optim_ack_stop = 1;
     squid_conn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
     squid_conn.fin_ack_recved = false;
+    squid_conn.payload_len = MSS;
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
@@ -1883,6 +1889,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
         new_subconn.seq_init = false;
         new_subconn.fin_ack_recved = false;
+        new_subconn.payload_len = MSS;
         // pthread_mutex_unlock(&mutex_subconn_infos);
 
         struct sockaddr_in server_addr, my_addr;
