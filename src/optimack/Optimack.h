@@ -100,7 +100,7 @@ public:
     int nfq_stop, overrun_stop, cb_stop;
     pthread_t nfq_thread, overrun_thread;
 
-    bool is_nfq_full();
+    bool is_nfq_full(FILE* out_file);
     bool does_packet_lost_on_all_conns();
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
@@ -155,7 +155,7 @@ public:
     FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
     char output_dir[100];
     char *home_dir;
-    char start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100];
+    char start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
     int init_range();

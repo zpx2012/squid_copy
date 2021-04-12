@@ -44,36 +44,37 @@ def correct_ofo_timestamp2(df_all):
                 print(j, df_all.at[orig_index, 'time_epoch'], top_in_order_time + offset)
                 df_all.at[orig_index, 'out_of_order'] += 1
                 offset += offset
-                j += 1	
+                j += 1
 
-ports = [55624, 55626, 55628, 55630, 55632, 55634, 55636, 55638, 55640, 55642, 55644, 55646, 55648, 55650, 55652, 55654]
-client_file, server_file = sys.argv[1], sys.argv[2]
-df_client, df_server = pcap2df(client_file), pcap2df(server_file)
-df_client = df_client[df_client['dstport'].isin(ports)]
-df_server = df_server[df_server['dstport'].isin(ports)]
-# print(df_client.dstport.unique(), df_client[df_client.dstport is in []])
-# print(df_client.data_len.unique(), df_server.data_len.unique())
-correct_ofo_timestamp2(df_client)
-# print(df_client)
-df_client_no_ofo = df_client[['time_epoch', 'ip_id', 'dstport', 'data_len', 'tcp_seq_rel', 'tcp_ack_rel']]
-df_server_patched = df_server.merge(df_client_no_ofo, how='left', on=['ip_id', 'dstport', 'data_len', 'tcp_seq_rel', 'tcp_ack_rel'])
-print(df_server_patched)
-df_server_patched['time_epoch_x'] = df_server_patched['time_epoch_x'].apply(lambda x: int(x))
-print(df_server_patched)
-df_per_second = [pd.DataFrame(y) for x, y in df_server_patched.groupby('time_epoch_x', as_index=False)]
-bytes_per_sec = pd.DataFrame(columns=['lost', 'all'])
-for df_sec in df_per_second:
-    print(df_sec)
-    sec = df_sec['time_epoch_x'].unique()[0]
-    all_cnt = df_sec.data_len.sum()
-    lost_cnt = df_sec[df_sec.time_epoch_y.isna()].data_len.sum()
-    bytes_per_sec.loc[sec] = [lost_cnt, all_cnt]
+def main():
+    ports = [55624, 55626, 55628, 55630, 55632, 55634, 55636, 55638, 55640, 55642, 55644, 55646, 55648, 55650, 55652, 55654]
+    client_file, server_file = sys.argv[1], sys.argv[2]
+    df_client, df_server = pcap2df(client_file), pcap2df(server_file)
+    df_client = df_client[df_client['dstport'].isin(ports)]
+    df_server = df_server[df_server['dstport'].isin(ports)]
+    # print(df_client.dstport.unique(), df_client[df_client.dstport is in []])
+    # print(df_client.data_len.unique(), df_server.data_len.unique())
+    correct_ofo_timestamp2(df_client)
+    # print(df_client)
+    df_client_no_ofo = df_client[['time_epoch', 'ip_id', 'dstport', 'data_len', 'tcp_seq_rel', 'tcp_ack_rel']]
+    df_server_patched = df_server.merge(df_client_no_ofo, how='left', on=['ip_id', 'dstport', 'data_len', 'tcp_seq_rel', 'tcp_ack_rel'])
+    print(df_server_patched)
+    df_server_patched['time_epoch_x'] = df_server_patched['time_epoch_x'].apply(lambda x: int(x))
+    print(df_server_patched)
+    df_per_second = [pd.DataFrame(y) for x, y in df_server_patched.groupby('time_epoch_x', as_index=False)]
+    bytes_per_sec = pd.DataFrame(columns=['lost', 'all'])
+    for df_sec in df_per_second:
+        print(df_sec)
+        sec = df_sec['time_epoch_x'].unique()[0]
+        all_cnt = df_sec.data_len.sum()
+        lost_cnt = df_sec[df_sec.time_epoch_y.isna()].data_len.sum()
+        bytes_per_sec.loc[sec] = [lost_cnt, all_cnt]
 
-bytes_per_sec.sort_index(inplace=True)
-bytes_per_sec['loss_rate'] = bytes_per_sec['lost']*1.0/(bytes_per_sec['all'])
-print(bytes_per_sec)
-print(bytes_per_sec['lost'].sum(), bytes_per_sec['all'].sum())
-bytes_per_sec.to_csv('bytes_per_sec.csv', encoding='utf-8',index=True)
-# local_ports = map(int, filter(None, sys.argv[2].split(',')))
+    bytes_per_sec.sort_index(inplace=True)
+    bytes_per_sec['loss_rate'] = bytes_per_sec['lost']*1.0/(bytes_per_sec['all'])
+    print(bytes_per_sec)
+    print(bytes_per_sec['lost'].sum(), bytes_per_sec['all'].sum())
+    bytes_per_sec.to_csv('bytes_per_sec.csv', encoding='utf-8',index=True)
+    # local_ports = map(int, filter(None, sys.argv[2].split(',')))
 
 

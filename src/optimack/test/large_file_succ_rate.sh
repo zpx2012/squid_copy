@@ -3,10 +3,11 @@
 # url='http://terran.cs.ucr.edu/sdk-tools-linux-3859397.zip'
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
+
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
-# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
+url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-# site='mirrors.mit.edu'
+site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
 # site='mirror.math.princeton.edu'
@@ -20,8 +21,8 @@
 # url='http://mirror.easyname.at/ubuntu-releases/16.04.6/ubuntu-16.04.6-server-i386.template'
 # site='mirror.easyname.at'
 
-url='http://167.172.22.132/ubuntu-16.04.6-server-i386.template'
-site='NY-DGO-O2C'
+# url='http://167.172.22.132/ubuntu-16.04.6-server-i386.template'
+# site='NY-DGO-O2C'
 
 mkdir -p ~/rs/large_file_succ_rate/
 outdir=~/rs/large_file_succ_rate/$(date -u +%Y-%m-%d)
@@ -53,6 +54,7 @@ function cleanup()
     bash ~/squid_copy/src/optimack/test/ks.sh mtr
     sudo iptables -F
     sudo iptables -t mangle -F
+    # rm -v /tmp/*.pcapng
 }
 
 function INT_handler()
@@ -131,3 +133,4 @@ while true; do
     echo | tee -a $log
 done
 	
+#~/rs/large_file_succ_rate/2021-03-14/curl_squid_SH-OPTACK_mirror.easyname.at_ACKP2000_15conn_bottleneck_202103140729.txt

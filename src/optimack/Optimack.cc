@@ -254,19 +254,19 @@ void adjust_optimack_speed_by_ack_step(struct subconn_info* conn, int id, int of
 #define DEBUG_PRINT_LEVEL 0
 #endif
 
-bool Optimack::is_nfq_full(){
+bool Optimack::is_nfq_full(FILE* out_file){
     std::string rst_str = exec("cat /proc/net/netfilter/nfnetlink_queue");
-    fprintf(seq_gaps_count_file, "cat /proc/net/netfilter/nfnetlink_queue:\n%s\n", rst_str.c_str());
+    fprintf(out_file, "cat /proc/net/netfilter/nfnetlink_queue:\n%s\n", rst_str.c_str());
     // cout << "cat /proc/net/netfilter/nfnetlink_queue:\n " << rst_str << endl;
     std::vector<std::string> fields = split(rst_str, ' ');
     if(fields.size() > 7){
         if(fields.at(5) != "0" || fields.at(6) != "0"){
-            fprintf(seq_gaps_count_file, "\n\n###################\nNetfilter Queue too full!\n###################\n");
+            fprintf(out_file, "\n\n###################\nNetfilter Queue too full!\n###################\n");
             return true;
         }
     }
     else
-        fprintf(seq_gaps_count_file, "Error! nfnetlink_queue result is shorter than 7 fields!");
+        fprintf(out_file, "Error! nfnetlink_queue result is shorter than 7 fields!");
     return false;
 }
 
@@ -299,7 +299,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
     }
 
     if (is_all_lost){
-        is_nfq_full();
+        // is_nfq_full();
 
         printf("\n\n###################\nPacket lost on all connections. \n###################\n\nlast ack:%d\n", cur_ack_rel);
         for(size_t i = 1; i < subconn_infos.size(); i++){
@@ -325,7 +325,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 
 void* overrun_detector(void* arg){
     Optimack* obj = (Optimack* )arg;
-    uint num_conns = obj->subconn_infos.size(), timeout = 2;
+    uint num_conns = obj->subconn_infos.size(), timeout = 10;
     uint *last_seq_rems = new uint[num_conns];
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
 
@@ -414,8 +414,8 @@ optimistic_ack(void* arg)
 
         // TODO: casue BUG in local machine
         char time_str[64];
-        if(!id)
-            fprintf(obj->ack_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), opa_ack_start - conn->ini_seq_rem);
+        // if(!id)
+        //     fprintf(obj->ack_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), opa_ack_start - conn->ini_seq_rem);
 
         if (SPEEDUP_CONFIG){
             if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && elapsed(obj->last_speedup_time) > 10){ //&& obj->subconn_infos[0].off_pkt_num < 1
@@ -481,17 +481,18 @@ int Optimack::restart_optim_ack(int id, unsigned int opa_ack_start, unsigned int
     subconn->optim_ack_stop = 1;
     // subconn->ack_pacing *= 2;
     pthread_join(subconn->thread, NULL);
-    // printf("S%d: Restart optim ack from %u\n\n", id, seq_rel);
+    printf("S%d: Restart optim ack from %u\n\n", id, seq_rel);
     log_info("S%d: Restart optim ack from %u", id, seq_rel);
     start_optim_ack(id, opa_ack_start, opa_seq_start, payload_len, seq_max);//subconn->next_seq_rem
-    timer += std::chrono::seconds(3);
+    timer += std::chrono::seconds(8);
 }
 
 
 void Optimack::log_seq_gaps(){
     // Print out all seq_gaps, in rows, transpose later
     printf("enter log_seq_gaps\n");
-    system("sudo killall tcpdump");
+    system("sudo kill -SIGKILL `pidof tcpdump`");
+    // system("sudo kill -SIGKILL `pidof tshark`");
     system("bash ~/squid_copy/src/optimack/test/ks.sh loss_rate");
     system("bash ~/squid_copy/src/optimack/test/ks.sh mtr");
     // pclose(tcpdump_pipe);
@@ -531,7 +532,7 @@ void Optimack::log_seq_gaps(){
             break;
         }
     }
-    lost_on_all = true;
+    // lost_on_all = true;
 
     // char cmd[2000];
     // char* dir_name = cur_time.time_in_YYYY_MM_DD();
@@ -540,23 +541,31 @@ void Optimack::log_seq_gaps(){
     // printf("\n");
     // system(cmd);    
     char time_str[30], tmp_str[1000];
-    if(lost_on_all){
+    sprintf(tmp_str, "%s/%s", output_dir, info_file_name);
+    FILE* info_file = fopen(tmp_str, "w");
+    fprintf(info_file, "Start: %s\n", start_time);
+    fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
+    fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
+    for(size_t j = 0; j < subconn_infos.size(); j++)
+        fprintf(info_file, "%d, ", subconn_infos[j].local_port);
+    fprintf(info_file, "\n");
+    is_nfq_full(info_file);
+    fprintf(info_file,"\n");
+    fclose(info_file);
+
+    // if(lost_on_all){
         // sprintf(tmp_str, "%s/seq_gaps_count_%s.csv", output_dir, time_in_HH_MM_SS_nospace(time_str));
-        seq_gaps_count_file = fopen(seq_gaps_count_file_name, "w");
+        // seq_gaps_count_file = fopen(seq_gaps_count_file_name, "w");
 
-        is_nfq_full();
+        // is_nfq_full(seq_gaps_count_file);
 
-        fprintf(seq_gaps_count_file, "Start: %s\n", start_time);
-        fprintf(seq_gaps_count_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
-        for(size_t j = 0; j < subconn_infos.size(); j++)
-            fprintf(seq_gaps_count_file, "%d, ", subconn_infos[j].local_port);
-        fprintf(seq_gaps_count_file,"\n");
-    
-        for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
-            fprintf(seq_gaps_count_file, "%u, %d\n", j, counts[j/1460]);
-        }
-        fprintf(seq_gaps_count_file,"\n");
-        fflush(seq_gaps_count_file);
+        // fprintf(seq_gaps_count_file, "Start: %s\n", start_time);
+        // fprintf(seq_gaps_count_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));    
+        // for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
+        //     fprintf(seq_gaps_count_file, "%u, %d\n", j, counts[j/1460]);
+        // }
+        // fprintf(seq_gaps_count_file,"\n");
+        // fflush(seq_gaps_count_file);
 
         // fprintf(seq_gaps_file, "Start: %s\n", cur_time.time_in_HH_MM_SS());
         // for(size_t k = 0; k < subconn_infos.size(); k++){
@@ -576,20 +585,25 @@ void Optimack::log_seq_gaps(){
         // }
         // fprintf(seq_gaps_count_file,"\n\n");
         // fflush(seq_gaps_count_file);
-        fclose(seq_gaps_count_file);
+        // fclose(seq_gaps_count_file);
 
-        std::string cmd_str = "screen -dmS cal_loss bash -c 'python ~/squid_copy/src/optimack/test/loss_rate_optimack_client.py " + string(output_dir) + "/" + tcpdump_file_name + " ";
-        for (size_t j = 0; j < subconn_infos.size(); j++)
-            cmd_str += std::to_string(subconn_infos[j].local_port) + ",";
-        cmd_str += "; '";//rm " + string(output_dir) + "/" + string(tcpdump_file_name) + "'";
-        system(cmd_str.c_str());
-        cout << cmd_str << endl;
-    }
-    else{
-        sprintf(tmp_str, "cd %s; rm -v %s; rm -v %s; rm -v %s;", output_dir, mtr_file_name, loss_file_name, tcpdump_file_name);
-        printf("%s\n", tmp_str);
-        system(tmp_str);
-    }
+        // std::string pcap_file = string(output_dir) + "/" + tcpdump_file_name;
+        // std::string cmd_str = "screen -dmS tshark bash ~/squid_copy/src/optimack/test/parse_tshark.sh " + string(output_dir) + " " + tcpdump_file_name;
+        // system(cmd_str.c_str());
+        // cout << cmd_str << endl;
+        // std::string cmd_str = "screen -dmS tshark bash -c 'tshark -r " + pcap_file + " -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y \"tcp.srcport eq 80 and tcp.len > 0\" > " + pcap_file + ".tshark";
+        // std::string cmd_str = "screen -dmS cal_loss bash -c 'python ~/squid_copy/src/optimack/test/loss_rate_optimack_client.py " + string(output_dir) + "/" + tcpdump_file_name + " ";
+        // for (size_t j = 0; j < subconn_infos.size(); j++)
+        //     cmd_str += std::to_string(subconn_infos[j].local_port) + ",";
+        // cmd_str += "; rm " + pcap_file + ";python ~/squid_copy/src/optimack/test/possibility.py " + string(output_dir) + " " + pcap_file + ".tshark" + "'";
+
+
+    // }
+    // else{
+    //     sprintf(tmp_str, "cd %s; rm -v %s; rm -v %s;", output_dir, mtr_file_name, loss_file_name); //, tcpdump_file_name
+    //     printf("%s\n", tmp_str);
+    //     system(tmp_str);
+    // }
 
 
     // for(auto it = lost_per_second.begin(); it != lost_per_second.end(); it++){
@@ -742,13 +756,13 @@ Optimack::init()
     adjust_rwnd_file = fopen(tmp_str, "w");
     fprintf(adjust_rwnd_file, "time,adjust_rwnd\n");
 
-    sprintf(tmp_str, "%s/seq.csv", output_dir);
-    seq_file = fopen(tmp_str, "w");
-    fprintf(seq_file, "time,seq_num\n");
+    // sprintf(tmp_str, "%s/seq.csv", output_dir);
+    // seq_file = fopen(tmp_str, "w");
+    // fprintf(seq_file, "time,seq_num\n");
 
-    sprintf(tmp_str, "%s/ack.csv", output_dir);
-    ack_file = fopen(tmp_str, "w");
-    fprintf(ack_file, "time,ack_num\n");
+    // sprintf(tmp_str, "%s/ack.csv", output_dir);
+    // ack_file = fopen(tmp_str, "w");
+    // fprintf(ack_file, "time,ack_num\n");
 
 
     time_in_HH_MM_SS_nospace(start_time);
@@ -757,6 +771,8 @@ Optimack::init()
     sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s.csv", output_dir, start_time);
     // seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
 
+    sprintf(info_file_name, "info_%s.txt", start_time);
+
     sprintf(tmp_str, "%s/lost_per_second.csv", output_dir);
     lost_per_second_file = fopen(tmp_str, "a");   
 
@@ -764,6 +780,13 @@ Optimack::init()
 
     nfq_stop = overrun_stop = cb_stop = -1;
 
+    sprintf(tcpdump_file_name, "tcpdump_%s.pcap", start_time);
+    // sprintf(tmp_str,"tcpdump -w %s/%s -s 96 tcp src port 80 &", output_dir, tcpdump_file_name);
+    // system(tmp_str);
+
+    // sprintf(tcpdump_file_name, "tcpdump_%s.tshark", start_time);
+    // sprintf(tmp_str, "tshark -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80 and tcp.len > 0' > %s/%s &", output_dir, tcpdump_file_name);
+    // system(tmp_str);
 }
 
 int 
@@ -1533,9 +1556,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 // printf("%s\n", log);
 
-                if(!subconn_i){
-                    fprintf(seq_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), seq_rel);
-                }
+                // if(!subconn_i){
+                //     fprintf(seq_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), seq_rel);
+                // }
                 
                 if(payload_len != subconn_infos[0].payload_len){
                     sprintf(log, "%s - unusal payload_len!", log);
@@ -1589,7 +1612,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 sprintf(log,"%s - update next_seq_rem to %u", log, subconn->next_seq_rem);
 
                 pthread_mutex_lock(&mutex_seq_next_global);
-                if (subconn->next_seq_rem > seq_next_global)
+                if (seq_rel > seq_next_global)
                     seq_next_global = subconn->next_seq_rem;
                 pthread_mutex_unlock(&mutex_seq_next_global);
                 // Dup Retrnx
@@ -1841,17 +1864,14 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
 
     char tmp_str[1000], time_str[20];
-    sprintf(tcpdump_file_name, "tcpdump_%s.pcap", start_time);
-    sprintf(tmp_str,"tcpdump -w %s/%s -s 96 host %s and tcp &", output_dir, tcpdump_file_name, g_remote_ip);
-    system(tmp_str);
     
     sprintf(mtr_file_name, "mtr_modified_tcp_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
-    sprintf(tmp_str, "screen -dmS mtr bash -c 'while true; do sudo /root/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 %s | tee -a %s/%s; done'", g_remote_ip, output_dir, mtr_file_name);
-    system(tmp_str);
+    // sprintf(tmp_str, "screen -dmS mtr bash -c 'while true; do sudo /root/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 %s | tee -a %s/%s; done'", g_remote_ip, output_dir, mtr_file_name);
+    // system(tmp_str);
 
     sprintf(loss_file_name, "ping_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
-    sprintf(tmp_str, "screen -dmS loss_rate bash -c 'cd %s; while true; do echo $(date --rfc-3339=ns): Start >> %s; ping -W 10 -c 100 -i 0.01 -q %s 2>&1 | tee -a %s; echo >> %s; done'", output_dir, loss_file_name, g_remote_ip, loss_file_name, loss_file_name);
-    system(tmp_str);
+    // sprintf(tmp_str, "screen -dmS loss_rate bash -c 'cd %s; while true; do echo $(date --rfc-3339=ns): Start >> %s; ping -W 10 -c 100 -i 0.01 -q %s 2>&1 | tee -a %s; echo >> %s; done'", output_dir, loss_file_name, g_remote_ip, loss_file_name, loss_file_name);
+    // system(tmp_str);
 
     // pthread_mutex_lock(&mutex_subconn_infos);
     // TODO: how to deal with conns by other applications?
@@ -1868,7 +1888,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    int conn_num = 15;
+    int conn_num = 6;
     // range
     if (RANGE_MODE) {
         conn_num = 0;

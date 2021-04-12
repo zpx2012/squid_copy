@@ -7,3 +7,5 @@ Makefile
 .libs/
 *Makefile.in
 *Makefile.am
+*.pyc
+*.log
