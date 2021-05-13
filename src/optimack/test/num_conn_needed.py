@@ -16,10 +16,10 @@ if __name__ == '__main__':
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
         with open('num_conn_needed.csv', 'w') as outf:
             for f in sorted(files):
-                extension = '.csv'
-                if f.startswith('seq_gaps_count') and f.endswith(extension):
+                extension = '_gaps_count.csv'
+                if f.startswith('tcpdump') and f.endswith(extension):
                     time_str = f.split(extension)[0].split('_')[-1]
                     max_num = parse_seq_file(root+'/'+f)
                     print(time_str+', '+str(max_num))
-                    outf.writelines(time_str+', '+str(max_num))
+                    outf.writelines(time_str+', '+str(max_num)+'\n')
             break

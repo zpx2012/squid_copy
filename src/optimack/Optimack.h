@@ -50,14 +50,18 @@ struct subconn_info
     unsigned int opa_ack_start;  // local ack number for optim ack to start
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
-    std::chrono::time_point<std::chrono::system_clock> last_restart_time;
-    // unsigned int rwnd;
+    std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log;
+    int rwnd;
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
 
     std::map<uint, uint> dup_seqs;
+    IntervalList recved_seq;
     std::vector<Interval> seq_gaps;
+    pthread_mutex_t mutex_seq_gaps;
+
+    bool is_backup;
 };
 
 // Multithread
@@ -88,6 +92,7 @@ public:
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
+    void open_one_duplicate_conn(std::vector<struct subconn_info> *subconn_info_list, bool is_backup);
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
@@ -106,6 +111,7 @@ public:
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
     int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
+    int start_optim_ack_backup(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int restart_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max, std::chrono::time_point<std::chrono::system_clock> &timer);
     int process_tcp_packet(struct thread_data* thr_data);
 
@@ -120,7 +126,7 @@ public:
     unsigned short request_len;
     struct sockaddr_in dstAddr;
     
-    std::vector<struct subconn_info> subconn_infos;
+    std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
 
     std::vector<char*> iptables_rules;
     
@@ -131,20 +137,21 @@ public:
     
     thr_pool_t* pool;
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_t mutex_seq_gaps = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_cur_ack_rel = PTHREAD_MUTEX_INITIALIZER;
     
     // seq
-    std::vector<Interval> seq_gaps;
+    IntervalList recved_seq;
+    pthread_mutex_t mutex_seq_gaps = PTHREAD_MUTEX_INITIALIZER;
+    // std::vector<Interval> seq_gaps, recved_seq;
     std::map<std::string, uint> bytes_per_second;
 
     // std::std::vector<unsigned int*> seq_gaps;
     unsigned int seq_next_global = 1,
                  cur_ack_rel = 1,
                  rwnd = 1,
-                 win_scale = 1 << 10,
+                 win_scale = 1 << 7,
                  max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
@@ -159,6 +166,7 @@ public:
 
     // range
     int init_range();
+    int send_http_range_request(uint start, uint end);
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_sockfd;
 };

@@ -1,4 +1,4 @@
-import os, sys, random, pandas as pd, time, json, multiprocessing
+import os, sys, random, pandas as pd, time, json, multiprocessing, traceback, subprocess as sp, pipes
 from interval import remove_interval, intersect_intervals, total_bytes
 from loss_rate_optimack_end2end import pcap2df
 from loss_rate_optimack_client import loss_rate_optimack_client
@@ -6,10 +6,14 @@ from loss_rate_optimack_client import loss_rate_optimack_client
 
 def remove_received_intervals(intervals, df_port):
     # print(df_port['tcp_seq_rel'].max())
+    next_seq = 1
     for i, row in df_port.iterrows():
         sec, seq, data_len = row['time_epoch'], row['tcp_seq_rel'], row['data_len']
         # print(seq, seq+data_len)
         remove_interval(intervals, [seq, seq+data_len])
+        if next_seq != seq:
+            print(next_seq, seq, data_len)
+        next_seq = seq + data_len
         # print(intervals)
     # return intervals
 
@@ -17,6 +21,13 @@ def remove_received_intervals_apply(row, intervals):
     remove_interval(intervals, [row['tcp_seq_rel'], row['tcp_seq_rel']+row['data_len']])
     # return remove_interval()
 
+def pcap2tshark(input_file, tshark_out):
+    if not os.path.exists(tshark_out):
+        tshark_cmd = 'tshark -o tcp.calculate_timestamps:TRUE -r %s -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y "tcp.srcport eq 80 and tcp.len > 0" > %s' % (pipes.quote(input_file), pipes.quote(tshark_out))
+        p = sp.Popen(tshark_cmd, stdout=sp.PIPE, shell=True)
+        out, err = p.communicate()
+        print(out, err)
+        print("Convert %s to %s" % (input_file, tshark_out))
 
 def tshark2df(tshark_out):
     df = pd.read_csv(tshark_out, names=['time_epoch', 'ip_id', 'ip_src', 'dstport', 'data_len', 'tcp_seq_rel', 'tcp_ack_rel', 'out_of_order'])#col
@@ -33,13 +44,13 @@ def get_info_per_conn(df, ports, out_file):
     print("Missing gaps per conn:\nI, Port,  Max len, Bytes Lost")
     gaps_left_per_conn, max_lens, all_bytes = [], [], sys.maxint
     for i, port in enumerate(ports):
-        df_port = df[df.dstport == port ]
+        df_port = df[df.dstport == port ].sort_values('tcp_seq_rel')
         max_len = df_port['tcp_seq_rel'].max()
         max_lens.append(max_len)
         all_bytes = min(all_bytes, max_len)
         gaps_left_per_conn.append([[1, max_len]])
         remove_received_intervals(gaps_left_per_conn[i], df_port)
-        print('%2d, %d, %d, %d' % (i, port, max_len, total_bytes(gaps_left_per_conn[i])))
+        print('%2d' % i, port, max_len, total_bytes(gaps_left_per_conn[i]))
         # print(gaps_left_per_conn[i])
     print("Max byte:"+str(all_bytes))
 
@@ -81,7 +92,7 @@ def get_seq_lost_count(info_per_conn, out_file):
                 right = all_bytes
             for j in range(int(gap[0]), int(right), data_len):
                 # print(gap[0], gap[1], j, j/data_len)
-                counts[j/data_len] += 1
+                counts[j//data_len] += 1
             if right - gap[0] < data_len:
                 print(right, gap[0], right - gap[0], "< %d" % data_len)
 
@@ -160,8 +171,22 @@ def parse_info_file(info_file):
                     ports = map(int, filter(None, line.split('Ports: ')[1].split(', ')))
     return ip, ports
 
+def parse_pcap(root, f):
+    global extension
+    print('Parse: '+f)
+    tshark_file = f.replace(extension,'.pcap.tshark')
+    pcap2tshark(root+'/'+f, root+"/"+tshark_file)
+    extension = '.pcap.tshark'
+    parse_tshark(root, tshark_file)
+    os.remove(root+'/'+f)
+    print('Removed: '+f)
+
 def parse_tshark(root, f):
     # root, f = packed_list[0], packed_list[1]
+    if not os.path.exists(root+'/'+f):
+        print(f+' Not exists!')
+        return
+
     prob_file = root+'/'+f.replace(extension,'_prob.csv')
     gap_info_file = root+'/'+f.replace(extension, '.infos')
     gaps_count_file = root+'/'+f.replace(extension, '_gaps_count.csv')
@@ -181,25 +206,65 @@ def parse_tshark(root, f):
         df = df[df['dstport'].isin(ports)]
         info_per_conn = get_info_per_conn(df, ports, gap_info_file)
         # info_per_conn = get_info_per_conn(pd.DataFrame(), [], gap_info_file)
-        get_seq_lost_count(info_per_conn, gaps_count_file)
+        # get_seq_lost_count(info_per_conn, gaps_count_file)
         # get_possibility(info_per_conn, prob_file)
-        # loss_rate_optimack_client(df, ports, loss_file)
+        loss_rate_optimack_client(df, ports, loss_file)
+    else:
+        print("Info file not exists.")
+    os.remove(root+'/'+f)
+    print('Removed: '+f)
+    print
+    print
 
-        # os.remove(root+'/'+f)
-        # print('Removed: '+f)
-        print
-        print
+def parse_info(root, f):
+    gaps_count_file = root+'/'+f.replace(extension, '_gaps_count.csv')
+    info_per_conn = get_info_per_conn(pd.DataFrame(), [], root+'/'+f)
+    get_seq_lost_count(info_per_conn, gaps_count_file)
+    
+
+def get_total_loss(root, f):
+    time_str = f.split(extension)[0].split('_')[1]
+    gaps_count_file = root+'/'+f.replace(extension, '_gaps_count.csv')
+    info_per_conn = get_info_per_conn(pd.DataFrame(), [], root+'/'+f)
+    max_lens = info_per_conn['max_lens']
+    gaps_left_per_conn = info_per_conn['gaps']
+    num = len(max_lens)
+    gaps_sum, total_sum = 0, 0
+    for i in range(num):
+        gaps_sum += total_bytes(gaps_left_per_conn[i])
+        total_sum += max_lens[i]
+    print(time_str, gaps_sum*1.0/total_sum)
+    print
+    with open(root+'/'+'total_loss_rate.csv', 'a') as outf:
+        outf.writelines("%s, %f\n" % (time_str, gaps_sum*1.0/total_sum))
+
 
 if __name__ == '__main__':
-    extension = '.pcap.tshark'
+    # extension = '.infos'
     # parse_tshark(os.path.expanduser(sys.argv[1]), sys.argv[2])
     # sys.exit(0)
 
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
         for f in sorted(files):
-            if f.endswith(extension):
-                parse_tshark(root, f)
-                # args_list.append([root, f])
+                # parse_info(root, f)
+            try:
+                if f.endswith('.pcap.tshark'):
+                    # get_total_loss(root, f)
+                    extension = '.pcap.tshark'
+                    parse_tshark(root, f)
+                    # args_list.append([root, f])
+                elif f.endswith('.pcap'):
+                    extension = '.pcap'
+                    parse_pcap(root, f)
+                elif f.endswith('.tshark'):
+                    # get_total_loss(root, f)
+                    extension = '.tshark'
+                    parse_tshark(root, f)
+
+            except KeyboardInterrupt:
+                os._exit(-1)
+            except:
+                print '%s' % traceback.format_exc()
         break
     
     # pool = multiprocessing.Pool(processes=4)
