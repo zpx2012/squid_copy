@@ -1242,7 +1242,7 @@ range_watch(void* arg)
     // }
     // pthread_mutex_unlock(mutex);
 
-    int consumed=0, unread=0, parsed=0, offset=0, recv_offset=0, unsent=0, packet_len=0;
+    int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
     http_header* header = (http_header*)malloc(sizeof(http_header));
     memset(header, 0, sizeof(http_header));
 
@@ -1275,48 +1275,58 @@ range_watch(void* arg)
                         //log_debug("[Range] [Warning] pending request not found");
                         //pthread_mutex_unlock(&obj->mutex_range);
 
-                        memcpy(data+offset, response+consumed, header->remain);
+                        memcpy(data, response+consumed, header->remain);
                         header->parsed = 0;
                         unread -= header->remain;
                         consumed += header->remain;
-                        offset = 0;
                         unsent = header->end - header->start + 1;
-                        for (int i=0; unsent > 0; i++) {
-                            if (unsent >= PACKET_SIZE) {
-                                packet_len = PACKET_SIZE;
-                                unsent -= PACKET_SIZE;
-                            }
-                            else {
-                                packet_len = unsent;
-                                unsent = 0;
-                            }
-                            send_ACK_payload(local_ip, remote_ip, local_port, remote_port, \
-                                    data + i*PACKET_SIZE, packet_len, \
-                                    seq_loc, seq_offset + header->start + i*PACKET_SIZE);
-                            log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
-                                    ntohl(seq_offset+header->start+i*PACKET_SIZE), \
-                                    header->start+i*PACKET_SIZE, \
-                                    ntohl(seq_loc), seq_loc - ini_seq_loc);
-                            printf("[Range] retrieved and sent seq %x(%u) ack %x(%u)\n", \
-                                    ntohl(seq_offset+header->start+i*PACKET_SIZE), \
-                                    header->start+i*PACKET_SIZE, \
-                                    ntohl(seq_loc), seq_loc - ini_seq_loc);
-                        }
+                        /*
+                         * TODO: send(buf=data, size=unsent) to client here
+                         * remove interval gaps (header->start, header->end) here
+                         */
+
+                        //for (int i=0; unsent > 0; i++) {
+                            //if (unsent >= PACKET_SIZE) {
+                                //packet_len = PACKET_SIZE;
+                                //unsent -= PACKET_SIZE;
+                            //}
+                            //else {
+                                //packet_len = unsent;
+                                //unsent = 0;
+                            //}
+                            //send_ACK_payload(local_ip, remote_ip, local_port, remote_port, \
+                                    //data + i*PACKET_SIZE, packet_len, \
+                                    //seq_loc, seq_offset + header->start + i*PACKET_SIZE);
+                            //log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
+                                    //ntohl(seq_offset+header->start+i*PACKET_SIZE), \
+                                    //header->start+i*PACKET_SIZE, \
+                                    //ntohl(seq_loc), seq_loc - ini_seq_loc);
+                            //printf("[Range] retrieved and sent seq %x(%u) ack %x(%u)\n", \
+                                    //ntohl(seq_offset+header->start+i*PACKET_SIZE), \
+                                    //header->start+i*PACKET_SIZE, \
+                                    //ntohl(seq_loc), seq_loc - ini_seq_loc);
+                        //}
                     }
                     else {
                         // still need more data
-                        memcpy(data+offset, response+consumed, unread); 
+                        // we can consume and send all unread data
+                        memcpy(data, response+consumed, unread);
                         header->remain -= unread;
                         consumed += unread;
+                        /*
+                         * TODO: send(buf=data, size=unread) to client here
+                         * remove interval gaps (header->start, header->end) here
+                         */
+                        header->start = header->start + unread;
                         unread = 0;
-                        offset += unread;
                     }
                 }
                 else {
                     // parse header
+                    // if header is incomplete, we have to buffer and wait
                     parsed = parse_response(header, response+consumed, unread);
                     if (parsed <= 0) {
-                        // incomplete http header
+                        // move the incomplete http header to head of recv buffer
                         // keep receiving and parse in next response
                         memmove(response, response+consumed, unread);
                         recv_offset += unread;
