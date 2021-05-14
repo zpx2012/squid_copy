@@ -1281,31 +1281,10 @@ range_watch(void* arg)
                         consumed += header->remain;
                         unsent = header->end - header->start + 1;
                         /*
-                         * TODO: send(buf=data, size=unsent) to client here
+                         * TODO:
                          * remove interval gaps (header->start, header->end) here
                          */
 
-                        //for (int i=0; unsent > 0; i++) {
-                            //if (unsent >= PACKET_SIZE) {
-                                //packet_len = PACKET_SIZE;
-                                //unsent -= PACKET_SIZE;
-                            //}
-                            //else {
-                                //packet_len = unsent;
-                                //unsent = 0;
-                            //}
-                            //send_ACK_payload(local_ip, remote_ip, local_port, remote_port, \
-                                    //data + i*PACKET_SIZE, packet_len, \
-                                    //seq_loc, seq_offset + header->start + i*PACKET_SIZE);
-                            //log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
-                                    //ntohl(seq_offset+header->start+i*PACKET_SIZE), \
-                                    //header->start+i*PACKET_SIZE, \
-                                    //ntohl(seq_loc), seq_loc - ini_seq_loc);
-                            //printf("[Range] retrieved and sent seq %x(%u) ack %x(%u)\n", \
-                                    //ntohl(seq_offset+header->start+i*PACKET_SIZE), \
-                                    //header->start+i*PACKET_SIZE, \
-                                    //ntohl(seq_loc), seq_loc - ini_seq_loc);
-                        //}
                     }
                     else {
                         // still need more data
@@ -1314,11 +1293,34 @@ range_watch(void* arg)
                         header->remain -= unread;
                         consumed += unread;
                         /*
-                         * TODO: send(buf=data, size=unread) to client here
-                         * remove interval gaps (header->start, header->end) here
+                         * TODO:
+                         * remove interval gaps (header->start, header->start+unread-1) here
                          */
+                        unsent = unread;
                         header->start = header->start + unread;
                         unread = 0;
+                    }
+                    // Send data
+                    for (int i=0; unsent > 0; i++) {
+                        if (unsent >= PACKET_SIZE) {
+                            packet_len = PACKET_SIZE;
+                            unsent -= PACKET_SIZE;
+                        }
+                        else {
+                            packet_len = unsent;
+                            unsent = 0;
+                        }
+                        send_ACK_payload(local_ip, remote_ip, local_port, remote_port, \
+                                data + i*PACKET_SIZE, packet_len, \
+                                seq_loc, seq_offset + header->start + i*PACKET_SIZE);
+                        log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", \
+                                ntohl(seq_offset+header->start+i*PACKET_SIZE), \
+                                header->start+i*PACKET_SIZE, \
+                                ntohl(seq_loc), seq_loc - ini_seq_loc);
+                        printf("[Range] retrieved and sent seq %x(%u) ack %x(%u)\n", \
+                                ntohl(seq_offset+header->start+i*PACKET_SIZE), \
+                                header->start+i*PACKET_SIZE, \
+                                ntohl(seq_loc), seq_loc - ini_seq_loc);
                     }
                 }
                 else {
