@@ -292,7 +292,7 @@ Comm::ConnOpener::createFd()
     }
 
      /* Our code */
-    unsigned int size = 83886088;
+    unsigned int size = 8388608;
     if (setsockopt(temporaryFd_, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
         int xerrno = errno;
         debugs(50, DBG_CRITICAL, MYNAME << "FD " << temporaryFd_ << ", SIZE " << size << ": " << xstrerr(xerrno));

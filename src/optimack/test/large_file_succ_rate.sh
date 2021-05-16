@@ -4,8 +4,8 @@
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
-# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
-url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
+url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
+# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
 site='mirrors.mit.edu'
 
@@ -29,7 +29,7 @@ outdir=~/rs/large_file_succ_rate/$(date -u +%Y-%m-%d)
 mkdir -p $outdir
 
 stime=$(date -u +%Y%m%d%H%M)
-tag=$(hostname)_${site}_ACKP2000_8conn_bottleneck_${stime}
+tag=$(hostname)_${site}_ACKP2000_6conn_succrate_${stime}
 log=$outdir/curl_squid_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
@@ -71,7 +71,7 @@ while true; do
     # screen -dmS mtr bash -c "while true; do sudo ~/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 $site | tee -a $mtr_out; done"
     # screen -dmS loss_rate bash ~/squid_copy/src/optimack/test/ping.sh $site $outdir $stime
 
-    echo $(date --rfc-3339=ns): Start squid | tee  ${squid_log}
+    echo $(date --rfc-3339=ns): Start squid | tee ${squid_log}
     screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N >> ${squid_log}"
     sleep 2
     
@@ -88,7 +88,7 @@ while true; do
     sleep 2
     cleanup
 
-    echo "squid_log:" ; cat ${squid_log}; echo;
+    echo "squid_log:" ; tail -100 ${squid_log}; echo;
     # echo >> $log
     # cat ${squid_log} >> $log
 

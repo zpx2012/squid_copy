@@ -34,11 +34,13 @@ public:
         Intervals.clear();
         pthread_mutex_destroy(&mutex_intervals);
     }
+    unsigned int size() { return Intervals.size(); }
 
     unsigned int getFirstEnd();
     unsigned int getFirstEnd_withLock();
     unsigned int getLastEnd();
     unsigned int getLastEnd_withLock();
+    unsigned int getElem_withLock(unsigned int index, bool is_start);
     std::vector<Interval>& getIntervalList() { return Intervals; }
 
     // Function to insert new interval and merge overlapping intervals
@@ -49,6 +51,8 @@ public:
     // Function to insert new interval and merge overlapping intervals
     void removeInterval(unsigned int start, unsigned int end);
     void removeInterval_withLock(unsigned int start, unsigned int end);
+
+    void substract(IntervalList* other);
 
     void printIntervals();
     void printIntervals_withLock();

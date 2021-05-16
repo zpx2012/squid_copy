@@ -27,7 +27,7 @@
 #define MAX_REQUEST_LEN 1024
 #define MAX_RANGE_REQ_LEN 1536
 #define MAX_RANGE_SIZE 102400
-#define PACKET_SIZE 1448
+#define PACKET_SIZE 1460
 
 class Optimack;
 
@@ -52,6 +52,7 @@ struct subconn_info
     unsigned int opa_retrx_counter;
     std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log;
     int rwnd;
+    int win_scale;
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
@@ -98,6 +99,7 @@ public:
     int exec_iptables(char action, char* rule);
     void cleanup();
     void log_seq_gaps();
+    void print_seq_table();
 
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
@@ -113,7 +115,10 @@ public:
     int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_backup(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int restart_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max, std::chrono::time_point<std::chrono::system_clock> &timer);
+    int send_ACK_adjusted_rwnd(struct subconn_info* conn, uint cur_ack);
+    int send_optimistic_ack_with_timer(struct subconn_info* conn, uint cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
+
 
     // variables
     int main_fd;
@@ -150,15 +155,14 @@ public:
     // std::std::vector<unsigned int*> seq_gaps;
     unsigned int seq_next_global = 1,
                  cur_ack_rel = 1,
-                 rwnd = 1,
-                 win_scale = 1 << 7,
-                 max_win_size = 0,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0,
                  same_ack_cnt = 0; 
+    int win_scale = 1 << 7, rwnd = 1, max_win_size = 0;
+
     float last_off_packet = 0.0;
-    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_same_ack_time, last_restart_time;
+    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time;
     FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
     char output_dir[100];
     char *home_dir;
@@ -166,9 +170,14 @@ public:
 
     // range
     int init_range();
-    int send_http_range_request(uint start, uint end);
+    void try_for_gaps_and_request();
+    bool check_packet_lost_on_all_conns();
+    Interval get_lost_range();
+    int send_http_range_request(Interval range);
+    pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_sockfd;
+    IntervalList ranges_sent;
 };
 
 

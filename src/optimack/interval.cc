@@ -77,6 +77,21 @@ unsigned int IntervalList::getLastEnd()
         return 0;
 }
 
+unsigned int IntervalList::getElem_withLock(unsigned int index, bool is_start)
+{
+    if(index < 0)
+        return 0;
+
+    unsigned ret = 0;
+    pthread_mutex_lock(&mutex_intervals);
+    if(Intervals.size() > index)
+        if(is_start)
+            ret = Intervals.at(index).start;
+        else
+            ret = Intervals.at(index).end;
+    pthread_mutex_unlock(&mutex_intervals);
+    return ret;
+}
 
 // A subroutine to check if intervals overlap or not.
 bool IntervalList::doesOverlap(Interval a, Interval b)
@@ -234,6 +249,16 @@ void IntervalList::removeInterval(unsigned int start, unsigned int end)
     Intervals = ans;
     return;
 }
+
+void IntervalList::substract(IntervalList* other){
+    std::vector<Interval> other_intervals = other->getIntervalList();
+    for(auto& intvl: other_intervals){
+        removeInterval(intvl.start, intvl.end);
+        if(Intervals.empty())
+            return;
+    }
+}
+
 
 
 void IntervalList::printIntervals(){
