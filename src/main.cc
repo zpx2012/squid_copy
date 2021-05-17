@@ -1718,7 +1718,7 @@ SquidMain(int argc, char **argv)
 
     /* Our code */
     char cmd[128];
-    sprintf(cmd, "sudo iptables -A INPUT -p tcp -m mark --mark 666 -j ACCEPT");
+    sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT");
     system(cmd);
     sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT");
     system(cmd);

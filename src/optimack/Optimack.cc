@@ -344,7 +344,7 @@ int Optimack::send_ACK_adjusted_rwnd(struct subconn_info* conn, uint cur_ack){ /
     int cur_rwnd = win_end - cur_ack ;
     int cur_win_scaled = cur_rwnd / conn->win_scale;
     conn->rwnd = cur_rwnd;
-    if (cur_win_scaled < 2) {
+    if (cur_rwnd <= conn->payload_len || cur_win_scaled < 2) {
         send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, cur_ack + conn->ini_seq_rem, conn->opa_seq_start, cur_win_scaled);
         return -1;
     }
@@ -496,9 +496,11 @@ full_optimistic_ack(void* arg)
     unsigned int opa_ack_start = 1, zero_window_start = -1;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = conn->ack_pacing / 1000000.0;
+    int send_ret = 0;
     while (!conn->optim_ack_stop) {
         if (elapsed(last_send_ack) >= send_ack_pace){
-            if(obj->send_optimistic_ack_with_timer(conn, opa_ack_start, last_send_ack, last_zero_window) < 0)
+            send_ret = obj->send_optimistic_ack_with_timer(conn, opa_ack_start, last_send_ack, last_zero_window);
+            if(send_ret < 0)
                 zero_window_start = opa_ack_start;
             else 
                 opa_ack_start += conn->payload_len;
@@ -520,9 +522,12 @@ full_optimistic_ack(void* arg)
         }
 
         //Overrun detection
-        if (zero_window_start > conn->next_seq_rem && is_timeout_and_update(conn->last_data_received, 4)){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
-            opa_ack_start = conn->next_seq_rem - 20*conn->payload_len;
-            printf("S%u: overrun, restart at %u, zero_window_start %u, next_seq_rem %u\n", id, opa_ack_start, zero_window_start, conn->next_seq_rem);
+        if (is_timeout_and_update(conn->last_data_received, 4)){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+            // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
+                if(send_ret < 0 && zero_window_start <= conn->next_seq_rem) //Is in zero window period, received upon the window end, not overrun
+                    continue;
+                opa_ack_start = conn->next_seq_rem - 5*conn->payload_len;
+                printf("S%u: overrun, restart at %u, zero_window_start %u, next_seq_rem %u\n", id, opa_ack_start, zero_window_start, conn->next_seq_rem);
         }
 
         usleep(10);
@@ -1185,10 +1190,10 @@ range_watch(void* arg)
         obj->ranges_sent.printIntervals();
         for(auto it : range_sent_intervals) {
             memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
-            sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", it.start, it.end-1);
+            sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", it.start, it.end);
             send(range_sockfd, request, strlen(request), 0);
-            log_debug("[Range] Resend bytes %d - %d", it.start, it.end-1);
-            printf("[Range] Resend bytes %d - %d\n", it.start, it.end-1);
+            log_debug("[Range] Resend bytes %d - %d", it.start, it.end);
+            printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
         }
         // pthread_mutex_unlock(mutex);
 
@@ -1275,14 +1280,13 @@ range_watch(void* arg)
                             //  obj->ranges_sent.removeInterval_withLock(header->start, header->start+unread-1);
                         }
 
-                        for (int sent=0; unsent > 0; sent += packet_len) {
+                        int sent;
+                        for (sent=0; unsent > 0; sent += packet_len, unsent -= packet_len) {
                             if (unsent >= PACKET_SIZE) {
                                 packet_len = PACKET_SIZE;
-                                unsent -= PACKET_SIZE;
                             }
                             else {
                                 packet_len = unsent;
-                                unsent = 0;
                             }
                             uint ack = subconn->ini_seq_loc + subconn->next_seq_loc;
                             uint seq = subconn->ini_seq_rem + header->start + sent;
@@ -1292,6 +1296,7 @@ range_watch(void* arg)
                             printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
                         }
                         recv_offset = 0;
+                        header->start += sent;
                     }
                 }
                 if (unread < 0)
@@ -1419,7 +1424,7 @@ void* overrun_detector(void* arg){
 
     auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
-        if(is_timeout_and_update(last_print_seqs, 2)){
+        if(is_timeout_and_update(last_print_seqs, 10)){
             obj->print_seq_table();
         }
 
@@ -1775,6 +1780,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         else{
                             // subconn->payload_len = payload_len;
                             // subconn_infos[0].payload_len = payload_len;
+                            // if(subconn_i){
                             if(true){
                                 start_optim_ack(subconn_i, subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                                 printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
@@ -1902,8 +1908,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // sleep(1);
                 // usleep(10000);
                 // printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
-                return 0;
-
+                // if(rand() % 100 < 50)
+                    return 0;
                 break;
             }
             case TH_ACK | TH_FIN:
@@ -2111,7 +2117,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    int conn_num = 1;
+    int conn_num = 4;
     // range
     if (RANGE_MODE) {
         // conn_num = 0;

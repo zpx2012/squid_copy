@@ -80,7 +80,7 @@ while true; do
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
     echo Start: $(date --rfc-3339=second) 2>&1 | tee -a $log
     start=$(date +%s.%N)
-    curl -LJ4vk -o /dev/null -x http://127.0.0.1:3128 -m 600 $url 2>&1 | tee -a $curl_singlerun
+    curl -LJ4vk -o /dev/null -x http://127.0.0.1:3128 $url 2>&1 | tee -a $curl_singlerun
     cat $curl_singlerun >> $log
     duration=$(echo "$(date +%s.%N) - $start" | bc)
     echo $(date --rfc-3339=ns): Curl download end, duration $duration 2>&1 | tee -a $log
@@ -92,22 +92,26 @@ while true; do
     # echo >> $log
     # cat ${squid_log} >> $log
 
-    if grep -q "Packet lost on all connections" ${squid_log} ;
-    then
-        mv ~/rs/seq_gaps_count.csv  $outdir/seq_gaps_count_lost_all_bash_$(date -Iseconds).csv
-        mv ~/rs/seq_gaps.csv  $outdir/seq_gaps_lost_all_bash_$(date -Iseconds).csv
+    # if grep -q "Packet lost on all connections" ${squid_log} ;
+    # then
+    #     mv ~/rs/seq_gaps_count.csv  $outdir/seq_gaps_count_lost_all_bash_$(date -Iseconds).csv
+    #     mv ~/rs/seq_gaps.csv  $outdir/seq_gaps_lost_all_bash_$(date -Iseconds).csv
     # else
     #     echo >> $outdir/seq_gaps_count.csv
     #     echo >> $outdir/seq_gaps_count.csv
     #     cat ~/rs/seq_gaps_count.csv >> $outdir/seq_gaps_count.csv       
-    fi
+    # fi
 
-    # if grep -q "curl: (28) Operation too slow" $curl_singlerun ; 
-    # then
+    if grep -q "curl: (28) Operation too slow" $curl_singlerun; 
+    then
+        mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
+        cat ${squid_log} >> $outdir/squid_log_e28.log
     #     mv ~/rs/exp.log $outdir/exp_idle.log
     #     mv ~/rs/optack.log $outdir/optack_idle.log
-    # elif grep -q "curl: (18)" $curl_singlerun ;
-    # then
+    elif grep -q "curl: (18)" $curl_singlerun ;
+    then
+        mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
+        cat ${squid_log} >> $outdir/squid_log_e18log
     #     mv ~/rs/exp.log $outdir/exp_lost_all_$(date -Iseconds).log
     #     mv ~/rs/optack.log $outdir/optack_lost_all_$(date -Iseconds).log    
     #     if ! grep -q "cat /proc/net/netfilter/nfnetlink_queue" $squid_log ;
@@ -116,7 +120,7 @@ while true; do
     #         mv ~/rs/exp.log $outdir/exp_28_noprint.log
     #         mv ~/rs/optack.log $outdir/optack_28_noprint.log
     #     fi
-    # fi
+    fi
 
     # elif grep -q "intact"  $curl_singlerun ;
     # then
