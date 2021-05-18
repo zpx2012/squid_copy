@@ -15,6 +15,7 @@
 #include "security/ServerOptions.h"
 #include "security/Session.h"
 #include "SquidConfig.h"
+#include <limits>
 #if USE_OPENSSL
 #include "compat/openssl.h"
 #include "ssl/support.h"

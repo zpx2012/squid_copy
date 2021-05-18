@@ -26,8 +26,12 @@ using namespace std;
 #include "Debug.h"
 #include "logging.h"
 
-#include <cstring> // for http parsing
+// for http parsing
+#include <cstring>
 #include <algorithm>
+#include "squid.h"
+#include "sbuf/SBuf.h"
+#include "http/one/RequestParser.h"
 
 #include "Optimack.h"
 
@@ -458,7 +462,7 @@ void* selective_optimistic_ack(void* arg){
             uint ack_restart_start, ack_restart_end;
             if(!sent_ranges.getIntervalList().empty()){
                 uint min_ack_sent = sent_ranges.getIntervalList().at(0).start;
-                ack_restart_start = min(min_ack_sent, last_recved_seq); 
+                ack_restart_start = std::min(min_ack_sent, last_recved_seq); 
                 ack_restart_end = *acks_to_be_sent.begin();
             }
             else {
@@ -1237,6 +1241,9 @@ range_watch(void* arg)
         int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
         http_header* header = (http_header*)malloc(sizeof(http_header));
         memset(header, 0, sizeof(http_header));
+        // parser
+        Http1::RequestParser rp;
+        SBuf headerBuf;
 
         do {
             // blocking sock
@@ -1261,10 +1268,15 @@ range_watch(void* arg)
                             // keep receiving and parse in next response
                             memmove(response, response+consumed, unread);
                             recv_offset += unread;
-                            printf("[Range]: imcomplete http header, len %d\n", unread);
+                            printf("[Range]: incomplete http header, len %d\n", unread);
                             break;
                         }
                         else {
+                            // parser
+                            headerBuf.assign(response+consumed, unread);
+                            rp.parse(headerBuf);
+                            printf("[Range]: headBlockSize %d Parsed %d\n", rp.headerBlockSize(), parsed);
+
                             recv_offset = 0;
                             consumed += parsed;
                             unread -= parsed;
@@ -1295,6 +1307,8 @@ range_watch(void* arg)
                             unread -= header->remain;
                             consumed += header->remain;
                             unsent = header->end - header->start + 1;
+                            // parser
+                            rp.clear();
                             /*
                             * TODO: send(buf=data, size=unsent) to client here
                             * remove interval gaps (header->start, header->end) here
@@ -1408,7 +1422,7 @@ Interval Optimack::get_lost_range()
     
     // for (size_t i = 1; i < num_conns; i++)
     for (auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
-        min_next_seq_rem = min(min_next_seq_rem, it->second.next_seq_rem);
+        min_next_seq_rem = std::min(min_next_seq_rem, it->second.next_seq_rem);
     
     // check if the range has already been sent
     IntervalList lost_range;
