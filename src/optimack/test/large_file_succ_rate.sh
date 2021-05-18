@@ -91,6 +91,11 @@ while true; do
     echo "squid_log:" ; tail -100 ${squid_log}; echo;
     # echo >> $log
     # cat ${squid_log} >> $log
+    if grep -q "Overrun bug occurs" ${squid_log} ;
+    then
+        exit
+    fi
+
 
     # if grep -q "Packet lost on all connections" ${squid_log} ;
     # then

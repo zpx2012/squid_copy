@@ -33,6 +33,7 @@ class Optimack;
 
 struct subconn_info
 {
+    int id;
     int sockfd;
     unsigned short local_port;
     unsigned int ini_seq_rem;  //remote sequence number
@@ -51,7 +52,7 @@ struct subconn_info
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
     std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log;
-    int rwnd;
+    uint rwnd;
     int win_scale;
     int ack_pacing;
     unsigned int payload_len;
@@ -59,8 +60,8 @@ struct subconn_info
 
     std::map<uint, uint> dup_seqs;
     IntervalList recved_seq;
-    std::vector<Interval> seq_gaps;
-    pthread_mutex_t mutex_seq_gaps;
+    // std::vector<Interval> seq_gaps;
+    // pthread_mutex_t mutex_seq_gaps;
 
     bool is_backup;
 };
@@ -93,7 +94,7 @@ public:
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
-    void open_one_duplicate_conn(std::vector<struct subconn_info> *subconn_info_list, bool is_backup);
+    void open_one_duplicate_conn(std::map<uint, struct subconn_info> &subconn_info_list, bool is_backup);
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
@@ -112,9 +113,9 @@ public:
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
-    int start_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
-    int start_optim_ack_backup(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
-    int restart_optim_ack(int id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max, std::chrono::time_point<std::chrono::system_clock> &timer);
+    int start_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
+    int start_optim_ack_backup(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
+    int restart_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max, std::chrono::time_point<std::chrono::system_clock> &timer);
     int send_ACK_adjusted_rwnd(struct subconn_info* conn, uint cur_ack);
     int send_optimistic_ack_with_timer(struct subconn_info* conn, uint cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
@@ -127,11 +128,14 @@ public:
     unsigned int g_local_ip_int;
     unsigned int g_remote_ip_int;
     unsigned short g_remote_port;
+    unsigned short squid_port;
     char request[1000];
     unsigned short request_len;
     struct sockaddr_in dstAddr;
     
-    std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
+    std::map<uint, struct subconn_info> subconn_infos;
+    uint subconn_count;
+    // std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
 
     std::vector<char*> iptables_rules;
     
@@ -159,7 +163,7 @@ public:
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0,
                  same_ack_cnt = 0; 
-    int win_scale = 1 << 7, rwnd = 1, max_win_size = 0;
+    uint win_scale = 1 << 7, rwnd = 1, max_win_size = 0;
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time;
