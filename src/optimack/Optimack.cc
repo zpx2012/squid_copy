@@ -1275,7 +1275,8 @@ range_watch(void* arg)
                             // parser
                             headerBuf.assign(response+consumed, unread);
                             rp.parse(headerBuf);
-                            printf("[Range]: headBlockSize %d Parsed %d\n", rp.headerBlockSize(), parsed);
+                            printf("[Range]: headBlockSize %d Parsed %d StatusCode %d\n", rp.headerBlockSize(), parsed, rp.parseStatusCode);
+                            // src/http/StatusCode.h
 
                             recv_offset = 0;
                             consumed += parsed;
