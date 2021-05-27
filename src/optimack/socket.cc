@@ -59,7 +59,7 @@ void send_ACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsig
     header.th_flags = TH_ACK;
     header.th_seq = seq;
     header.th_ack = ack;
-    header.th_win = win_size;
+    header.th_win = (win_size >= 65525)? 65525 : win_size;
 
     send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
     // printf("Pkg sent ack %d win %d\n", ack, win_size);

@@ -157,7 +157,7 @@ CreateSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer
             gnutls_transport_set_int(session.get(), fd);
             gnutls_handshake_set_timeout(session.get(), GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 #endif
-
+            printf("CreateSession here\n");
             debugs(83, 5, "link FD " << fd << " to TLS session=" << (void*)session.get());
             fd_table[fd].ssl = session;
             fd_table[fd].read_method = &tls_read_method;

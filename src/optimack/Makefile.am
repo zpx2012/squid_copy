@@ -9,6 +9,9 @@
 include $(top_srcdir)/src/Common.am
 include $(top_srcdir)/src/TestHeaders.am
 
+##SUBDIRS = openssl-bio-fetch
+##DIST_SUBDIRS = openssl-bio-fetch
+
 noinst_LTLIBRARIES = liboptim.la
 
 liboptim_la_SOURCES = \
@@ -30,4 +33,13 @@ liboptim_la_SOURCES = \
 	globals.h \
 	waitpacket.cc \
 	interval.h \
-	interval.cc 
+	interval.cc \
+	get_server_key.h \
+	get_server_key.c \
+	ssl_local.h \
+	evp.h \
+	modes_local.h \
+	include/openssl/aes.h \
+	include/openssl/engine.h
+
+liboptim_la_LDFLAGS = -Bstatic -lssl -lcrypto

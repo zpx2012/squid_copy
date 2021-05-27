@@ -4,13 +4,14 @@
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
-url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
+# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-site='mirrors.mit.edu'
+# site='mirrors.mit.edu'
 
+url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
-# site='mirror.math.princeton.edu'
+site='mirror.math.princeton.edu'
 
 # url='http://mirrors.cat.pdx.edu/ubuntu-releases/16.04.6/ubuntu-16.04.6-server-i386.template'
 # site='mirrors.cat.pdx.edu'
@@ -25,10 +26,10 @@ site='mirrors.mit.edu'
 # site='NY-DGO-O2C'
 
 mkdir -p ~/rs/large_file_succ_rate/
-outdir=~/rs/large_file_succ_rate/$(date -u +%Y-%m-%d)
+outdir=~/rs/large_file_succ_rate/$(date +%Y-%m-%d)
 mkdir -p $outdir
 
-stime=$(date -u +%Y%m%d%H%M)
+stime=$(date +%Y%m%d%H%M)
 tag=$(hostname)_${site}_ACKP2000_6conn_succrate_${stime}
 log=$outdir/curl_squid_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
@@ -91,10 +92,10 @@ while true; do
     echo "squid_log:" ; tail -100 ${squid_log}; echo;
     # echo >> $log
     # cat ${squid_log} >> $log
-    if grep -q "Overrun bug occurs" ${squid_log} ;
-    then
-        exit
-    fi
+    # if grep -q "Overrun bug occurs" ${squid_log} ;
+    # then
+    #     exit
+    # fi
 
 
     # if grep -q "Packet lost on all connections" ${squid_log} ;
@@ -109,14 +110,14 @@ while true; do
 
     if grep -q "curl: (28) Operation too slow" $curl_singlerun; 
     then
-        mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
-        cat ${squid_log} >> $outdir/squid_log_e28.log
+        # mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
+        cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
     #     mv ~/rs/exp.log $outdir/exp_idle.log
     #     mv ~/rs/optack.log $outdir/optack_idle.log
     elif grep -q "curl: (18)" $curl_singlerun ;
     then
-        mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
-        cat ${squid_log} >> $outdir/squid_log_e18log
+        # mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
+        cat ${squid_log} >> $outdir/squid_log_e18_$(date -Iseconds).log
     #     mv ~/rs/exp.log $outdir/exp_lost_all_$(date -Iseconds).log
     #     mv ~/rs/optack.log $outdir/optack_lost_all_$(date -Iseconds).log    
     #     if ! grep -q "cat /proc/net/netfilter/nfnetlink_queue" $squid_log ;

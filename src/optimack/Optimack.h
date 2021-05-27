@@ -15,19 +15,7 @@
 // using namespace std;
 
 
-/** Our code **/
-#define ACKPACING 2000
-#define LOGSIZE 1024
-#define IPTABLESLEN 128
-// nfq
-#define NF_QUEUE_NUM 6
-#define NFQLENGTH 204800
-#define BUFLENGTH 4096
-// range
-#define MAX_REQUEST_LEN 1024
-#define MAX_RANGE_REQ_LEN 1536
-#define MAX_RANGE_SIZE 102400
-#define PACKET_SIZE 1460
+
 
 class Optimack;
 
@@ -52,8 +40,8 @@ struct subconn_info
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
     std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log;
-    uint rwnd;
-    int win_scale;
+    int rwnd;
+    uint win_scale;
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
@@ -182,6 +170,7 @@ public:
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_sockfd;
     IntervalList ranges_sent;
+    uint response_header_len, requested_bytes = 0;
 };
 
 

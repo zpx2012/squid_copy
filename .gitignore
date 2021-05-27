@@ -5,7 +5,9 @@
 Makefile
 .deps/
 .libs/
-*Makefile.in
-*Makefile.am
+*Makefile.in*
+*Makefile.am*
 *.pyc
 *.log
+*.tar.gz
+*.bak*

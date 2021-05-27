@@ -25,6 +25,7 @@ using namespace std;
 #include "checksum.h"
 #include "Debug.h"
 #include "logging.h"
+#include "get_server_key.h"
 
 // for http parsing
 #include <cstring>
@@ -32,8 +33,23 @@ using namespace std;
 #include "squid.h"
 #include "sbuf/SBuf.h"
 #include "http/one/RequestParser.h"
+#include "http/one/ResponseParser.h"
 
 #include "Optimack.h"
+
+/** Our code **/
+#define ACKPACING 1500
+#define LOGSIZE 1024
+#define IPTABLESLEN 128
+// nfq
+#define NF_QUEUE_NUM 6
+#define NFQLENGTH 204800
+#define BUFLENGTH 4096
+// range
+#define MAX_REQUEST_LEN 1024
+#define MAX_RANGE_REQ_LEN 1536
+#define MAX_RANGE_SIZE 102400
+#define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
 #define RANGE_MODE 1
@@ -282,6 +298,7 @@ bool Optimack::is_nfq_full(FILE* out_file){
 }
 
 bool Optimack::does_packet_lost_on_all_conns(){
+    // get_server_write_key(NULL, NULL);
     return false;
 }
 //     // Packet lost on all connections
@@ -511,37 +528,48 @@ full_optimistic_ack(void* arg)
                 opa_ack_start += conn->payload_len;
 
             if (SPEEDUP_CONFIG){
-                if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && elapsed(obj->last_speedup_time) > 10){ //&& obj->subconn_infos.begin()->off_pkt_num < 1
-                    log_debugv("optimistic_ack: mutex_subconn_infos - tring lock");
-                    pthread_mutex_lock(&obj->mutex_subconn_infos);
-                    if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && elapsed(obj->last_speedup_time) > 10){ //&& obj->subconn_infos.begin()->off_pkt_num < 1 
-                        // for (int i = 0; i < obj->subconn_infos.size(); i++)
-                        // for (auto const& [port, subconn] : obj->subconn_infos) 
-                        for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++)
-                            adjust_optimack_speed(&it->second, it->second.id, 1, 10);//low frequence
-                        obj->last_speedup_ack_rel = opa_ack_start - conn->ini_seq_rem;
-                        obj->last_speedup_time = std::chrono::system_clock::now();
-                    }
-                    pthread_mutex_unlock(&obj->mutex_subconn_infos);
-                    log_debugv("optimistic_ack: mutex_subconn_infos - unlock");
+                if(obj->cur_ack_rel > opa_ack_start && conn->next_seq_rem > opa_ack_start){
+                    opa_ack_start = conn->next_seq_rem;
                 }
+                if(conn->next_seq_rem > opa_ack_start){
+                    opa_ack_start = conn->next_seq_rem;
+                }
+
+                // if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && elapsed(obj->last_speedup_time) > 10){ //&& obj->subconn_infos.begin()->off_pkt_num < 1
+                //     log_debugv("optimistic_ack: mutex_subconn_infos - tring lock");
+                //     pthread_mutex_lock(&obj->mutex_subconn_infos);
+                //     if(conn->next_seq_rem-opa_ack_start > 1460*100 && conn->next_seq_rem > opa_ack_start && elapsed(obj->last_speedup_time) > 10){ //&& obj->subconn_infos.begin()->off_pkt_num < 1 
+                //         // for (int i = 0; i < obj->subconn_infos.size(); i++)
+                //         // for (auto const& [port, subconn] : obj->subconn_infos) 
+                //         for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++)
+                //             adjust_optimack_speed(&it->second, it->second.id, 1, 10);//low frequence
+                //         obj->last_speedup_ack_rel = opa_ack_start - conn->ini_seq_rem;
+                //         obj->last_speedup_time = std::chrono::system_clock::now();
+                //     }
+                //     pthread_mutex_unlock(&obj->mutex_subconn_infos);
+                //     log_debugv("optimistic_ack: mutex_subconn_infos - unlock");
+                // }
             }
         }
 
         //Overrun detection
-        if (elapsed(conn->last_data_received) >= 4){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+        if (elapsed(conn->last_data_received) >= 2){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
             // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-            if(is_timeout_and_update(last_restart, 4)){
+            if(!SPEEDUP_CONFIG && opa_ack_start < conn->next_seq_rem)
+                continue;
+            if(elapsed(last_restart) >= 2){
                 if(send_ret < 0 && zero_window_start <= conn->next_seq_rem) //Is in zero window period, received upon the window end, not overrun
                     continue;
+                printf("S%u: overrun, current ack %u, ", id, opa_ack_start);
                 opa_ack_start = conn->next_seq_rem - 5*conn->payload_len;
-                printf("S%u: overrun, restart at %u, zero_window_start %u, next_seq_rem %u\n", id, opa_ack_start, zero_window_start, conn->next_seq_rem);
+                last_restart = std::chrono::system_clock::now();
+                printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, conn->next_seq_rem);
             }
 
-            if(elapsed(conn->last_data_received) >= 120){
-                printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
-                exit(-1);
-            }
+            // if(elapsed(conn->last_data_received) >= 120){
+            //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
+            //     exit(-1);
+            // }
         }
 
         usleep(10);
@@ -690,8 +718,11 @@ void Optimack::log_seq_gaps(){
     fprintf(info_file, "Start: %s\n", start_time);
     fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
     fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
-    for(size_t j = 0; j < subconn_infos.size(); j++)
-        fprintf(info_file, "%d, ", subconn_infos[j].local_port);
+    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
+        fprintf(info_file, "%d, ", it->second.local_port);
+    fprintf(info_file, "\n");
+    if (RANGE_MODE)
+        fprintf(info_file, "Range requested: %u\n", requested_bytes);
     fprintf(info_file, "\n");
     is_nfq_full(info_file);
     fprintf(info_file,"\n");
@@ -745,9 +776,11 @@ void Optimack::log_seq_gaps(){
     // }
     // else{
     //     sprintf(tmp_str, "cd %s; rm -v %s; rm -v %s;", output_dir, mtr_file_name, loss_file_name); //, tcpdump_file_name
-    sprintf(tmp_str, "cd %s; rm -v %s;", output_dir, tcpdump_file_name);
-    printf("%s\n", tmp_str);
-    system(tmp_str);
+
+    // sprintf(tmp_str, "cd %s; rm -v %s;", output_dir, tcpdump_file_name);
+    // printf("%s\n", tmp_str);
+    // system(tmp_str);
+
     // }
     
 
@@ -929,8 +962,9 @@ Optimack::init()
     sprintf(tcpdump_file_name, "tcpdump_%s.pcap", start_time);
     sprintf(tmp_str,"tcpdump -w %s/%s -s 96 tcp &", output_dir, tcpdump_file_name);
     // sprintf(tmp_str,"tcpdump -w %s/%s -s 96 tcp src port 80 &", output_dir, tcpdump_file_name);
-    system(tmp_str);
+    // system(tmp_str);
 
+    // printf("test openssl-bio-fetch: %d\n", test_include());
     // sprintf(tcpdump_file_name, "tcpdump_%s.tshark", start_time);
     // sprintf(tmp_str, "tshark -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80 and tcp.len > 0' > %s/%s &", output_dir, tcpdump_file_name);
     // system(tmp_str);
@@ -1194,6 +1228,9 @@ void*
 range_watch(void* arg)
 {
     printf("[Range]: range_watch thread starts\n");
+    printf("New version\n");
+    // printf("test openssl-bio-fetch: %d\n", test_include());
+    // get_server_write_key(NULL, NULL);
 
     int rv, range_sockfd, local_port, remote_port, seq_offset, seq_loc, ini_seq_loc;
     char response[MAX_RANGE_SIZE];
@@ -1228,13 +1265,13 @@ range_watch(void* arg)
 
         memcpy(request, obj->request, request_len);
         std::vector<Interval> range_sent_intervals = obj->ranges_sent.getIntervalList();
-        obj->ranges_sent.printIntervals();
+        // obj->ranges_sent.printIntervals();
         for(auto it : range_sent_intervals) {
             memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
             sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", it.start, it.end);
             send(range_sockfd, request, strlen(request), 0);
             log_debug("[Range] Resend bytes %d - %d", it.start, it.end);
-            printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
+            // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
         }
         // pthread_mutex_unlock(mutex);
 
@@ -1253,7 +1290,7 @@ range_watch(void* arg)
             }
             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
             rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, 0);
-            printf("[Range]: rv %d\n", rv);
+            // printf("[Range]: rv %d\n", rv);
             if (rv > MAX_RANGE_SIZE)
                 printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
             if (rv > 0) {
@@ -1275,7 +1312,7 @@ range_watch(void* arg)
                             // parser
                             headerBuf.assign(response+consumed, unread);
                             rp.parse(headerBuf);
-                            printf("[Range]: headBlockSize %d Parsed %d StatusCode %d\n", rp.headerBlockSize(), parsed, rp.parseStatusCode);
+                            // printf("[Range]: headBlockSize %d Parsed %d StatusCode %d\n", rp.headerBlockSize(), parsed, rp.parseStatusCode);
                             // src/http/StatusCode.h
 
                             recv_offset = 0;
@@ -1314,7 +1351,7 @@ range_watch(void* arg)
                             * TODO: send(buf=data, size=unsent) to client here
                             * remove interval gaps (header->start, header->end) here
                             */
-
+                             obj->ranges_sent.removeInterval_withLock(header->start, header->end);
                         }
                         else {
                             // still need more data
@@ -1329,7 +1366,7 @@ range_watch(void* arg)
                             * TODO:
                             * remove interval gaps (header->start, header->start+unread-1) here
                             */
-                            //  obj->ranges_sent.removeInterval_withLock(header->start, header->start+unread-1);
+                             obj->ranges_sent.removeInterval_withLock(header->start, header->start+unsent);
                         }
 
                         int sent;
@@ -1340,12 +1377,14 @@ range_watch(void* arg)
                             else {
                                 packet_len = unsent;
                             }
+                            // obj->ranges_sent.removeInterval_withLock(header->start+sent, header->start+sent+packet_len);
                             uint ack = subconn->ini_seq_loc + subconn->next_seq_loc;
-                            uint seq = subconn->ini_seq_rem + header->start + sent;
+                            uint seq_rel = 1 + obj->response_header_len + header->start + sent;
+                            uint seq = subconn->ini_seq_rem +  seq_rel; // Adding the offset back
                             send_ACK_payload(local_ip, remote_ip, local_port, remote_port, (u_char*)(data + sent), packet_len, ack, seq);
-                            obj->ranges_sent.removeInterval_withLock(header->start+sent, header->start+sent+packet_len);
-                            log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), header->start+sent, ntohl(ack), subconn->next_seq_loc);
-                            printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
+                            obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
+                            log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc);
+                            // printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
                         }
                         recv_offset = 0;
                         header->start += sent;
@@ -1394,11 +1433,12 @@ Optimack::init_range()
 
 void Optimack::try_for_gaps_and_request(){
     if(check_packet_lost_on_all_conns()){
-        printf("[Range]: lost on all conns\n");
+        // printf("[Range]: lost on all conns\n");
         Interval lost_range = get_lost_range();
         if(lost_range.start != 0 && lost_range.end != 0){
-            printf("[Range]: Get request range [%u, %u]\n", lost_range.start, lost_range.end);
+            // printf("[Range]: Get request range [%u, %u]\n", lost_range.start, lost_range.end);
             send_http_range_request(lost_range);
+            requested_bytes += lost_range.end - lost_range.start + 1;
         }
     }
 }
@@ -1407,7 +1447,7 @@ bool Optimack::check_packet_lost_on_all_conns(){
     uint seq_recved_global = cur_ack_rel;//TODO: Or ?   obj->recved_seq.getFirstEnd_withLock()
 
     // for (i = 1; i < num_conns; i++)
-    for (auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         if(it->second.next_seq_rem <= seq_recved_global)
             return false;
     }
@@ -1417,17 +1457,20 @@ bool Optimack::check_packet_lost_on_all_conns(){
 Interval Optimack::get_lost_range()
 {
     uint min_next_seq_rem = recved_seq.getElem_withLock(1, true);
-    recved_seq.printIntervals();
+    // recved_seq.printIntervals();
     if(min_next_seq_rem == 0)
         min_next_seq_rem = -1;
     
     // for (size_t i = 1; i < num_conns; i++)
-    for (auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
+    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         min_next_seq_rem = std::min(min_next_seq_rem, it->second.next_seq_rem);
     
+    if(min_next_seq_rem == -1)
+        return Interval(0,0);
+
     // check if the range has already been sent
     IntervalList lost_range;
-    lost_range.insertNewInterval(cur_ack_rel, min_next_seq_rem);
+    lost_range.insertNewInterval(cur_ack_rel-response_header_len-1, min_next_seq_rem-response_header_len-2);
     lost_range.substract(&ranges_sent);
     if(lost_range.size()){
         return lost_range.getIntervalList().at(0);
@@ -1446,8 +1489,8 @@ int Optimack::send_http_range_request(Interval range){
     sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
     ranges_sent.insertNewInterval_withLock(start, end);
     if (send(range_sockfd, range_request, strlen(range_request), 0) < 0){
-        printf("[Range] bytes [%u, %u] failed\n", start, end);
-        // log_debug("[Range] bytes %d - %d failed", start, end);
+        // printf("[Range] bytes [%u, %u] failed\n", start, end);
+        log_debug("[Range] bytes %d - %d failed", start, end);
         // pthread_join(range_thread, NULL);
         // log_debug("[Range] new range thread created");
         // range_sockfd = init_range(); // Resend the range in range_sent when start a new range watch
@@ -1455,8 +1498,8 @@ int Optimack::send_http_range_request(Interval range){
         return -1;
     } 
     else{
-        printf("[Range] bytes [%u, %u] requested\n", start, end);
-        // log_debug("[Range] bytes %d - %d requested", start, end);
+        // printf("[Range] bytes [%u, %u] requested\n", start, end);
+        log_debug("[Range] bytes %d - %d requested", start, end);
         return 0;
     }
 }
@@ -1848,6 +1891,17 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                     log_debugv("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
                 }
 
+                if(seq_rel == 1 && local_port == squid_port){
+                    Http1::ResponseParser rp;
+                    SBuf headerBuf;
+                    headerBuf.assign((char*)payload, payload_len);
+                    rp.parse(headerBuf);
+                    response_header_len = rp.messageHeaderSize();
+                    printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
+                    // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
+                    // src/http/StatusCode.h
+                }
+
                 // if(!subconn_i){
                 //     fprintf(seq_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), seq_rel);
                 // }
@@ -1934,7 +1988,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // // 4. checksum(IP,TCP)
                 // if (is_timeout_and_update(subconn->timer_print_log, 2))
                 //     printf("%s - forwarded to squid\n", log);
-                // log_debug("%s - forwarded to squid", log); 
+                log_debug("%s - forwarded to squid", log); 
                 if(!subconn_i)//Main subconn, return directly
                     return 0; 
                 tcphdr->th_dport = htons(subconn_infos.begin()->second.local_port);
@@ -2123,6 +2177,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     inet_pton(AF_INET, local_ip, &g_local_ip_int);
     inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
     g_remote_port = remote_port;
+    squid_port = local_port;
     
     dstAddr.sin_family = AF_INET;
     memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
@@ -2163,7 +2218,6 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     int conn_num = 4;
     // range
     if (RANGE_MODE) {
-        // conn_num = 0;
         range_sockfd = 0;
     }
 
