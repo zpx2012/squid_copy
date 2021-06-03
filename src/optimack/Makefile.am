@@ -34,12 +34,11 @@ liboptim_la_SOURCES = \
 	waitpacket.cc \
 	interval.h \
 	interval.cc \
-	get_server_key.h \
-	get_server_key.c \
 	ssl_local.h \
 	evp.h \
 	modes_local.h \
 	include/openssl/aes.h \
-	include/openssl/engine.h
+	include/openssl/engine.h \
+	get_server_key.h
 
 liboptim_la_LDFLAGS = -Bstatic -lssl -lcrypto

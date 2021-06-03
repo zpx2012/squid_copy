@@ -9,12 +9,13 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval.h"
+#include <openssl/ssl.h>
 // #include "comm/Connection.h"
 // #include "../comm/forward.h"
 // #include <bits/stdc++.h>
 // using namespace std;
 
-
+void test_write_key(SSL *s);
 
 
 class Optimack;
@@ -121,7 +122,7 @@ public:
     unsigned short request_len;
     struct sockaddr_in dstAddr;
     
-    std::map<uint, struct subconn_info> subconn_infos;
+    std::map<uint, struct subconn_info*> subconn_infos;
     uint subconn_count;
     // std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
 

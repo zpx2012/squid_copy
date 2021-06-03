@@ -1,4 +1,3 @@
-http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.3-server-powerpc.iso, 701M
 http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04-server-amd64.img, 655M
 http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.1-server-arm64.iso, 607M
 http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04-server-s390x.iso, 549M
@@ -10,6 +9,4 @@ http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04
 http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/12.10/ubuntu-12.10-server-powerpc.template, 51M
 http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz, 20M
 http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-amd64.iso, 870M
-
-
-
+http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.3-server-powerpc.iso, 701M

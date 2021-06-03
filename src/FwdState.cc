@@ -378,6 +378,9 @@ FwdState::Start(const Comm::ConnectionPointer &clientConn, StoreEntry *entry, Ht
     default:
         // Our code server_conn
         FwdState::Pointer fwd = new FwdState(clientConn, entry, request, al, httpserver_conn);
+        // auto ssl = fd_table[clientConn->fd].ssl.get();
+        // test_write_key(ssl);
+        // printf("server random %s, client random %s, masterkey %s, %u\n",ssl->s3->server_random, ssl->s3->client_random, ssl->session->master_key, ssl->session->master_key_length);
         fwd->start(fwd);
         return;
     }
@@ -910,11 +913,11 @@ FwdState::connectStart()
         dispatch();
 
         /* Our code */
-        unsigned int size = 83886080;
-        if (setsockopt(serverConn->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
-            int xerrno = errno;
-            debugs(50, DBG_IMPORTANT, MYNAME << "FD " << serverConn->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
-        }
+        // unsigned int size = 83886080;
+        // if (setsockopt(serverConn->fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+        //     int xerrno = errno;
+        //     debugs(50, DBG_IMPORTANT, MYNAME << "FD " << serverConn->fd << ", SIZE " << size << ": " << xstrerr(xerrno));
+        // }
         //serverConnection.remote.toStr(buf, len)
         //serverConnection.remote.port()
         char remote_ip[16], local_ip[16];

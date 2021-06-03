@@ -37,6 +37,19 @@ using namespace std;
 
 #include "Optimack.h"
 
+
+void test_write_key(SSL *s){
+    if(!s)
+        return;
+
+    unsigned char session_key[20],iv_salt[4];
+    get_server_session_key_and_iv_salt(s, session_key, iv_salt);
+    // printf("get write iv and salt: %s\n", buf);
+
+    // printf("get server key: %s\n", buf);
+}
+
+
 /** Our code **/
 #define ACKPACING 1500
 #define LOGSIZE 1024
@@ -818,11 +831,11 @@ Optimack::cleanup()
 
     log_seq_gaps();
 
-    if(!overrun_stop){
-        overrun_stop++;
-        pthread_join(overrun_thread, NULL);
-        log_info("overrun_thread exited");    
-    }
+    // if(!overrun_stop){
+    //     overrun_stop++;
+    //     pthread_join(overrun_thread, NULL);
+    //     log_info("overrun_thread exited");    
+    // }
 
     // stop other optimistic_ack threads and close fd
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
@@ -968,6 +981,7 @@ Optimack::init()
     // sprintf(tcpdump_file_name, "tcpdump_%s.tshark", start_time);
     // sprintf(tmp_str, "tshark -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80 and tcp.len > 0' > %s/%s &", output_dir, tcpdump_file_name);
     // system(tmp_str);
+    subconn_infos.clear();
 }
 
 int 
@@ -1991,6 +2005,11 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 log_debug("%s - forwarded to squid", log); 
                 if(!subconn_i)//Main subconn, return directly
                     return 0; 
+#ifdef OPENSSL
+                //find 
+                //decrypt packet
+                //encrypt packet
+#endif
                 tcphdr->th_dport = htons(subconn_infos.begin()->second.local_port);
                 tcphdr->th_seq = htonl(subconn_infos.begin()->second.ini_seq_rem + seq_rel);
                 tcphdr->th_ack = htonl(subconn_infos.begin()->second.ini_seq_loc + subconn_infos.begin()->second.next_seq_loc);
@@ -2033,11 +2052,11 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         send_RST(g_remote_ip, g_local_ip, g_remote_port, subconn_infos.begin()->second.local_port, "", subconn_infos.begin()->second.ini_seq_rem+cur_ack_rel);
                         printf("RST sent\n");
                         
-                        if(!overrun_stop){
-                            printf("stop overrun thread\n");
-                            overrun_stop++;
-                            pthread_join(overrun_thread, NULL);  
-                        }
+                        // if(!overrun_stop){
+                        //     printf("stop overrun thread\n");
+                        //     overrun_stop++;
+                        //     pthread_join(overrun_thread, NULL);  
+                        // }
                         //TODO: close nfq_thread
                         // TODO: cleanup iptables or cleanup per subconn                               
                     }
@@ -2059,30 +2078,30 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
 void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info> &subconn_info_dict, bool is_backup){
     int ret;
 
-    struct subconn_info new_subconn;
-    memset(&new_subconn, 0, sizeof(struct subconn_info));
-    //new_subconn.local_port = local_port_new;
-    new_subconn.ini_seq_loc = new_subconn.next_seq_loc = 0;
-    new_subconn.ini_seq_rem = new_subconn.next_seq_rem = 0;
-    new_subconn.last_next_seq_rem = 0;
-    new_subconn.win_scale = 1 << 7;
-    // new_subconn.rwnd = 365;
-    new_subconn.ack_pacing = ACKPACING;
-    new_subconn.ack_sent = 0;
-    new_subconn.optim_ack_stop = 1;
-    new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-    new_subconn.seq_init = false;
-    new_subconn.fin_ack_recved = false;
-    new_subconn.payload_len = MSS;
-    new_subconn.is_backup = is_backup;
-    new_subconn.last_data_received = new_subconn.timer_print_log = std::chrono::system_clock::now();
-    new_subconn.id = subconn_count++;
+    struct subconn_info *new_subconn = (struct subconn_info *)malloc(sizeof(struct subconn_info));
+    memset(new_subconn, 0, sizeof(struct subconn_info));
+    //new_subconn->local_port = local_port_new;
+    new_subconn->ini_seq_loc = new_subconn->next_seq_loc = 0;
+    new_subconn->ini_seq_rem = new_subconn->next_seq_rem = 0;
+    new_subconn->last_next_seq_rem = 0;
+    new_subconn->win_scale = 1 << 7;
+    // new_subconn->rwnd = 365;
+    new_subconn->ack_pacing = ACKPACING;
+    new_subconn->ack_sent = 0;
+    new_subconn->optim_ack_stop = 1;
+    new_subconn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+    new_subconn->seq_init = false;
+    new_subconn->fin_ack_recved = false;
+    new_subconn->payload_len = MSS;
+    new_subconn->is_backup = is_backup;
+    new_subconn->last_data_received = new_subconn->timer_print_log = std::chrono::system_clock::now();
+    new_subconn->id = subconn_count++;
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
     struct sockaddr_in server_addr, my_addr;
 
     // Open socket
-    if ((new_subconn.sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((new_subconn->sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Can't open stream socket.");
         return;
     }
@@ -2094,35 +2113,35 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info> &subc
     server_addr.sin_port = htons(g_remote_port);
     
     // Connect to server
-    if (connect(new_subconn.sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (connect(new_subconn->sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connect server error");
-        close(new_subconn.sockfd);
+        close(new_subconn->sockfd);
         return;
     }
 
     // Get my port
     socklen_t len = sizeof(my_addr);
     bzero(&my_addr, len);
-    if (getsockname(new_subconn.sockfd, (struct sockaddr*)&my_addr, &len) < 0) {
+    if (getsockname(new_subconn->sockfd, (struct sockaddr*)&my_addr, &len) < 0) {
         perror("getsockname error");
-        close(new_subconn.sockfd);
+        close(new_subconn->sockfd);
         return;
     }
-    new_subconn.local_port = ntohs(my_addr.sin_port);
-    subconn_info_dict[new_subconn.local_port] = new_subconn;
-    log_info("New connection %d established: Port %u", subconn_count-1, new_subconn.local_port);
+    new_subconn->local_port = ntohs(my_addr.sin_port);
+    subconn_info_dict[new_subconn->local_port] = &new_subconn;
+    log_info("New connection %d established: Port %u", subconn_count-1, new_subconn->local_port);
     // ->push_back(new_subconn); 
 
     //TODO: iptables too broad??
     char *cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn.local_port, nfq_queue_num);
+    sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
 
     //TODO: iptables too broad??
     cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn.local_port, nfq_queue_num);
+    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
     debugs(11, 2, cmd << ret);
@@ -2130,13 +2149,13 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info> &subc
     // probe seq and ack
     // leave the INPUT rule cleanup to process_tcp_packet
     char dummy_buffer[] = "Hello";
-    send(new_subconn.sockfd, dummy_buffer, 5, 0);
+    send(new_subconn->sockfd, dummy_buffer, 5, 0);
 
     // unsigned int size = 1000;
-    // if (setsockopt(new_subconn.sockfd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+    // if (setsockopt(new_subconn->sockfd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
     //     int xerrno = errno;
     //     perror("set SO_RCVBUF failed.");
-    //     // debugs(50, DBG_CRITICAL, MYNAME << "FD " << new_subconn.sockfd << ", SIZE " << size << ": " << xstrerr(xerrno));
+    //     // debugs(50, DBG_CRITICAL, MYNAME << "FD " << new_subconn->sockfd << ", SIZE " << size << ": " << xstrerr(xerrno));
     // }
 
     //send_SYN(remote_ip, local_ip, remote_port, local_port_new, empty_payload, 0, seq);
@@ -2174,6 +2193,8 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
  
     strncpy(g_local_ip, local_ip, 16); //TODO: change position
     strncpy(g_remote_ip, remote_ip, 16);
+    g_local_ip[15] = 0;
+    g_remote_ip[15] = 0;
     inet_pton(AF_INET, local_ip, &g_local_ip_int);
     inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
     g_remote_port = remote_port;
@@ -2194,23 +2215,24 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
 
     // pthread_mutex_lock(&mutex_subconn_infos);
     // TODO: how to deal with conns by other applications?
-    struct subconn_info squid_conn;
+    struct subconn_info *squid_conn = (struct subconn_info *)malloc(sizeof(struct subconn_info));
     memset(&squid_conn, 0, sizeof(struct subconn_info));
-    squid_conn.local_port = local_port;
-    squid_conn.ini_seq_loc = squid_conn.next_seq_loc = 0;
-    squid_conn.ini_seq_rem = squid_conn.next_seq_rem = 0;
-    squid_conn.win_scale = 1 << 7;
-    squid_conn.ack_pacing = ACKPACING;
-    squid_conn.ack_sent = 1; //Assume squid will send ACK
-    squid_conn.optim_ack_stop = 1;
-    squid_conn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-    squid_conn.fin_ack_recved = false;
-    squid_conn.payload_len = MSS;
-    squid_conn.last_data_received = squid_conn.timer_print_log = std::chrono::system_clock::now();
-    squid_conn.is_backup = false;
+    squid_conn->local_port = local_port;
+    squid_conn->ini_seq_loc = squid_conn->next_seq_loc = 0;
+    squid_conn->ini_seq_rem = squid_conn->next_seq_rem = 0;
+    squid_conn->win_scale = 1 << 7;
+    squid_conn->ack_pacing = ACKPACING;
+    squid_conn->ack_sent = 1; //Assume squid will send ACK
+    squid_conn->optim_ack_stop = 1;
+    squid_conn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+    squid_conn->fin_ack_recved = false;
+    squid_conn->payload_len = MSS;
+    squid_conn->last_data_received = squid_conn->timer_print_log = std::chrono::system_clock::now();
+    squid_conn->is_backup = false;
     if(BACKUP_MODE)
-        squid_conn.is_backup = true;
-    squid_conn.id = subconn_count++;
+        squid_conn->is_backup = true;
+    squid_conn->id = subconn_count++;
+    // subconn_infos.insert(std::pair<uint, struct subconn_info>(local_port, squid_conn));
     subconn_infos[local_port] = squid_conn;
     // subconn_infos.push_back(squid_conn);
     // pthread_mutex_unlock(&mutex_subconn_infos);
@@ -2329,14 +2351,14 @@ Optimack::exec_iptables(char action, char* rule)
 
 //         pthread_mutex_lock(&mutex_subconn_infos); //TODO: how to deal with conns by other applications?
 //         struct subconn_info new_subconn;
-//         new_subconn.local_port = sport;//No nfq callback will interfere because iptable rules haven't been added
-//         new_subconn.ini_seq_loc = seq; //unknown
-//         new_subconn.next_seq_loc = seq;
-//         new_subconn.win_size = 29200*128;
-//         new_subconn.ack_pacing = 5000;
-//         new_subconn.ack_sent = 1; //Assume squid will send ACK
-//         new_subconn.optim_ack_stop = 1;
-//         new_subconn.mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+//         new_subconn->local_port = sport;//No nfq callback will interfere because iptable rules haven't been added
+//         new_subconn->ini_seq_loc = seq; //unknown
+//         new_subconn->next_seq_loc = seq;
+//         new_subconn->win_size = 29200*128;
+//         new_subconn->ack_pacing = 5000;
+//         new_subconn->ack_sent = 1; //Assume squid will send ACK
+//         new_subconn->optim_ack_stop = 1;
+//         new_subconn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
 //         subconn_infos.push_back(new_subconn);
 //         pthread_mutex_unlock(&mutex_subconn_infos);
 //     }
