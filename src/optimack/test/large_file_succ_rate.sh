@@ -55,6 +55,7 @@ function cleanup()
     bash ~/squid_copy/src/optimack/test/ks.sh mtr
     sudo iptables -F
     sudo iptables -t mangle -F
+    rm /usr/local/squid/var/logs/cache.log
     # rm -v /tmp/*.pcapng
 }
 

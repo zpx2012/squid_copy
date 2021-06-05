@@ -242,6 +242,10 @@ freebsd)
     ;;
 esac
 
+CFLAGS="$CFLAGS -fsanitize=address"
+CXXFLAGS="$CXXFLAGS -fsanitize=address"
+LDFLAGS="$LDFLAGS -fsanitize=address"
+
 dnl Substitutions
 AC_DEFINE_UNQUOTED(CONFIG_HOST_TYPE, "$host",[Host type from configure])
 

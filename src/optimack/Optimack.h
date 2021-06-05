@@ -83,7 +83,7 @@ public:
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
-    void open_one_duplicate_conn(std::map<uint, struct subconn_info> &subconn_info_list, bool is_backup);
+    void open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_list, bool is_backup);
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
@@ -169,7 +169,7 @@ public:
     int send_http_range_request(Interval range);
     pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
-    int range_sockfd;
+    int range_sockfd, range_stop;
     IntervalList ranges_sent;
     uint response_header_len, requested_bytes = 0;
 };

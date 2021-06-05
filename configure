@@ -20689,6 +20689,10 @@ freebsd)
     ;;
 esac
 
+CFLAGS="$CFLAGS -fsanitize=address"
+CXXFLAGS="$CXXFLAGS -fsanitize=address"
+LDFLAGS="$LDFLAGS -fsanitize=address"
+
 
 cat >>confdefs.h <<_ACEOF
 #define CONFIG_HOST_TYPE "$host"
