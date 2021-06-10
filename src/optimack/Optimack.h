@@ -108,6 +108,7 @@ public:
     int send_ACK_adjusted_rwnd(struct subconn_info* conn, uint cur_ack);
     int send_optimistic_ack_with_timer(struct subconn_info* conn, uint cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
+    int modify_to_main_conn_packet(int id, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
 
 
     // variables

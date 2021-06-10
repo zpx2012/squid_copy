@@ -849,7 +849,7 @@ Optimack::cleanup()
     // for (size_t i=0; i < subconn_infos.size(); i++) {
         // TODO: mutex?
         if (!it->second->optim_ack_stop) {
-            it->second->optim_ack_stop = 1;
+            it->second->optim_ack_stop++;
             pthread_join(it->second->thread, NULL);
             close(it->second->sockfd);
         }
@@ -2020,23 +2020,8 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // if (is_timeout_and_update(subconn->timer_print_log, 2))
                 //     printf("%s - forwarded to squid\n", log);
                 log_debug("%s - forwarded to squid", log); 
-                if(!subconn_i)//Main subconn, return directly
-                    return 0; 
-#ifdef OPENSSL
-                //find 
-                //decrypt packet
-                //encrypt packet
-#endif
-                tcphdr->th_dport = htons(subconn_infos.begin()->second->local_port);
-                tcphdr->th_seq = htonl(subconn_infos.begin()->second->ini_seq_rem + seq_rel);
-                tcphdr->th_ack = htonl(subconn_infos.begin()->second->ini_seq_loc + subconn_infos.begin()->second->next_seq_loc);
-                compute_checksums(thr_data->buf, 20, thr_data->len);
-                // send_ACK_payload(g_local_ip, g_remote_ip,subconn_infos.begin()->local_port, g_remote_port, payload, payload_len,subconn_infos.begin()->ini_seq_loc + subconn_infos.begin()->next_seq_loc, subconn_infos.begin()->ini_seq_rem + seq_rel);
-                // sleep(1);
-                // usleep(10000);
-                // printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
-                // if(rand() % 100 < 50)
-                    return 0;
+                modify_to_main_conn_packet(subconn_i, tcphdr, thr_data->buf, thr_data->len, seq_rel);
+                return 0;
                 break;
             }
             case TH_ACK | TH_FIN:
@@ -2050,7 +2035,7 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
                 pthread_mutex_lock(&mutex_subconn_infos);    
                 if(!subconn->optim_ack_stop){
-                    subconn->optim_ack_stop = 1;
+                    subconn->optim_ack_stop++;
                     // pthread_join(subconn->thread, NULL);
                     close(subconn->sockfd);
                 }
@@ -2065,9 +2050,9 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                     if (it == subconn_infos.end()){
                         printf("All subconns received FIN/ACK!\n");
-                        close(main_fd);
-                        send_RST(g_remote_ip, g_local_ip, g_remote_port, subconn_infos.begin()->second->local_port, "", subconn_infos.begin()->second->ini_seq_rem+cur_ack_rel);
-                        printf("RST sent\n");
+                        // close(main_fd);
+                        // send_RST(g_remote_ip, g_local_ip, g_remote_port, subconn_infos.begin()->second->local_port, "", subconn_infos.begin()->second->ini_seq_rem+cur_ack_rel);
+                        // printf("RST sent\n");
                         
                         if(!overrun_stop){
                             printf("stop overrun thread\n");
@@ -2081,6 +2066,11 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                 pthread_mutex_unlock(&mutex_subconn_infos);                               
                 log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
 
+                if(payload_len){
+                    tcphdr->th_flags = TH_ACK | TH_PUSH;
+                    modify_to_main_conn_packet(subconn_i, tcphdr, thr_data->buf, thr_data->len, seq-subconn->ini_seq_rem);
+                    return 0;
+                }
                 return -1;
                 break;
             }
@@ -2090,6 +2080,24 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
         }
         return -1;
     }
+}
+
+int Optimack::modify_to_main_conn_packet(int id, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel){
+    if(!id)//Main subconn, return directly
+        return 0; 
+#ifdef OPENSSL
+    //find 
+    //decrypt packet
+    //encrypt packet
+#endif
+    tcphdr->th_dport = htons(subconn_infos.begin()->second->local_port);
+    tcphdr->th_seq = htonl(subconn_infos.begin()->second->ini_seq_rem + seq_rel);
+    tcphdr->th_ack = htonl(subconn_infos.begin()->second->ini_seq_loc + subconn_infos.begin()->second->next_seq_loc);
+    compute_checksums(packet, 20, packet_len);
+    // send_ACK_payload(g_local_ip, g_remote_ip,subconn_infos.begin()->local_port, g_remote_port, payload, payload_len,subconn_infos.begin()->ini_seq_loc + subconn_infos.begin()->next_seq_loc, subconn_infos.begin()->ini_seq_rem + seq_rel);
+    // printf("P%d-S%d: forwarded to squid\n", thr_data->pkt_id, subconn_i); 
+    // if(rand() % 100 < 50)
+        return 0;
 }
 
 void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_dict, bool is_backup){
@@ -2312,7 +2320,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     // subconn_infos.push_back(squid_conn);
     pthread_mutex_unlock(&mutex_subconn_infos);
 
-    int conn_num = 4;
+    int conn_num = 2;
     // range
     if (RANGE_MODE) {
         range_sockfd = 0;

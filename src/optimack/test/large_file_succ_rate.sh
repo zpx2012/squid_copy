@@ -30,12 +30,13 @@ outdir=~/rs/large_file_succ_rate/$(date +%Y-%m-%d)
 mkdir -p $outdir
 
 stime=$(date +%Y%m%d%H%M)
-tag=$(hostname)_${site}_ACKP2000_6conn_succrate_${stime}
+tag=$(hostname)_${site}_ACKP1500_6conn_succrate_${stime}
 log=$outdir/curl_squid_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
 nfq_out=$outdir/nfq_${tag}.txt
 mtr_out=$outdir/mtr_modified_tcp_0.01_100_${tag}.txt
+tcpdump_out=$outdir/tcpdump_${tag}.txt
 
 function cleanup()
 {    
@@ -53,6 +54,7 @@ function cleanup()
     # bash ~/squid_copy/src/optimack/test/ks.sh nfq_check
     bash ~/squid_copy/src/optimack/test/ks.sh loss_rate
     bash ~/squid_copy/src/optimack/test/ks.sh mtr
+    bash ~/squid_copy/src/optimack/test/ks.sh td
     sudo iptables -F
     sudo iptables -t mangle -F
     rm /usr/local/squid/var/logs/cache.log
@@ -70,6 +72,7 @@ trap INT_handler SIGINT
 
 while true; do
     screen -dmS normal bash -c "echo Start: $(date --rfc-3339=second) >> ${normal_out}; curl -v --limit-rate 500k --speed-time 120 $url -o /dev/null 2>&1 | tee -a ${normal_out}"
+    screen -dmS td tcpdump -w $tcpdump_out host $site
     # screen -dmS mtr bash -c "while true; do sudo ~/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 $site | tee -a $mtr_out; done"
     # screen -dmS loss_rate bash ~/squid_copy/src/optimack/test/ping.sh $site $outdir $stime
 
@@ -82,7 +85,7 @@ while true; do
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
     echo Start: $(date --rfc-3339=second) 2>&1 | tee -a $log
     start=$(date +%s.%N)
-    curl -LJ4vk -o /dev/null -x http://127.0.0.1:3128 $url 2>&1 | tee -a $curl_singlerun
+    curl -LJ4vk -o /dev/null -x http://127.0.0.1:3128 --speed-time 3600 $url 2>&1 | tee -a $curl_singlerun
     cat $curl_singlerun >> $log
     duration=$(echo "$(date +%s.%N) - $start" | bc)
     echo $(date --rfc-3339=ns): Curl download end, duration $duration 2>&1 | tee -a $log
@@ -113,6 +116,7 @@ while true; do
     then
         # mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
         cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
+        exit
     #     mv ~/rs/exp.log $outdir/exp_idle.log
     #     mv ~/rs/optack.log $outdir/optack_idle.log
     elif grep -q "curl: (18)" $curl_singlerun ;
