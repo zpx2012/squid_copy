@@ -42,7 +42,7 @@ struct subconn_info
     unsigned int opa_retrx_counter;
     std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log;
     int rwnd;
-    uint win_scale;
+    int win_scale;
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
@@ -94,8 +94,8 @@ public:
     struct nfq_handle *g_nfq_h;
     struct nfq_q_handle *g_nfq_qh;
     int g_nfq_fd;
-    int nfq_stop, overrun_stop, cb_stop;
-    pthread_t nfq_thread, overrun_thread;
+    int nfq_stop, overrun_stop, cb_stop, optim_ack_stop;
+    pthread_t nfq_thread, overrun_thread, optim_ack_thread;
 
     bool is_nfq_full(FILE* out_file);
     bool does_packet_lost_on_all_conns();
@@ -104,11 +104,15 @@ public:
     // void delete_seq_gaps(unsigned int val);
     int start_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_backup(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
+    int start_optim_ack_altogether(unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max);
     int restart_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max, std::chrono::time_point<std::chrono::system_clock> &timer);
-    int send_ACK_adjusted_rwnd(struct subconn_info* conn, uint cur_ack);
-    int send_optimistic_ack_with_timer(struct subconn_info* conn, uint cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
+    int send_ACK_adjusted_rwnd(struct subconn_info* conn, int cur_ack);
+    int send_optimistic_ack_with_timer(struct subconn_info* conn, int cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
     int modify_to_main_conn_packet(int id, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
+    void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
+    int get_ajusted_rwnd(int cur_ack);
+    void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
 
 
     // variables
@@ -122,6 +126,7 @@ public:
     char request[1000];
     unsigned short request_len;
     struct sockaddr_in dstAddr;
+    int squid_MSS;
     
     std::map<uint, struct subconn_info*> subconn_infos;
     uint subconn_count;
@@ -151,9 +156,12 @@ public:
                  cur_ack_rel = 1,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
-                 last_slowdown_ack_rel = 0,
-                 same_ack_cnt = 0; 
-    uint win_scale = 1 << 7, rwnd = 1, max_win_size = 0;
+                 last_slowdown_ack_rel = 0; 
+    int win_scale = 1 << 7, 
+        rwnd = 1, 
+        max_win_size = 0,
+        same_ack_cnt = 0,
+        overrun_cnt = 0;
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time;
@@ -165,8 +173,8 @@ public:
     // range
     int init_range();
     void try_for_gaps_and_request();
-    bool check_packet_lost_on_all_conns();
-    Interval get_lost_range();
+    bool check_packet_lost_on_all_conns(uint last_recv_inorder);
+    Interval get_lost_range(uint start, uint end);
     int send_http_range_request(Interval range);
     pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;

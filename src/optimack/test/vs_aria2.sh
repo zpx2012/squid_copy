@@ -1,14 +1,14 @@
 #! /bin/bash
 # usage: ./test_off_packet.sh [tag]
 
-url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
+# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-site='mirrors.mit.edu'
+# site='mirrors.mit.edu'
 
-# url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
+url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
-# site='mirror.math.princeton.edu'
+site='mirror.math.princeton.edu'
 
 
 mkdir -p ~/rs/vsAria2/
@@ -52,13 +52,13 @@ screen -dmS normal bash -c "while true; do curl $url -o /dev/null 2>&1 | tee -a 
 while true;do
 
     echo Start: $(date -Iseconds) >> ${aria2_out} 
-    aria2c $url -x 10 --stop 180 --continue=false | tee -a ${aria2_out}
+    aria2c $url -x 10 --stop 120 --continue=false | tee -a ${aria2_out}
     rm -v ubuntu-16.04.5-server-i386.iso*
 
     screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N >> ${squid_log}"
     sleep 2
 
     echo Start: $(date -Iseconds) >> $squid_out 
-    curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 -m 180 2>&1 | tee -a ${squid_out}
+    curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 -m 120 2>&1 | tee -a ${squid_out}
     cleanup
 done

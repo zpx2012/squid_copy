@@ -4,14 +4,14 @@
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
-# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
+url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-# site='mirrors.mit.edu'
+site='mirrors.mit.edu'
 
-url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
+# url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
-site='mirror.math.princeton.edu'
+# site='mirror.math.princeton.edu'
 
 # url='http://mirrors.cat.pdx.edu/ubuntu-releases/16.04.6/ubuntu-16.04.6-server-i386.template'
 # site='mirrors.cat.pdx.edu'
@@ -36,7 +36,7 @@ squid_log=$outdir/squid_log_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
 nfq_out=$outdir/nfq_${tag}.txt
 mtr_out=$outdir/mtr_modified_tcp_0.01_100_${tag}.txt
-tcpdump_out=$outdir/tcpdump_${tag}.txt
+tcpdump_out=$outdir/tcpdump_${tag}.pcap
 
 function cleanup()
 {    
@@ -85,7 +85,7 @@ while true; do
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
     echo Start: $(date --rfc-3339=second) 2>&1 | tee -a $log
     start=$(date +%s.%N)
-    curl -LJ4vk -o /dev/null -x http://127.0.0.1:3128 --speed-time 3600 $url 2>&1 | tee -a $curl_singlerun
+    curl -LJ4vk -o /dev/null -x http://127.0.0.1:3128 --speed-time 600 $url 2>&1 | tee -a $curl_singlerun
     cat $curl_singlerun >> $log
     duration=$(echo "$(date +%s.%N) - $start" | bc)
     echo $(date --rfc-3339=ns): Curl download end, duration $duration 2>&1 | tee -a $log
@@ -116,7 +116,8 @@ while true; do
     then
         # mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
         cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
-        exit
+        mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
+        # exit
     #     mv ~/rs/exp.log $outdir/exp_idle.log
     #     mv ~/rs/optack.log $outdir/optack_idle.log
     elif grep -q "curl: (18)" $curl_singlerun ;

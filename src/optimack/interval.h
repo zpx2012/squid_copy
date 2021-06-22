@@ -47,13 +47,15 @@ public:
     void insertNewInterval(unsigned int start, unsigned int end);
     void insertNewInterval_withLock(unsigned int start, unsigned int end);
     unsigned int insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end);
+    bool checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end);
 
     // Function to insert new interval and merge overlapping intervals
     void removeInterval(unsigned int start, unsigned int end);
     void removeInterval_withLock(unsigned int start, unsigned int end);
 
     void substract(IntervalList* other);
-
+    bool contains(unsigned int start, unsigned int end);
+    
     void printIntervals();
     void printIntervals_withLock();
 
@@ -63,7 +65,8 @@ public:
 private:
     // A subroutine to check if intervals overlap or not.
     bool doesOverlap(Interval a, Interval b);
-
+    bool does_a_contains_b(Interval a, Interval b);
+    
     std::vector<Interval> Intervals;
     pthread_mutex_t mutex_intervals;
 };

@@ -9,6 +9,18 @@ void IntervalList::insertNewInterval_withLock(unsigned int start, unsigned int e
     pthread_mutex_unlock(&mutex_intervals);
 }
 
+bool IntervalList::checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end)
+{
+    pthread_mutex_lock(&mutex_intervals);
+    if(contains(start,end)){
+        pthread_mutex_unlock(&mutex_intervals);
+        return false;
+    }
+    insertNewInterval(start, end);
+    pthread_mutex_unlock(&mutex_intervals);
+    return true;
+}
+
 unsigned int IntervalList::insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end)
 {
     unsigned lastend = 0;
@@ -99,6 +111,25 @@ bool IntervalList::doesOverlap(Interval a, Interval b)
     return (std::min(a.end, b.end) >= std::max(a.start, b.start));
 }
 
+bool IntervalList::does_a_contains_b(Interval a, Interval b){
+    return a.start <= b.start && a.end >= b.end;
+}
+
+bool IntervalList::contains(unsigned int start, unsigned int end){
+    Interval newInterval = Interval(start, end);
+    int n = Intervals.size();
+    
+    if(n == 0)
+        return false;
+
+    if (end < Intervals[0].start || newInterval.start > Intervals[n - 1].end)
+        return false;
+    
+    for(int i = 0; i < n; i++)
+        if(does_a_contains_b(Intervals[i], newInterval))
+            return true;
+    return false;
+}
 
 // Function to insert new interval and
 // merge overlapping intervals
