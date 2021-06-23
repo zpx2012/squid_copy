@@ -55,7 +55,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 15
+#define CONN_NUM 16
 #endif
 
 #ifndef ACKPACING
@@ -884,6 +884,7 @@ void Optimack::log_seq_gaps(){
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         fprintf(info_file, "%d, ", it->second->local_port);
     fprintf(info_file, "\n");
+    fprintf(info_file, "Overrun count: %d\n", overrun_cnt);
     if (RANGE_MODE)
         fprintf(info_file, "Range requested: %u\n", requested_bytes);
     fprintf(info_file, "\n");
