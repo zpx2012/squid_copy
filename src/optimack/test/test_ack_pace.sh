@@ -15,11 +15,11 @@ while true; do
     curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; 
     then
-        for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
-            sed -i "s/define CONN_NUM .*/define CONN_NUM $i/g" ~/squid_copy/src/optimack/Optimack.cc
+        for i in 250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000; do
+            sed -i "s/define ACKPACING .*/define ACKPACING $i/g" ~/squid_copy/src/optimack/Optimack.cc
             cd ~/squid_copy/
             make install
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ${i}optim+1range
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace$i
         done
     else
         sleep 120

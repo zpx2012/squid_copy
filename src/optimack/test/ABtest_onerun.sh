@@ -7,7 +7,8 @@
 # site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
-url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
+# url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
+url='http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz'
 site='mirror.math.princeton.edu'
 
 
@@ -53,7 +54,7 @@ sleep 2
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
-screen -dmS normal bash -c "sleep 20;curl http://mirrors.tuna.tsinghua.edu.cn/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso -o /dev/null 2>&1 | tee -a ${normal_out}"
-curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 2>&1 | tee -a ${squid_out}
+screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}"
+curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 --speed-time 120 2>&1 | tee -a ${squid_out}
 cleanup
 

@@ -26,7 +26,9 @@ using namespace std;
 #include "checksum.h"
 #include "Debug.h"
 #include "logging.h"
+#ifdef OPENSSL
 #include "get_server_key.h"
+#endif
 
 // for http parsing
 #include <cstring>
@@ -38,7 +40,7 @@ using namespace std;
 
 #include "Optimack.h"
 
-
+#ifdef OPENSSL
 void test_write_key(SSL *s){
     if(!s)
         return;
@@ -49,10 +51,11 @@ void test_write_key(SSL *s){
 
     // printf("get server key: %s\n", buf);
 }
+#endif
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 7
 #endif
 
 #ifndef ACKPACING
