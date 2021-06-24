@@ -9,14 +9,10 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval.h"
-#include <openssl/ssl.h>
 // #include "comm/Connection.h"
 // #include "../comm/forward.h"
 // #include <bits/stdc++.h>
 // using namespace std;
-
-void test_write_key(SSL *s);
-
 
 class Optimack;
 
