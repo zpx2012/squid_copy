@@ -17,6 +17,7 @@ i=0
 while true; do
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
     curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
+    echo
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
         if [ $((i % 2)) -eq 0 ]; then
             sed -i "s/define ACKPACING .*/define ACKPACING 1500/g" ~/squid_copy/src/optimack/Optimack.cc
@@ -37,5 +38,6 @@ while true; do
     else
         sleep 120
     fi
+    echo
     rm $curl_singlerun
 done
