@@ -884,7 +884,7 @@ void Optimack::log_seq_gaps(){
     FILE* info_file = fopen(tmp_str, "w");
     fprintf(info_file, "Start: %s\n", start_time);
     fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
-    fprintf(info_file, "Duration: %.2f\n", elapsed(start_timestamp))
+    fprintf(info_file, "Duration: %.2f\n", elapsed(start_timestamp));
     fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         fprintf(info_file, "%d, ", it->second->local_port);
