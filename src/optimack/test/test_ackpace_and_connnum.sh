@@ -15,6 +15,7 @@ ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
 
 i=0
 while true; do
+    echo $(date -Iseconds): Slowdown test
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
     curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
     echo

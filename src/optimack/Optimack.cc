@@ -884,10 +884,13 @@ void Optimack::log_seq_gaps(){
     FILE* info_file = fopen(tmp_str, "w");
     fprintf(info_file, "Start: %s\n", start_time);
     fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
+    fprintf(info_file, "Duration: %.2f\n", elapsed(start_timestamp))
     fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         fprintf(info_file, "%d, ", it->second->local_port);
     fprintf(info_file, "\n");
+    fprintf(info_file, "Num of Conn: %d\n", CONN_NUM);
+    fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
     fprintf(info_file, "Overrun count: %d\n", overrun_cnt);
     if (RANGE_MODE)
         fprintf(info_file, "Range requested: %u\n", requested_bytes);
@@ -1103,7 +1106,7 @@ Optimack::init()
     char tmp_str[600], time_str[64];
     time_in_YYYY_MM_DD(time_str);
     home_dir = getenv("HOME");
-    sprintf(output_dir, "%s/rs/large_file_succ_rate/%s/", home_dir, time_str);
+    sprintf(output_dir, "%s/rs/ABtest_onerun/%s/", home_dir, time_str);
     sprintf(tmp_str, "mkdir -p %s", output_dir);
     system(tmp_str);
     printf("output dir: %s\n", output_dir);
@@ -1129,9 +1132,6 @@ Optimack::init()
     // sprintf(tmp_str, "%s/ack.csv", output_dir);
     // ack_file = fopen(tmp_str, "w");
     // fprintf(ack_file, "time,ack_num\n");
-
-
-    time_in_HH_MM_SS_nospace(start_time);
     
     // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
     sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s.csv", output_dir, start_time);
@@ -2396,6 +2396,9 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
 void 
 Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
 {
+    time_in_HH_MM_SS_nospace(start_time);
+    start_timestamp = std::chrono::system_clock::now();
+
     char* cmd;
     int ret;
 
@@ -2458,7 +2461,6 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
 
     char tmp_str[1000];
-    
     sprintf(mtr_file_name, "mtr_modified_tcp_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
     // sprintf(tmp_str, "screen -dmS mtr bash -c 'while true; do sudo /root/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 %s | tee -a %s/%s; done'", g_remote_ip, output_dir, mtr_file_name);
     // system(tmp_str);
