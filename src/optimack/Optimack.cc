@@ -884,7 +884,7 @@ void Optimack::log_seq_gaps(){
     FILE* info_file = fopen(tmp_str, "w");
     fprintf(info_file, "Start: %s\n", start_time);
     fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
-    fprintf(info_file, "Duration: %.2f\n", elapsed(start_timestamp));
+    fprintf(info_file, "Duration: %.2fs\n", elapsed(start_timestamp));
     fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         fprintf(info_file, "%d, ", it->second->local_port);
@@ -1132,6 +1132,7 @@ Optimack::init()
     // sprintf(tmp_str, "%s/ack.csv", output_dir);
     // ack_file = fopen(tmp_str, "w");
     // fprintf(ack_file, "time,ack_num\n");
+    time_in_HH_MM_SS_nospace(start_time);
     
     // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
     sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s.csv", output_dir, start_time);
@@ -2461,11 +2462,11 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
 
     char tmp_str[1000];
-    sprintf(mtr_file_name, "mtr_modified_tcp_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
+    // sprintf(mtr_file_name, "mtr_modified_tcp_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
     // sprintf(tmp_str, "screen -dmS mtr bash -c 'while true; do sudo /root/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 %s | tee -a %s/%s; done'", g_remote_ip, output_dir, mtr_file_name);
     // system(tmp_str);
 
-    sprintf(loss_file_name, "ping_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
+    // sprintf(loss_file_name, "ping_0.01_100_$(hostname)_%s_%s.txt", g_remote_ip, start_time);
     // sprintf(tmp_str, "screen -dmS loss_rate bash -c 'cd %s; while true; do echo $(date --rfc-3339=ns): Start >> %s; ping -W 10 -c 100 -i 0.01 -q %s 2>&1 | tee -a %s; echo >> %s; done'", output_dir, loss_file_name, g_remote_ip, loss_file_name, loss_file_name);
     // system(tmp_str);
 
