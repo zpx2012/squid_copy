@@ -9,7 +9,7 @@
 url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
 site='mirror.math.princeton.edu'
 
-sed -i "s/define CONN_NUM .*/define CONN_NUM 6/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define CONN_NUM .*/define CONN_NUM 8/g" ~/squid_copy/src/optimack/Optimack.cc
 
 ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
 i=0

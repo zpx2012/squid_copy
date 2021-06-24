@@ -55,7 +55,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 16
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
@@ -64,6 +64,7 @@ void test_write_key(SSL *s){
 
 #define LOGSIZE 1024
 #define IPTABLESLEN 128
+#define MAX_STALL_TIME 30
 
 // nfq
 #define NF_QUEUE_NUM 6
@@ -670,8 +671,11 @@ full_optimistic_ack_altogether(void* arg)
         uint last_received = 0;
         for (; it != obj->subconn_infos.end(); it++){
             if(!it->second->is_backup){
-                if (elapsed(it->second->last_data_received) >= 2)
+                if (elapsed(it->second->last_data_received) >= 2){
+                    if(elapsed(it->second->last_data_received) >= MAX_STALL_TIME)
+                        exit(-1);
                     break;
+                }
             }
         }
         if (it != obj->subconn_infos.end()){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
@@ -1620,7 +1624,9 @@ Optimack::init_range()
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
-    if(is_timeout_and_update(last_ack_time, 3)){
+    if(elapsed(last_ack_time) > 3){
+        if(elapsed(last_ack_time) > MAX_STALL_TIME)
+            exit(-1);
         if(cur_ack_rel < last_recv_inorder){
             printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
             send_http_range_request(get_lost_range(cur_ack_rel, last_recv_inorder-1));
