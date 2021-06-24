@@ -1620,9 +1620,9 @@ Optimack::init_range()
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
-    if(is_timeout_and_update(last_ack_time, 5)){
+    if(is_timeout_and_update(last_ack_time, 3)){
         if(cur_ack_rel < last_recv_inorder){
-            printf("[Warn]: tool to squid packet loss!");
+            printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
             send_http_range_request(get_lost_range(cur_ack_rel, last_recv_inorder-1));
         }
     }
