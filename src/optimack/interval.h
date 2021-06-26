@@ -35,6 +35,7 @@ public:
         pthread_mutex_destroy(&mutex_intervals);
     }
     unsigned int size() { return Intervals.size(); }
+    unsigned int total_bytes();
 
     unsigned int getFirstEnd();
     unsigned int getFirstEnd_withLock();

@@ -1,6 +1,13 @@
 #include "interval.h"
 #include <stdio.h>
 
+unsigned int IntervalList::total_bytes()
+{
+    unsigned int sum_bytes = 0;
+    for (size_t i = 0; i < Intervals.size(); i++)
+       sum_bytes += Intervals[i].end - Intervals[i].start + 1;
+    return sum_bytes;
+}
 
 void IntervalList::insertNewInterval_withLock(unsigned int start, unsigned int end)
 {

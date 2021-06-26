@@ -142,7 +142,7 @@ public:
     pthread_mutex_t mutex_cur_ack_rel = PTHREAD_MUTEX_INITIALIZER;
     
     // seq
-    IntervalList recved_seq;
+    IntervalList recved_seq, all_lost_seq, we2squid_lost_seq;
     pthread_mutex_t mutex_seq_gaps = PTHREAD_MUTEX_INITIALIZER;
     // std::vector<Interval> seq_gaps, recved_seq;
     std::map<std::string, uint> bytes_per_second;
@@ -157,7 +157,9 @@ public:
         rwnd = 1, 
         max_win_size = 0,
         same_ack_cnt = 0,
-        overrun_cnt = 0;
+        overrun_cnt = 0,
+        we2squid_lost_cnt = 0;
+    float overrun_penalty = 0, we2squid_penalty = 0;
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;

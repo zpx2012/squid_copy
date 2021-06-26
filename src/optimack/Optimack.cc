@@ -59,7 +59,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1500
+#define ACKPACING 750
 #endif
 
 #define LOGSIZE 1024
@@ -689,8 +689,10 @@ full_optimistic_ack_altogether(void* arg)
                         min_next_seq_rem = std::min(min_next_seq_rem, it2->second->next_seq_rem);
                 if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem) //Is in zero window period, received upon the window end, not overrun
                     continue;
-                if(opa_ack_start > min_next_seq_rem)
+                if(opa_ack_start > min_next_seq_rem){
                     obj->overrun_cnt++;
+                    obj->overrun_penalty += elapsed(last_restart);
+                }
                 printf("O: overrun, current ack %u, ", opa_ack_start);
                 opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
                 last_restart = std::chrono::system_clock::now();
@@ -892,8 +894,14 @@ void Optimack::log_seq_gaps(){
     fprintf(info_file, "Num of Conn: %d\n", CONN_NUM);
     fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
     fprintf(info_file, "Overrun count: %d\n", overrun_cnt);
-    if (RANGE_MODE)
+    fprintf(info_file, "Overrun penalty: %.2f\n", overrun_penalty);
+    fprintf(info_file, "We2Squid loss count: %d\n", we2squid_lost_cnt);
+    fprintf(info_file, "We2Squid loss penalty: %.2f\n", we2squid_penalty);
+    if (RANGE_MODE){
+        fprintf(info_file, "Packet lost on all: %d\n", all_lost_seq.total_bytes());
+        fprintf(info_file, "Packet lost between us and squid: %d\n", we2squid_lost_seq.total_bytes());
         fprintf(info_file, "Range requested: %u\n", requested_bytes);
+    }
     fprintf(info_file, "\n");
     is_nfq_full(info_file);
     fprintf(info_file,"\n");
@@ -1631,6 +1639,10 @@ void Optimack::try_for_gaps_and_request(){
         if(cur_ack_rel < last_recv_inorder){
             printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
             send_http_range_request(get_lost_range(cur_ack_rel, last_recv_inorder-1));
+            if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(cur_ack_rel, last_recv_inorder-1)){
+                we2squid_lost_cnt++;
+                we2squid_penalty += elapsed(last_ack_time);
+            }
         }
     }
 
@@ -1639,8 +1651,10 @@ void Optimack::try_for_gaps_and_request(){
         // lost_range [recved_seq[0].end, recved_seq[1].end]
         // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);
-        if(first_out_of_order)
+        if(first_out_of_order){
             send_http_range_request(get_lost_range(last_recv_inorder, first_out_of_order-1));
+            all_lost_seq.insertNewInterval_withLock(last_recv_inorder, first_out_of_order-1);
+        }
     }
 
 }
