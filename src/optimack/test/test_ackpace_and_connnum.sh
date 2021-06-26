@@ -32,8 +32,8 @@ while true; do
             sed -i "s/define CONN_NUM .*/define CONN_NUM 8/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define ACKPACING .*/define ACKPACING ${ackpaces[i/2%${#ackpaces[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc
             cd ~/squid_copy/
-            echo
             make install
+            echo
             echo ackpace${ackpaces[i/2%${#ackpaces[@]}]}_8optim+1range
             bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace${ackpaces[i%${#ackpaces[@]}]}_8optim+1range
         fi
