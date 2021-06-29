@@ -109,7 +109,7 @@ public:
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
     int get_ajusted_rwnd(int cur_ack);
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
-
+    void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list);
 
     // variables
     int main_fd;
@@ -142,7 +142,7 @@ public:
     pthread_mutex_t mutex_cur_ack_rel = PTHREAD_MUTEX_INITIALIZER;
     
     // seq
-    IntervalList recved_seq, all_lost_seq, we2squid_lost_seq;
+    IntervalList recved_seq, all_lost_seq, we2squid_lost_seq, sack_list;
     pthread_mutex_t mutex_seq_gaps = PTHREAD_MUTEX_INITIALIZER;
     // std::vector<Interval> seq_gaps, recved_seq;
     std::map<std::string, uint> bytes_per_second;
@@ -166,7 +166,7 @@ public:
     FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
     char output_dir[100];
     char *home_dir;
-    char start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
+    char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
     int init_range();

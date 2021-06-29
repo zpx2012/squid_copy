@@ -14,14 +14,19 @@ sed -i "s/define CONN_NUM .*/define CONN_NUM 8/g" ~/squid_copy/src/optimack/Opti
 ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
 i=0
 while true; do
+    echo $(date -Iseconds): Slowdown test
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
     curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
+    echo
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; 
     then
         sed -i "s/define ACKPACING .*/define ACKPACING ${ackpaces[i]}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
         make install
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace${ackpaces[i]}
+        echo 
+        echo ackpace${ackpaces[i]}_8optim+1range
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace${ackpaces[i]}_8optim+1range
+        echo
         i=$(((i+1)%${#ackpaces[@]}))
     else
         sleep 120

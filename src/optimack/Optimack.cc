@@ -55,11 +55,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 8
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 750
+#define ACKPACING 3000
 #endif
 
 #define LOGSIZE 1024
@@ -1011,7 +1011,7 @@ Optimack::cleanup()
 
     if(!optim_ack_stop){
         optim_ack_stop++;
-        pthread_join(range_thread, NULL);
+        pthread_join(optim_ack_thread, NULL);
         log_info("optimack_thread exited");    
     }
 
@@ -1114,6 +1114,8 @@ Optimack::init()
     char tmp_str[600], time_str[64];
     time_in_YYYY_MM_DD(time_str);
     home_dir = getenv("HOME");
+    hostname[19] = 0;
+    gethostname(hostname, 20);
     sprintf(output_dir, "%s/rs/ABtest_onerun/%s/", home_dir, time_str);
     sprintf(tmp_str, "mkdir -p %s", output_dir);
     system(tmp_str);
@@ -1121,15 +1123,15 @@ Optimack::init()
 
     // char log_file_name[100];
     // sprintf(log_file_name, "/root/off_packet_%s.csv", cur_time.time_in_HH_MM_SS());
-    sprintf(tmp_str, "%s/off_packet.csv", output_dir);
+    sprintf(tmp_str, "%s/off_packet_%s.csv", output_dir, hostname);
     log_file = fopen(tmp_str, "w");
     fprintf(log_file, "time,off_packet_num\n");
     
-    sprintf(tmp_str, "%s/rwnd.csv", output_dir);
+    sprintf(tmp_str, "%s/rwnd_%s.csv", output_dir, hostname);
     rwnd_file = fopen(tmp_str, "w");
     fprintf(rwnd_file, "time,rwnd\n");
 
-    sprintf(tmp_str, "%s/adjust_rwnd.csv", output_dir);
+    sprintf(tmp_str, "%s/adjust_rwnd_%s.csv", output_dir, hostname);
     adjust_rwnd_file = fopen(tmp_str, "w");
     fprintf(adjust_rwnd_file, "time,adjust_rwnd\n");
 
@@ -1143,13 +1145,13 @@ Optimack::init()
     time_in_HH_MM_SS_nospace(start_time);
     
     // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
-    sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s.csv", output_dir, start_time);
+    sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s_%s.csv", output_dir, start_time, hostname);
     // seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
 
-    sprintf(info_file_name, "info_%s.txt", start_time);
+    sprintf(info_file_name, "info_%s_%s.txt", hostname, start_time);
 
-    sprintf(tmp_str, "%s/lost_per_second.csv", output_dir);
-    lost_per_second_file = fopen(tmp_str, "a");   
+    sprintf(tmp_str, "%s/lost_per_second_%s.csv", output_dir, hostname);
+    lost_per_second_file = fopen(tmp_str, "a");
 
     last_speedup_time = last_rwnd_write_time = last_restart_time = last_ack_time = std::chrono::system_clock::now();
 
@@ -1584,7 +1586,7 @@ range_watch(void* arg)
                             send_ACK_payload(local_ip, remote_ip, local_port, remote_port, (u_char*)(data + sent), packet_len, ack, seq);
                             obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
                             log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc);
-                            // printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
+                            printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
                         }
                         recv_offset = 0;
                         header->start += sent;
@@ -1637,11 +1639,14 @@ void Optimack::try_for_gaps_and_request(){
         if(elapsed(last_ack_time) > MAX_STALL_TIME)
             exit(-1);
         if(cur_ack_rel < last_recv_inorder){
-            printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
-            send_http_range_request(get_lost_range(cur_ack_rel, last_recv_inorder-1));
-            if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(cur_ack_rel, last_recv_inorder-1)){
-                we2squid_lost_cnt++;
-                we2squid_penalty += elapsed(last_ack_time);
+            Interval interval = get_lost_range(cur_ack_rel, last_recv_inorder-1);
+            if (interval.start != 0 && interval.end != 0){
+                printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
+                send_http_range_request(interval);
+                if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(cur_ack_rel, last_recv_inorder-1)){
+                    we2squid_lost_cnt++;
+                    we2squid_penalty += elapsed(last_ack_time);
+                }
             }
         }
     }
@@ -1689,6 +1694,7 @@ Interval Optimack::get_lost_range(uint start, uint end)
 
     // check if the range has already been sent
     IntervalList lost_range;
+    lost_range.clear();
     lost_range.insertNewInterval(start-response_header_len-1, end-response_header_len-1);
     lost_range.substract(&ranges_sent);
     if(lost_range.size()){
@@ -1770,14 +1776,39 @@ void* send_all_requests(void* arg){
 }
 
 
+//++++++++++++++++++++++++++++++++++++++++++++++++
+//extract_sack_blocks(): searches for SACK blocks in data packet (kind = 5, length =X)
+//	and writes them to sack array sorted in ascending order. 
+//	entry sack[0] is reserved for [old SAN-1, new SAN-1]
+//	buf points at beginning of TCP options, 
+//	nb_sack provides the number of SACK entries found
+//++++++++++++++++++++++++++++++++++++++++++++++++
+void Optimack::extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list) {
+	//find sack offset
+	int offset = find_offset_of_tcp_option(buf, len, 5);
+	if(offset == -1){
+		return;
+	}
 
-int 
-Optimack::process_tcp_packet(struct thread_data* thr_data)
+	int sack_len = *(buf + offset + 1);
+	offset += 2;
+	for (; offset < sack_len; offset += 8)
+	{
+		unsigned int left = ntohl( *((uint32_t*) (buf + offset)) );
+		unsigned int right = ntohl( *((uint32_t*) (buf + offset+4)) );
+		sack_list.insertNewInterval_withLock(left, right);
+	}
+}
+
+
+int Optimack::process_tcp_packet(struct thread_data* thr_data)
 {
     char log[LOGSIZE], time_str[64];
 
     struct myiphdr *iphdr = ip_hdr(thr_data->buf);
     struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
+    unsigned char *tcp_opt = (unsigned char*)tcphdr + TCPHDR_SIZE;
+    unsigned int tcp_opt_len = tcphdr->th_off*4 - TCPHDR_SIZE;
     unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
     unsigned short sport = ntohs(tcphdr->th_sport);
@@ -1854,7 +1885,13 @@ Optimack::process_tcp_packet(struct thread_data* thr_data)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn_infos.begin()->second->ini_seq_rem;
                         log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd);
-                        
+                        if(tcp_opt_len){
+                            pthread_mutex_lock(sack_list.getMutex());
+                            sack_list.clear();
+                            extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list);
+                            printf("SACK: %s\n", sack_list.Intervals2str());
+                            pthread_mutex_unlock(sack_list.getMutex());
+                        }
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size);
 

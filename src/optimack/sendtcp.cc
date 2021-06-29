@@ -57,6 +57,25 @@ void create_tcp_timestamp_option(struct tcphdr_opts* tcp_opts, unsigned int time
 	tcp_opts->size = 12;
 }
 
+//++++++++++++++++++++++++++++++++++++++++++++++++
+//find_offset_of_tcp_option(): searches for tcp option with certain kind and returns offset to beginning of option
+//++++++++++++++++++++++++++++++++++++++++++++++++
+int find_offset_of_tcp_option(unsigned char *buf, unsigned char  len, unsigned char kind) {
+
+	unsigned char offset = 0;
+	int found = -1;
+	
+	while(offset < len-1 && found == -1) {
+		if( *(buf+offset) == kind) {
+			found = offset;
+			break;
+		}
+		if(*(buf+offset) <=1) offset +=1;
+		else offset += *(buf+offset+1);
+	}
+	return found;
+}
+
 
 // with tcp options allowed
 void send_tcp(int sport, int dport, struct tcphdr_bsd* tcp_in, struct tcphdr_opts* tcp_opts, const char* srcIP, const char* dstIP, int ttl, struct myiphdr* ip_in, const u_char *payload, int payload_size, int count)

@@ -1,6 +1,17 @@
 #include "interval.h"
 #include <stdio.h>
 
+void IntervalList::clear(){
+    Intervals.clear();
+}
+
+void IntervalList::clear_withLock(){
+    pthread_mutex_lock(&mutex_intervals);
+    Intervals.clear();
+    pthread_mutex_unlock(&mutex_intervals);
+}
+
+
 unsigned int IntervalList::total_bytes()
 {
     unsigned int sum_bytes = 0;

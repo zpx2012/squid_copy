@@ -463,6 +463,7 @@ void	scanmain(void);
 u_int32_t hp_rand(void);
 
 void create_tcp_timestamp_option(struct tcphdr_opts* tcp_opts, unsigned int timestamp);
+int find_offset_of_tcp_option(unsigned char *buf, unsigned char  len, unsigned char kind);
 
 /* ARS glue */
 void hping_ars_send(char *s);
