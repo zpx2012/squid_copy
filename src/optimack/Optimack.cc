@@ -672,7 +672,7 @@ full_optimistic_ack_altogether(void* arg)
         uint last_received = 0;
         for (; it != obj->subconn_infos.end(); it++){
             if(!it->second->is_backup){
-                min_next_seq_rem = std::min(min_next_seq_rem, it2->second->next_seq_rem);
+                min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
                     if(elapsed(it->second->last_data_received) >= MAX_STALL_TIME)
                         exit(-1);
@@ -1355,7 +1355,6 @@ void Optimack::print_seq_table(){
         printf("%12d", it->second->rwnd);
     }
     printf("\n");
-    printf("\n");
 
     // for(uint i = 0; i < num_conns; i++){
     //     printf("%12u", subconn_infos[i].local_port);
@@ -1478,8 +1477,8 @@ range_watch(void* arg)
         http_header* header = (http_header*)malloc(sizeof(http_header));
         memset(header, 0, sizeof(http_header));
         // parser
-        Http1::RequestParser rp;
-        SBuf headerBuf;
+        // Http1::RequestParser rp;
+        // SBuf headerBuf;
 
         do {
             // blocking sock
@@ -1545,7 +1544,7 @@ range_watch(void* arg)
                             consumed += header->remain;
                             unsent = header->end - header->start + 1;
                             // parser
-                            rp.clear();
+                            // rp.clear();
                             /*
                             * TODO: send(buf=data, size=unsent) to client here
                             * remove interval gaps (header->start, header->end) here
