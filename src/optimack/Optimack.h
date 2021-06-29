@@ -109,7 +109,7 @@ public:
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
     int get_ajusted_rwnd(int cur_ack);
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
-    void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list);
+    void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
 
     // variables
     int main_fd;

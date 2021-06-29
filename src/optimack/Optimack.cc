@@ -26,9 +26,6 @@ using namespace std;
 #include "checksum.h"
 #include "Debug.h"
 #include "logging.h"
-#ifdef OPENSSL
-#include "get_server_key.h"
-#endif
 
 // for http parsing
 #include <cstring>
@@ -41,6 +38,7 @@ using namespace std;
 #include "Optimack.h"
 
 #ifdef OPENSSL
+#include "get_server_key.h"
 void test_write_key(SSL *s){
     if(!s)
         return;
@@ -55,11 +53,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 3
+#define CONN_NUM 4
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 3000
+#define ACKPACING 1500
 #endif
 
 #define LOGSIZE 1024
@@ -1636,6 +1634,8 @@ void Optimack::try_for_gaps_and_request(){
         if(elapsed(last_ack_time) > MAX_STALL_TIME)
             exit(-1);
         if(cur_ack_rel < last_recv_inorder){
+            if(sack_list.size() > 0)
+                last_recv_inorder = sack_list.getElem_withLock(0,true);
             Interval interval = get_lost_range(cur_ack_rel, last_recv_inorder-1);
             if (interval.start != 0 && interval.end != 0){
                 printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
@@ -1780,7 +1780,7 @@ void* send_all_requests(void* arg){
 //	buf points at beginning of TCP options, 
 //	nb_sack provides the number of SACK entries found
 //++++++++++++++++++++++++++++++++++++++++++++++++
-void Optimack::extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list) {
+void Optimack::extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list, unsigned int ini_seq) {
 	//find sack offset
 	int offset = find_offset_of_tcp_option(buf, len, 5);
 	if(offset == -1){
@@ -1788,12 +1788,17 @@ void Optimack::extract_sack_blocks(unsigned char * const buf, const uint16_t len
 	}
 
 	int sack_len = *(buf + offset + 1);
+    // printf("sack_len: %d\n", sack_len);
 	offset += 2;
 	for (; offset < sack_len; offset += 8)
 	{
 		unsigned int left = ntohl( *((uint32_t*) (buf + offset)) );
 		unsigned int right = ntohl( *((uint32_t*) (buf + offset+4)) );
-		sack_list.insertNewInterval_withLock(left, right);
+        if(left <= ini_seq || right <= ini_seq){
+            printf("Error: initial seq(%u) > left(%u) or right(%u)\n", ini_seq, left, right);
+        }
+        // printf("left: %x, right %x\n", left, right);
+		sack_list.insertNewInterval(left - ini_seq, right - ini_seq);
 	}
 }
 
@@ -1804,8 +1809,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
     struct myiphdr *iphdr = ip_hdr(thr_data->buf);
     struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-    // unsigned char *tcp_opt = (unsigned char*)tcphdr + TCPHDR_SIZE;
-    // unsigned int tcp_opt_len = tcphdr->th_off*4 - TCPHDR_SIZE;
+    unsigned char *tcp_opt = tcp_options(thr_data->buf);
+    unsigned int tcp_opt_len = tcphdr->th_off*4 - TCPHDR_SIZE;
     unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
     unsigned short sport = ntohs(tcphdr->th_sport);
@@ -1880,15 +1885,16 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         this->rwnd = ntohs(tcphdr->th_win) * win_scale;                            
                         if(rwnd > max_win_size)
                             max_win_size = rwnd;
-                        this->cur_ack_rel = ack - subconn_infos.begin()->second->ini_seq_rem;
+                        this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd);
-                        // if(tcp_opt_len){
-                        //     pthread_mutex_lock(sack_list.getMutex());
-                        //     sack_list.clear();
-                        //     extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list);
-                        //     printf("SACK: %s\n", sack_list.Intervals2str());
-                        //     pthread_mutex_unlock(sack_list.getMutex());
-                        // }
+                        if(tcp_opt_len){
+                            pthread_mutex_lock(sack_list.getMutex());
+                            sack_list.clear();
+                            extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list, subconn->ini_seq_rem);
+                            // printf("cur_ack: %u SACK: ", cur_ack_rel);
+                            // sack_list.printIntervals();
+                            pthread_mutex_unlock(sack_list.getMutex());
+                        }
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size);
 

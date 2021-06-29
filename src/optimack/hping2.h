@@ -659,6 +659,11 @@ static inline struct mytcphdr* tcp_hdr(unsigned char *pkt_data)
     return (struct mytcphdr*)(pkt_data+ip_hdr(pkt_data)->ihl*4);
 }
 
+static inline unsigned char* tcp_options(unsigned char *pkt_data)
+{
+    return pkt_data+ip_hdr(pkt_data)->ihl*4+TCPHDR_SIZE;
+}
+
 static inline unsigned char* tcp_payload(unsigned char *pkt_data)
 {
     return pkt_data+ip_hdr(pkt_data)->ihl*4+tcp_hdr(pkt_data)->th_off*4;
