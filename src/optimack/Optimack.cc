@@ -667,10 +667,12 @@ full_optimistic_ack_altogether(void* arg)
         }
 
         //Overrun detection
+        uint min_next_seq_rem = -1;
         auto it = obj->subconn_infos.begin();
         uint last_received = 0;
         for (; it != obj->subconn_infos.end(); it++){
             if(!it->second->is_backup){
+                min_next_seq_rem = std::min(min_next_seq_rem, it2->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
                     if(elapsed(it->second->last_data_received) >= MAX_STALL_TIME)
                         exit(-1);
@@ -680,13 +682,9 @@ full_optimistic_ack_altogether(void* arg)
         }
         if (it != obj->subconn_infos.end()){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
             // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-            // if(!SPEEDUP_CONFIG && opa_ack_start < conn->next_seq_rem)
-            //     continue;
+            if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
+                continue;
             if(elapsed(last_restart) >= 2){
-                uint min_next_seq_rem = -1;
-                for (auto it2 = obj->subconn_infos.begin(); it2 != obj->subconn_infos.end(); it2++)
-                    if(!it2->second->is_backup)
-                        min_next_seq_rem = std::min(min_next_seq_rem, it2->second->next_seq_rem);
                 if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem) //Is in zero window period, received upon the window end, not overrun
                     continue;
                 if(opa_ack_start > min_next_seq_rem){
@@ -1807,8 +1805,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
     struct myiphdr *iphdr = ip_hdr(thr_data->buf);
     struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-    unsigned char *tcp_opt = (unsigned char*)tcphdr + TCPHDR_SIZE;
-    unsigned int tcp_opt_len = tcphdr->th_off*4 - TCPHDR_SIZE;
+    // unsigned char *tcp_opt = (unsigned char*)tcphdr + TCPHDR_SIZE;
+    // unsigned int tcp_opt_len = tcphdr->th_off*4 - TCPHDR_SIZE;
     unsigned char *payload = tcp_payload(thr_data->buf);
     unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
     unsigned short sport = ntohs(tcphdr->th_sport);
@@ -1885,13 +1883,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn_infos.begin()->second->ini_seq_rem;
                         log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd);
-                        if(tcp_opt_len){
-                            pthread_mutex_lock(sack_list.getMutex());
-                            sack_list.clear();
-                            extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list);
-                            printf("SACK: %s\n", sack_list.Intervals2str());
-                            pthread_mutex_unlock(sack_list.getMutex());
-                        }
+                        // if(tcp_opt_len){
+                        //     pthread_mutex_lock(sack_list.getMutex());
+                        //     sack_list.clear();
+                        //     extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list);
+                        //     printf("SACK: %s\n", sack_list.Intervals2str());
+                        //     pthread_mutex_unlock(sack_list.getMutex());
+                        // }
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size);
 
