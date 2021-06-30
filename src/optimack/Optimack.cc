@@ -53,14 +53,14 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
 #define ACKPACING 1500
 #endif
 
-#define MAX_STALL_TIME 30
+#define MAX_STALL_TIME 90
 
 #define LOGSIZE 1024
 #define IPTABLESLEN 128
@@ -1584,7 +1584,7 @@ range_watch(void* arg)
                             send_ACK_payload(local_ip, remote_ip, local_port, remote_port, (u_char*)(data + sent), packet_len, ack, seq);
                             obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
                             log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc);
-                            printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
+                            // printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
                         }
                         recv_offset = 0;
                         header->start += sent;
@@ -1894,6 +1894,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         if(rwnd > max_win_size)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
+                        last_ack_time = std::chrono::system_clock::now();
                         log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd);
                         if(tcp_opt_len){
                             pthread_mutex_lock(sack_list.getMutex());
@@ -1963,7 +1964,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             // }
                             // pthread_mutex_unlock(&mutex_seq_gaps);
                             // log_debugv("P%d-S%d-out: process_tcp_packet:737: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
-                            last_ack_time = std::chrono::system_clock::now();
                             last_ack_rel = cur_ack_rel;
                         }
                         pthread_mutex_unlock(&mutex_cur_ack_rel);
