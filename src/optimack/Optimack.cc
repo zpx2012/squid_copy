@@ -60,9 +60,10 @@ void test_write_key(SSL *s){
 #define ACKPACING 1500
 #endif
 
+#define MAX_STALL_TIME 30
+
 #define LOGSIZE 1024
 #define IPTABLESLEN 128
-#define MAX_STALL_TIME 30
 
 // nfq
 #define NF_QUEUE_NUM 6
@@ -672,8 +673,8 @@ full_optimistic_ack_altogether(void* arg)
             if(!it->second->is_backup){
                 min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
-                    if(elapsed(it->second->last_data_received) >= MAX_STALL_TIME){
-                        printf("Full optimistic altogether: S%d Reach max stall time, exit...", it->second->id);
+                    if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
+                        printf("Full optimistic altogether: S%d Reach max stall time, exit...\n", it->second->id);
                         exit(-1);
                     }
                     break;
@@ -691,7 +692,7 @@ full_optimistic_ack_altogether(void* arg)
                     obj->overrun_cnt++;
                     obj->overrun_penalty += elapsed(last_restart);
                 }
-                printf("O: overrun, current ack %u, ", opa_ack_start);
+                printf("O: S%d overrun, current ack %u, ", it->second->id, opa_ack_start);
                 opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
                 last_restart = std::chrono::system_clock::now();
                 printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, min_next_seq_rem);
@@ -1634,7 +1635,7 @@ void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
     if(elapsed(last_ack_time) > 3){
         if(elapsed(last_ack_time) > MAX_STALL_TIME){
-            printf("try_for_gaps_and_request: Reach max stall time, exit...");
+            printf("try_for_gaps_and_request: Reach max stall time, exit...\n");
             exit(-1);
         }
         if(cur_ack_rel < last_recv_inorder){
@@ -1801,6 +1802,7 @@ void Optimack::extract_sack_blocks(unsigned char * const buf, const uint16_t len
 		unsigned int left = ntohl( *((uint32_t*) (buf + offset)) );
 		unsigned int right = ntohl( *((uint32_t*) (buf + offset+4)) );
         if(left <= ini_seq || right <= ini_seq){
+            log_info("Error: initial seq(%u) > left(%u) or right(%u)\n", ini_seq, left, right);
             printf("Error: initial seq(%u) > left(%u) or right(%u)\n", ini_seq, left, right);
         }
         // printf("left: %x, right %x\n", left, right);
@@ -1897,7 +1899,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             pthread_mutex_lock(sack_list.getMutex());
                             sack_list.clear();
                             extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list, subconn->ini_seq_rem);
-                            // printf("cur_ack: %u SACK: ", cur_ack_rel);
+                            log_info("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
+                            // printf("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
                             // sack_list.printIntervals();
                             pthread_mutex_unlock(sack_list.getMutex());
                         }
@@ -2184,7 +2187,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 pthread_mutex_lock(&subconn->mutex_opa);
                 sprintf(log, "%s - cur next_seq_rem %u", log, subconn->next_seq_rem);
-                if (subconn->next_seq_rem < seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+                if (subconn->next_seq_rem <= seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
                     subconn->next_seq_rem = seq_rel + payload_len;
                     subconn->last_data_received = std::chrono::system_clock::now();
                 }
