@@ -22,6 +22,7 @@ while true; do
     then
         sed -i "s/define ACKPACING .*/define ACKPACING ${ackpaces[i]}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
+        ./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
         make install
         echo 
         echo ackpace${ackpaces[i]}_8optim+1range

@@ -53,11 +53,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1500
+#define ACKPACING 250
 #endif
 
 #define MAX_STALL_TIME 90
