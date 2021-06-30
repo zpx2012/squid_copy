@@ -672,8 +672,10 @@ full_optimistic_ack_altogether(void* arg)
             if(!it->second->is_backup){
                 min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
-                    if(elapsed(it->second->last_data_received) >= MAX_STALL_TIME)
+                    if(elapsed(it->second->last_data_received) >= MAX_STALL_TIME){
+                        printf("Full optimistic altogether: S%d Reach max stall time, exit...", it->second->id);
                         exit(-1);
+                    }
                     break;
                 }
             }
@@ -1631,11 +1633,15 @@ Optimack::init_range()
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
     if(elapsed(last_ack_time) > 3){
-        if(elapsed(last_ack_time) > MAX_STALL_TIME)
+        if(elapsed(last_ack_time) > MAX_STALL_TIME){
+            printf("try_for_gaps_and_request: Reach max stall time, exit...");
             exit(-1);
+        }
         if(cur_ack_rel < last_recv_inorder){
-            if(sack_list.size() > 0)
+            if(sack_list.size() > 0){
+                printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
                 last_recv_inorder = sack_list.getElem_withLock(0,true);
+            }
             Interval interval = get_lost_range(cur_ack_rel, last_recv_inorder-1);
             if (interval.start != 0 && interval.end != 0){
                 printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
