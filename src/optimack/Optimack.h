@@ -94,6 +94,7 @@ public:
     pthread_t nfq_thread, overrun_thread, optim_ack_thread;
 
     bool is_nfq_full(FILE* out_file);
+    void print_ss(FILE* out_file);
     bool does_packet_lost_on_all_conns();
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);

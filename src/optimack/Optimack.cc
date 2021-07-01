@@ -57,7 +57,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 250
+#define ACKPACING 1250
 #endif
 
 #define MAX_STALL_TIME 90
@@ -307,7 +307,7 @@ void adjust_optimack_speed_by_ack_step(struct subconn_info* conn, int id, int of
 
 bool Optimack::is_nfq_full(FILE* out_file){
     std::string rst_str = exec("cat /proc/net/netfilter/nfnetlink_queue");
-    fprintf(out_file, "cat /proc/net/netfilter/nfnetlink_queue: %s\n", rst_str.c_str());
+    fprintf(out_file, "cat /proc/net/netfilter/nfnetlink_queue: %s", rst_str.c_str());
     // cout << "cat /proc/net/netfilter/nfnetlink_queue:\n " << rst_str << endl;
     std::vector<std::string> fields = split(rst_str, ' ');
     if(fields.size() > 7){
@@ -319,6 +319,15 @@ bool Optimack::is_nfq_full(FILE* out_file){
     else
         fprintf(out_file, "Error! nfnetlink_queue result is shorter than 7 fields!");
     return false;
+}
+
+void Optimack::print_ss(FILE* out_file){
+    char cmd[100];
+    snprintf(cmd, 100, "ss -o state established '( sport = %d )' -itnm", squid_port);
+    std::string rst_str = exec(cmd);
+    fprintf(out_file, "%s", rst_str.c_str());
+    // cout << "cat /proc/net/netfilter/nfnetlink_queue:\n " << rst_str << endl;
+    return;
 }
 
 bool Optimack::does_packet_lost_on_all_conns(){
@@ -1642,6 +1651,7 @@ void Optimack::try_for_gaps_and_request(){
             if(sack_list.size() > 0){
                 printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
                 last_recv_inorder = sack_list.getElem_withLock(0,true);
+                print_ss(stdout);
             }
             Interval interval = get_lost_range(cur_ack_rel, last_recv_inorder-1);
             if (interval.start != 0 && interval.end != 0){
@@ -1744,9 +1754,11 @@ void* overrun_detector(void* arg){
 
     auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
-        if(is_timeout_and_update(last_print_seqs, 2)){
+        if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
             obj->is_nfq_full(stdout);
+            obj->print_ss(stdout);
+            printf("\n");
         }
 
         if (RANGE_MODE) {
