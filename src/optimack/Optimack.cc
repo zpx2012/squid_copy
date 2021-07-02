@@ -57,7 +57,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1250
+#define ACKPACING 1500
 #endif
 
 #define MAX_STALL_TIME 90
@@ -160,6 +160,14 @@ char* get_cur_time_str(char* time_str, char* format_str){
     localtime_r(&now, &timeinfo);
     std::strftime(time_str, 64, format_str, &timeinfo);
     
+    return time_str;
+}
+
+char* print_chrono_time(std::chrono::time_point<std::chrono::system_clock> time_point, char* time_str){
+    struct tm timeinfo;
+    std::time_t time_t = std::chrono::system_clock::to_time_t(time_point);
+    localtime_r(&time_t, &timeinfo);
+    std::strftime(time_str, 64, "%Y-%m-%d %H:%M:%S", &timeinfo);
     return time_str;
 }
 
@@ -682,10 +690,13 @@ full_optimistic_ack_altogether(void* arg)
             if(!it->second->is_backup){
                 min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
-                    // if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
-                    //     printf("Full optimistic altogether: S%d Reach max stall time, exit...\n", it->second->id);
-                    //     exit(-1);
-                    // }
+                    if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
+                        char time_str[20];
+                        memset(time_str, 0, 20);
+                        printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                        log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                        exit(-1);
+                    }
                     break;
                 }
             }
@@ -1643,10 +1654,12 @@ Optimack::init_range()
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
     if(elapsed(last_ack_time) > 3){
-        // if(elapsed(last_ack_time) > MAX_STALL_TIME){
-        //     printf("try_for_gaps_and_request: Reach max stall time, exit...\n");
-        //     exit(-1);
-        // }
+        if(elapsed(last_ack_time) > MAX_STALL_TIME){
+            char time_str[20] = "";
+            printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
+            log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
+            exit(-1);
+        }
         if(cur_ack_rel < last_recv_inorder){
             if(sack_list.size() > 0){
                 printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
@@ -1907,7 +1920,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         last_ack_time = std::chrono::system_clock::now();
-                        log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd);
+                        memset(time_str, 0, 64);
+                        log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str));
                         if(tcp_opt_len){
                             pthread_mutex_lock(sack_list.getMutex());
                             sack_list.clear();
@@ -2203,7 +2217,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     subconn->next_seq_rem = seq_rel + payload_len;
                     subconn->last_data_received = std::chrono::system_clock::now();
                 }
-                sprintf(log,"%s - update next_seq_rem to %u", log, subconn->next_seq_rem);
+                memset(time_str, 0, 64);
+                sprintf(log,"%s - update next_seq_rem to %u - update last_data_received %s - ", log, subconn->next_seq_rem, print_chrono_time(subconn->last_data_received, time_str));
                 pthread_mutex_unlock(&subconn->mutex_opa);
 
                 bool is_new_segment = recved_seq.checkAndinsertNewInterval_withLock(seq_rel, seq_rel+payload_len);
@@ -2212,8 +2227,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // log_debug(Intervals2str(subconn->seq_gaps).c_str());
                     // log_info("%d, [%u, %u]", subconn_i, subconn->next_seq_rem, seq_rel);
                     // sprintf(log,"%s - insert interval[%u, %u]", log, subconn->next_seq_rem, seq_rel);
-
-
 
                 if (subconn->is_backup){
                     //Normal Mode
