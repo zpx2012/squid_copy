@@ -4,20 +4,32 @@
 #include <vector>
 #include <string>
 #include <pthread.h>
+#include <chrono>
 
 // Define the structure of interval
 struct Interval
 {
     unsigned int start;
     unsigned int end;
+    bool sent;
+    bool recved;
+    double sent_epoch_time, recved_epoch_time;//std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
 
     Interval()
         : start(0), end(0)
     {
+        sent = recved = false;
     }
     Interval(unsigned int s, unsigned int e)
         : start(s), end(e)
     {
+        sent = recved = false;
+    }
+    Interval(unsigned int s, unsigned int e, bool is_sent, bool is_recved)
+        : start(s), end(e)
+    {
+        sent = is_sent;
+        recved = is_recved;
     }
 };
 
@@ -49,6 +61,7 @@ public:
     pthread_mutex_t* getMutex() { return &mutex_intervals; }
 
     // Function to insert new interval and merge overlapping intervals
+    void insert(Interval newInterval);
     void insertNewInterval(unsigned int start, unsigned int end);
     void insertNewInterval_withLock(unsigned int start, unsigned int end);
     unsigned int insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end);

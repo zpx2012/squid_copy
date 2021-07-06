@@ -155,7 +155,7 @@ public:
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0; 
     int win_scale = 1 << 7, 
-        rwnd = 1, 
+        rwnd = 1, adjusted_rwnd = 0,
         max_win_size = 0,
         same_ack_cnt = 0,
         overrun_cnt = 0,

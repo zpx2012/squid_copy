@@ -101,6 +101,10 @@ void test_write_key(SSL *s){
 
 
 // Utility
+double get_current_epoch_time(){
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start){
     auto now = std::chrono::system_clock::now();
     if (now > start)
@@ -331,7 +335,7 @@ bool Optimack::is_nfq_full(FILE* out_file){
 
 void Optimack::print_ss(FILE* out_file){
     char cmd[100];
-    snprintf(cmd, 100, "ss -o state established '( sport = %d )' -itnm", squid_port);
+    snprintf(cmd, 100, "ss -o state established '( sport = %d )' -tnm", squid_port);
     std::string rst_str = exec(cmd);
     fprintf(out_file, "%s", rst_str.c_str());
     // cout << "cat /proc/net/netfilter/nfnetlink_queue:\n " << rst_str << endl;
@@ -450,16 +454,16 @@ int Optimack::send_optimistic_ack_with_timer(struct subconn_info* conn, int cur_
 
 void Optimack::update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window){
     last_send_ack = std::chrono::system_clock::now();
-    if(!is_zero_window){
+    if(is_zero_window){
         last_zero_window = std::chrono::system_clock::now();
         return;
     }
-    else {
-        if (is_timeout_and_update(last_zero_window, 2)){
-            // log_info("cur_win_scale == 0");
-        }
-        return;
-    }    
+    // else {
+    //     if (is_timeout_and_update(last_zero_window, 2)){
+    //         // log_info("cur_win_scale == 0");
+    //     }
+    //     return;
+    // }    
 }
 
 void* selective_optimistic_ack(void* arg){
@@ -662,6 +666,7 @@ full_optimistic_ack_altogether(void* arg)
         if (elapsed(last_send_ack) >= send_ack_pace){
             //calculate adjusted window size
             adjusted_rwnd = obj->get_ajusted_rwnd(opa_ack_start);
+            obj->adjusted_rwnd = adjusted_rwnd;
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
                 if(!it->second->is_backup)
                     obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
@@ -683,45 +688,47 @@ full_optimistic_ack_altogether(void* arg)
         }
 
         //Overrun detection
-        uint min_next_seq_rem = -1;
-        auto it = obj->subconn_infos.begin();
-        uint last_received = 0;
-        for (; it != obj->subconn_infos.end(); it++){
-            if(!it->second->is_backup){
-                min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
-                if (elapsed(it->second->last_data_received) >= 2){
-                    if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
-                        char time_str[20];
-                        memset(time_str, 0, 20);
-                        printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        exit(-1);
+        if (elapsed(last_zero_window) > 1){
+            uint min_next_seq_rem = -1;
+            auto it = obj->subconn_infos.begin();
+            uint last_received = 0;
+            for (; it != obj->subconn_infos.end(); it++){
+                if(!it->second->is_backup){
+                    min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+                    if (elapsed(it->second->last_data_received) >= 2){
+                        if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
+                            char time_str[20];
+                            memset(time_str, 0, 20);
+                            printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                            log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                            exit(-1);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
-        }
-        if (it != obj->subconn_infos.end()){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
-            // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-            if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
-                continue;
-            if(elapsed(last_restart) >= 2){
-                if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem) //Is in zero window period, received upon the window end, not overrun
+            if (it != obj->subconn_infos.end()){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+                // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
+                if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
                     continue;
-                if(opa_ack_start > min_next_seq_rem){
-                    obj->overrun_cnt++;
-                    obj->overrun_penalty += elapsed(last_restart);
+                if(elapsed(last_restart) >= 2){
+                    if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem) //Is in zero window period, received upon the window end, not overrun
+                        continue;
+                    if(opa_ack_start > min_next_seq_rem){
+                        obj->overrun_cnt++;
+                        obj->overrun_penalty += elapsed(last_restart);
+                    }
+                    printf("O: S%d overrun, current ack %u, ", it->second->id, opa_ack_start);
+                    opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
+                    last_restart = std::chrono::system_clock::now();
+                    printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, min_next_seq_rem);
                 }
-                printf("O: S%d overrun, current ack %u, ", it->second->id, opa_ack_start);
-                opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
-                last_restart = std::chrono::system_clock::now();
-                printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, min_next_seq_rem);
-            }
 
-            // if(elapsed(conn->last_data_received) >= 120){
-            //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
-            //     exit(-1);
-            // }
+                // if(elapsed(conn->last_data_received) >= 120){
+                //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
+                //     exit(-1);
+                // }
+            }
         }
 
         usleep(10);
@@ -1370,11 +1377,11 @@ void Optimack::print_seq_table(){
     }
     printf("\n");
 
-    printf("%12s%12u", "rwnd", rwnd);
+    printf("%12s%12u%12u", "rwnd", rwnd, adjusted_rwnd);
     // for (auto const& [port, subconn] : subconn_infos){
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        printf("%12d", it->second->rwnd);
-    }
+    // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+    //     printf("%12d", it->second->rwnd);
+    // }
     printf("\n");
 
     // for(uint i = 0; i < num_conns; i++){
@@ -1826,10 +1833,6 @@ void Optimack::extract_sack_blocks(unsigned char * const buf, const uint16_t len
 	{
 		unsigned int left = ntohl( *((uint32_t*) (buf + offset)) );
 		unsigned int right = ntohl( *((uint32_t*) (buf + offset+4)) );
-        if(left <= ini_seq || right <= ini_seq){
-            log_info("Error: initial seq(%u) > left(%u) or right(%u)\n", ini_seq, left, right);
-            printf("Error: initial seq(%u) > left(%u) or right(%u)\n", ini_seq, left, right);
-        }
         // printf("left: %x, right %x\n", left, right);
 		sack_list.insertNewInterval(left - ini_seq, right - ini_seq);
 	}
@@ -1901,7 +1904,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             subconn->next_seq_rem = 1;
                             subconn->ini_seq_loc = seq - 1;
                             subconn->seq_init = true;
-                            log_info("Subconn %d seq_init done", subconn_i);
+                            log_info("Subconn %d seq_init done, seq ini 0x%x(%u)", subconn_i, subconn->ini_seq_rem, subconn->ini_seq_rem);
                             // reply to our send()
                             if (subconn_i) {
                                 char empty_payload[] = "";

@@ -151,6 +151,91 @@ bool IntervalList::contains(unsigned int start, unsigned int end){
 
 // Function to insert new interval and
 // merge overlapping intervals
+void IntervalList::insert(Interval newInterval)
+{
+    // Interval newInterval = Interval(start, end);
+    unsigned int start = newInterval.start;
+    unsigned int end = newInterval.end;
+    std::vector<Interval> ans;
+    int n = Intervals.size();
+
+    if(start >= end)
+        return;
+ 
+    // If set is empty then simply insert
+    // newInterval and return.
+    if (n == 0)
+    {
+        Intervals.push_back(newInterval);
+        return;
+    }
+ 
+ 
+    // Case 1 and Case 2 (new interval to be
+    // inserted at corners)
+    if (end < Intervals[0].start || newInterval.start > Intervals[n - 1].end)
+    {
+        if (newInterval.end < Intervals[0].start)
+            Intervals.insert(Intervals.begin(), newInterval);
+ 
+        if (newInterval.start > Intervals[n - 1].end)
+            Intervals.insert(Intervals.end(), newInterval);
+ 
+        return;
+    }
+ 
+    // Case 3 (New interval covers all existing)
+    if (newInterval.start <= Intervals[0].start && newInterval.end >= Intervals[n - 1].end)
+    {
+        Intervals.clear();
+        Intervals.push_back(newInterval);
+        return;
+    }
+ 
+    // Case 4 and Case 5
+    // These two cases need to check whether
+    // intervals overlap or not. For this we
+    // can use a subroutine that will perform
+    // this function.
+    bool overlap = true;
+    for (int i = 0; i < n; i++)
+    {
+        overlap = doesOverlap(Intervals[i], newInterval);
+        if (!overlap)
+        {
+            ans.push_back(Intervals[i]);
+ 
+            // Case 4 : To check if given interval
+            // lies between two intervals.
+            if (i < n &&
+                newInterval.start > Intervals[i].end &&
+                newInterval.end < Intervals[i + 1].start)
+                ans.push_back(newInterval);
+ 
+            continue;
+        }
+        else{
+            if (start < Intervals[i].start){
+                Interval left = newInterval;
+                left.end = Intervals[i].start;
+                ans.push_back(left);
+            }
+            
+            ans.push_back(Intervals[i]);
+
+            if (end > Intervals[i].end){
+                Interval right = newInterval;
+                right.start = Intervals[i].end;
+                ans.push_back(right);
+            }
+        }
+    }
+}
+
+
+
+// Function to insert new interval and
+// merge overlapping intervals
 void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
 {
     Interval newInterval = Interval(start, end);
