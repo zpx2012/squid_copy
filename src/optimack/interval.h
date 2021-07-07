@@ -12,24 +12,22 @@ struct Interval
     unsigned int start;
     unsigned int end;
     bool sent;
-    bool recved;
+    unsigned int last_recved;
     double sent_epoch_time, recved_epoch_time;//std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
 
     Interval()
-        : start(0), end(0)
+        : start(0), end(0), sent_epoch_time(0), last_recved(0)
     {
-        sent = recved = false;
+        sent = false;
     }
     Interval(unsigned int s, unsigned int e)
-        : start(s), end(e)
+        : start(s), end(e), sent_epoch_time(0), last_recved(0)
     {
-        sent = recved = false;
+        sent = false;
     }
-    Interval(unsigned int s, unsigned int e, bool is_sent, bool is_recved)
-        : start(s), end(e)
+    Interval(unsigned int s, unsigned int e, double sent_time)
+        : start(s), end(e), sent_epoch_time(sent_time), last_recved(0)
     {
-        sent = is_sent;
-        recved = is_recved;
     }
 };
 

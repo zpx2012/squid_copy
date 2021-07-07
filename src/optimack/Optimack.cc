@@ -57,7 +57,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1500
+#define ACKPACING 2000
 #endif
 
 #define MAX_STALL_TIME 90
@@ -688,7 +688,7 @@ full_optimistic_ack_altogether(void* arg)
         }
 
         //Overrun detection
-        if (elapsed(last_zero_window) > 1){
+        if (elapsed(last_zero_window) > 1.5){
             uint min_next_seq_rem = -1;
             auto it = obj->subconn_infos.begin();
             uint last_received = 0;

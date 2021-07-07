@@ -9,7 +9,7 @@
 url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
 site='mirror.math.princeton.edu'
 
-sed -i "s/define ACKPACING .*/define ACKPACING 2000/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define ACKPACING .*/define ACKPACING 3000/g" ~/squid_copy/src/optimack/Optimack.cc
 
 nums=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
 i=0
@@ -22,11 +22,11 @@ while true; do
     then
         sed -i "s/define CONN_NUM .*/define CONN_NUM ${nums[i]}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
-        ./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
+        #./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
         make install
         echo
-        echo ${nums[i]}optim+1range_ackpace2000
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ${nums[i]}optim+1range_ackpace2000
+        echo ${nums[i]}optim+1range_ackpace3000
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ${nums[i]}optim+1range_ackpace3000
         echo
         i=$(((i+1)%${#nums[@]}))
     else
