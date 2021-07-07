@@ -26,7 +26,7 @@ while true; do
         make install
         echo 
         echo ackpace${ackpaces[i]}_8optim+1range
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace${ackpaces[i]}_8optim+1range
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_8optim ackpace${ackpaces[i]}_8optim+1range
         echo
         i=$(((i+1)%${#ackpaces[@]}))
     else

@@ -26,7 +26,7 @@ while true; do
         make install
         echo
         echo ${nums[i]}optim+1range_ackpace3000
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ${nums[i]}optim+1range_ackpace3000
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace3000 ${nums[i]}optim+1range_ackpace3000
         echo
         i=$(((i+1)%${#nums[@]}))
     else

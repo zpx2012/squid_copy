@@ -57,10 +57,10 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 2000
+#define ACKPACING 3000
 #endif
 
-#define MAX_STALL_TIME 90
+#define MAX_STALL_TIME 240
 
 #define LOGSIZE 1024
 #define IPTABLESLEN 128

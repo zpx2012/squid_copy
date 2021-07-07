@@ -13,10 +13,10 @@ site='mirror.math.princeton.edu'
 
 
 mkdir -p ~/rs/ABtest_onerun/
-outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)
+outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/$1
 mkdir -p $outdir
 stime=$(date +%Y%m%d%H%M)
-tag=$(hostname)_${site}_http_${1}_${stime}
+tag=$(hostname)_${site}_http_${2}_${stime}
 squid_out=$outdir/curl_squid_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
