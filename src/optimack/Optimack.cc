@@ -53,7 +53,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 8
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -1486,14 +1486,14 @@ range_watch(void* arg)
             continue;
         }
 
-        obj->init_range();
+        range_sockfd = obj->establish_tcp_connection();
 
         memcpy(request, obj->request, request_len);
         std::vector<Interval> range_sent_intervals = obj->ranges_sent.getIntervalList();
         // obj->ranges_sent.printIntervals();
         for(auto it : range_sent_intervals) {
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
-            obj->send_http_range_request(it);
+            obj->send_http_range_request(range_sockfd, it);
             // memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
             // sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", it.start, it.end);
             // send(range_sockfd, request, strlen(request), 0);
@@ -1632,137 +1632,6 @@ range_watch(void* arg)
     pthread_exit(NULL);
 }
 
-int
-Optimack::init_range()
-{
-    // int range_sockfd;
-    struct sockaddr_in server_addr;
-
-    // Open socket
-    if ((range_sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Can't open stream socket.");
-    }
-
-    // Set server_addr
-    bzero(&server_addr, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(g_remote_ip);
-    server_addr.sin_port = htons(g_remote_port);
-
-    // Connect to server
-    if (connect(range_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Connect server error");
-        close(range_sockfd);
-    }
-
-    return 0;
-}
-
-void Optimack::try_for_gaps_and_request(){
-    uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
-    if(elapsed(last_ack_time) > 3){
-        if(elapsed(last_ack_time) > MAX_STALL_TIME){
-            char time_str[20] = "";
-            printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            exit(-1);
-        }
-        if(cur_ack_rel < last_recv_inorder){
-            if(sack_list.size() > 0){
-                printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
-                last_recv_inorder = sack_list.getElem_withLock(0,true);
-                print_ss(stdout);
-            }
-            Interval interval = get_lost_range(cur_ack_rel, last_recv_inorder-1);
-            if (interval.start != 0 && interval.end != 0){
-                printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
-                send_http_range_request(interval);
-                if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(cur_ack_rel, last_recv_inorder-1)){
-                    we2squid_lost_cnt++;
-                    we2squid_penalty += elapsed(last_ack_time);
-                }
-            }
-        }
-    }
-
-    if(check_packet_lost_on_all_conns(last_recv_inorder)){
-        // printf("[Range]: lost on all conns\n");
-        // lost_range [recved_seq[0].end, recved_seq[1].end]
-        // Interval lost_range = get_lost_range();
-        uint first_out_of_order = recved_seq.getElem_withLock(1,true);
-        if(first_out_of_order){
-            send_http_range_request(get_lost_range(last_recv_inorder, first_out_of_order-1));
-            all_lost_seq.insertNewInterval_withLock(last_recv_inorder, first_out_of_order-1);
-        }
-    }
-
-}
-
-bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
-    // uint seq_recved_global = recved_seq.getFirstEnd_withLock();//TODO: Or ?  cur_ack_rel
-
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        if(!it->second->is_backup && it->second->next_seq_rem <= last_recv_inorder){
-            return false;
-        }
-    }
-    return true;
-}
-
-Interval Optimack::get_lost_range(uint start, uint end)
-{
-    // uint min_next_seq_rem = recved_seq.getElem_withLock(1, true);
-    // // recved_seq.printIntervals();
-    // if(min_next_seq_rem == 0)
-    //     min_next_seq_rem = -1;
-    
-    // // for (size_t i = 1; i < num_conns; i++)
-    // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
-    //     min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
-    
-    // if(min_next_seq_rem == -1)
-    //     return Interval(0,0);
-
-    if(start == 0 || end == 0 || start < response_header_len || end < response_header_len)
-        return Interval(0,0);
-
-    // check if the range has already been sent
-    IntervalList lost_range;
-    lost_range.clear();
-    lost_range.insertNewInterval(start-response_header_len-1, end-response_header_len-1);
-    lost_range.substract(&ranges_sent);
-    if(lost_range.size()){
-        return lost_range.getIntervalList().at(0);
-    }
-    else
-        return Interval(0,0);
-}
-
-int Optimack::send_http_range_request(Interval range){
-    uint start = range.start, end = range.end;
-    if (start == end || (start == 0 || end == 0))
-        return -1;
-    
-    char range_request[MAX_RANGE_REQ_LEN];
-    memcpy(range_request, request, request_len);
-    sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
-    ranges_sent.insertNewInterval_withLock(start, end);
-    if (send(range_sockfd, range_request, strlen(range_request), 0) < 0){
-        // printf("[Range] bytes [%u, %u] failed\n", start, end);
-        log_debug("[Range] bytes %d - %d failed", start, end);
-        // pthread_join(range_thread, NULL);
-        // log_debug("[Range] new range thread created");
-        // range_sockfd = init_range(); // Resend the range in range_sent when start a new range watch
-        return -1;
-    } 
-    else{
-        requested_bytes += end - start + 1;
-        printf("[Range] bytes [%u, %u] requested\n", start, end);
-        log_debug("[Range] bytes %d - %d requested", start, end);
-        return 0;
-    }
-}
-
 
 void* overrun_detector(void* arg){
     Optimack* obj = (Optimack* )arg;
@@ -1792,6 +1661,347 @@ void* overrun_detector(void* arg){
     printf("overrun_detector thread ends\n");
     pthread_exit(NULL);
 }
+
+void Optimack::try_for_gaps_and_request(){
+    uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
+    if(elapsed(last_ack_time) > 3){
+        if(elapsed(last_ack_time) > MAX_STALL_TIME){
+            char time_str[20] = "";
+            printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
+            log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
+            exit(-1);
+        }
+        if(cur_ack_rel < last_recv_inorder){
+            if(sack_list.size() > 0){
+                printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
+                last_recv_inorder = sack_list.getElem_withLock(0,true);
+                print_ss(stdout);
+            }
+            IntervalList* intervallist = get_lost_range(cur_ack_rel, last_recv_inorder-1);
+            if (intervallist){
+                printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
+                if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(cur_ack_rel, last_recv_inorder-1)){
+                    we2squid_lost_cnt++;
+                    we2squid_penalty += elapsed(last_ack_time);
+                }
+                start_range_recv(intervallist);
+
+            }
+        }
+    }
+
+    if(check_packet_lost_on_all_conns(last_recv_inorder)){
+        // printf("[Range]: lost on all conns\n");
+        // lost_range [recved_seq[0].end, recved_seq[1].end]
+        // Interval lost_range = get_lost_range();
+        uint first_out_of_order = recved_seq.getElem_withLock(1,true);
+        if(first_out_of_order){
+            IntervalList* intervallist = get_lost_range(last_recv_inorder, first_out_of_order-1);
+            all_lost_seq.insertNewInterval_withLock(last_recv_inorder, first_out_of_order-1);
+            start_range_recv(intervallist);
+        }
+    }
+
+}
+
+bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
+    // uint seq_recved_global = recved_seq.getFirstEnd_withLock();//TODO: Or ?  cur_ack_rel
+
+    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+        if(!it->second->is_backup && it->second->next_seq_rem <= last_recv_inorder){
+            return false;
+        }
+    }
+    return true;
+}
+
+IntervalList* Optimack::get_lost_range(uint start, uint end)
+{
+    // uint min_next_seq_rem = recved_seq.getElem_withLock(1, true);
+    // // recved_seq.printIntervals();
+    // if(min_next_seq_rem == 0)
+    //     min_next_seq_rem = -1;
+    
+    // // for (size_t i = 1; i < num_conns; i++)
+    // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
+    //     min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+    
+    // if(min_next_seq_rem == -1)
+    //     return Interval(0,0);
+
+    if(start == 0 || end == 0 || start < response_header_len || end < response_header_len)
+        return NULL;
+
+    // check if the range has already been sent
+    IntervalList* lost_range = new IntervalList();
+    lost_range->clear();
+    lost_range->insertNewInterval(start-response_header_len-1, end-response_header_len-1);
+    lost_range->substract(&ranges_sent);
+    if(lost_range->size()){
+        return lost_range;
+    }
+    else
+        return NULL;
+}
+
+
+struct Range_Args{
+    Optimack* obj;
+    IntervalList* range_list;
+
+    Range_Args() 
+    {  obj = NULL; range_list = NULL; }
+
+    Range_Args(Optimack* obj_, IntervalList* list)
+    {   obj = obj_; range_list = list;    }
+};
+
+void Optimack::start_range_recv(IntervalList* list){
+    if(list->size() != 1){
+        printf("start_range_recv: Error - intervallist size != 1");
+        list->printIntervals();
+    }
+
+    Range_Args* range_args = new Range_Args(this, list);
+    pthread_t range_thread;
+    if (pthread_create(&range_thread, NULL, range_recv, (void *)range_args) != 0) {
+        //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
+        perror("Can't create range_watch thread\n");
+        return;
+    }
+    ranges_sent.insertNewInterval(list->getIntervalList().at(0).start, list->getIntervalList().at(0).end);
+}
+
+void*
+range_recv(void* arg)
+{
+
+    int rv, range_sockfd, local_port, remote_port, seq_offset, seq_loc, ini_seq_loc;
+    char response[MAX_RANGE_SIZE+1];
+    char data[MAX_RANGE_SIZE+1];
+    char *local_ip, *remote_ip;
+
+    struct Range_Args* range_args = ((struct Range_Args*)arg);
+    Optimack* obj = range_args->obj;
+    IntervalList* range_job = range_args->range_list;
+    local_ip = obj->g_local_ip;
+    remote_ip = obj->g_remote_ip;
+    local_port = obj->subconn_infos.begin()->second->local_port;
+    remote_port = obj->g_remote_port;
+    seq_offset = obj->subconn_infos.begin()->second->ini_seq_rem;
+    seq_loc = obj->subconn_infos.begin()->second->next_seq_loc + obj->subconn_infos.begin()->second->ini_seq_loc;
+    ini_seq_loc = obj->subconn_infos.begin()->second->ini_seq_loc;
+
+    unsigned int start_seq = range_job->getIntervalList().at(0).start + obj->response_header_len + 1;
+    unsigned int end_seq = range_job->getIntervalList().at(0).end + obj->response_header_len + 1;
+    printf("[Range]: range_recv thread starts for [%u, %u]\n", start_seq, end_seq);
+
+    // resend pending requests
+    int request_len = obj->request_len;
+    char request[MAX_RANGE_SIZE+1];
+    pthread_mutex_t *mutex = &(obj->mutex_seq_gaps);
+    subconn_info* subconn = (obj->subconn_infos.begin()->second);
+
+    int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
+    http_header* header = (http_header*)malloc(sizeof(http_header));
+    memset(header, 0, sizeof(http_header));
+    // parser
+    // Http1::RequestParser rp;
+    // SBuf headerBuf;
+    while(range_job->size() != 0){
+
+        range_sockfd = obj->establish_tcp_connection();
+
+        memcpy(request, obj->request, request_len);
+        // obj->ranges_sent.printIntervals();
+        for(auto it : range_job->getIntervalList()) {
+            // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
+            obj->send_http_range_request(range_sockfd, it);
+            // memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
+            // sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", it.start, it.end);
+            // send(range_sockfd, request, strlen(request), 0);
+            // log_debug("[Range] Resend bytes %d - %d", it.start, it.end);
+        }
+
+        do {
+            // blocking sock
+            if(recv_offset > MAX_RANGE_SIZE){
+                printf("recv_offset %d > MAX_RANGE_SIZE %u\n", recv_offset, MAX_RANGE_SIZE);
+                break;
+            }
+            memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
+            rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, 0);
+            // printf("[Range]: rv %d\n", rv);
+            if (rv > MAX_RANGE_SIZE)
+                printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
+            if (rv > 0) {
+                unread += rv;
+                consumed = 0;
+                while (unread > 0) {
+                    if (!header->parsed) {
+                        // parse header
+                        parsed = parse_response(header, response+consumed, unread);
+                        if (parsed <= 0) {
+                            // incomplete http header
+                            // keep receiving and parse in next response
+                            memmove(response, response+consumed, unread);
+                            recv_offset += unread;
+                            printf("[Range]: incomplete http header, len %d\n", unread);
+                            break;
+                        }
+                        else {
+                            // parser
+                            // headerBuf.assign(response+consumed, unread);
+                            // rp.parse(headerBuf);
+                            // printf("[Range]: headBlockSize %d Parsed %d StatusCode %d\n", rp.headerBlockSize(), parsed, rp.parseStatusCode);
+                            // src/http/StatusCode.h
+
+                            recv_offset = 0;
+                            consumed += parsed;
+                            unread -= parsed;
+                        }
+                    }
+                    else {
+                        // collect data
+                        if (header->remain <= unread) {
+                            // we have all the data
+                            // printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->end, header->remain, unread);
+                            log_debug("[Range] data retrieved %d - %d", header->start, header->end);
+                            // delet completed request
+                            //pthread_mutex_lock(&obj->mutex_range);
+                            // Interval gap(header->start, header->end);
+                            // pthread_mutex_lock(mutex);
+                            // for (auto it = subconn->seq_gaps.begin(); it != subconn->seq_gaps.end(); it++) {
+                                // if (header->start == (*it).start && header->end + 1 == (*it).end) {
+                                    // subconn->seq_gaps = removeInterval(subconn->seq_gaps, Interval(header->start, header->end+1, ""));
+                                    // break;
+                                // }
+                            // }
+                            // pthread_mutex_unlock(mutex);
+                            //log_debug("[Range] [Warning] pending request not found");
+                            //pthread_mutex_unlock(&obj->mutex_range);
+
+                            memcpy(data, response+consumed, header->remain);
+                            header->parsed = 0;
+                            unread -= header->remain;
+                            consumed += header->remain;
+                            unsent = header->end - header->start + 1;
+                            // parser
+                            // rp.clear();
+                            /*
+                            * TODO: send(buf=data, size=unsent) to client here
+                            * remove interval gaps (header->start, header->end) here
+                            */
+                            range_job->removeInterval(header->start, header->end);
+                        }
+                        else {
+                            // still need more data
+                            // we can consume and send all unread data
+                            // printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->start+unread, header->remain, unread);
+                            log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start, header->start+unread, header->remain, unread);
+                            memcpy(data, response+consumed, unread);
+                            header->remain -= unread;
+                            consumed += unread;
+                            unsent = unread;
+                            unread = 0;
+                            /*
+                            * TODO:
+                            * remove interval gaps (header->start, header->start+unread-1) here
+                            */
+                            range_job->removeInterval(header->start, header->start+unsent);
+                        }
+
+                        int sent;
+                        for (sent=0; unsent > 0; sent += packet_len, unsent -= packet_len) {
+                            if (unsent >= PACKET_SIZE) {
+                                packet_len = PACKET_SIZE;
+                            }
+                            else {
+                                packet_len = unsent;
+                            }
+                            // obj->ranges_sent.removeInterval_withLock(header->start+sent, header->start+sent+packet_len);
+                            uint ack = subconn->ini_seq_loc + subconn->next_seq_loc;
+                            uint seq_rel = 1 + obj->response_header_len + header->start + sent;
+                            uint seq = subconn->ini_seq_rem +  seq_rel; // Adding the offset back
+                            send_ACK_payload(local_ip, remote_ip, local_port, remote_port, (u_char*)(data + sent), packet_len, ack, seq);
+                            obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
+                            log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc);
+                            // printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
+                        }
+                        recv_offset = 0;
+                        header->start += sent;
+                    }
+                }
+                if (unread < 0)
+                    log_debug("[Range] error: unread < 0");
+            }
+            else if (rv < 0)
+                log_debug("[Range] error: ret %d errno %d", rv, errno);
+            else 
+                log_debug("[Range]: ret %d, sockfd %d closed ", rv, range_sockfd);
+        } while (rv > 0);
+        close(range_sockfd);
+    }
+    free(range_job);
+    free(range_args);
+
+    printf("[Range]: [%u, %u] Recved, range_recv thread exits...\n", start_seq, end_seq);
+    pthread_exit(NULL);
+}
+
+
+int
+Optimack::establish_tcp_connection()
+{
+    int sockfd;
+    struct sockaddr_in server_addr;
+
+    // Open socket
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Can't open stream socket.");
+    }
+
+    // Set server_addr
+    bzero(&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(g_remote_ip);
+    server_addr.sin_port = htons(g_remote_port);
+
+    // Connect to server
+    if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connect server error");
+        close(sockfd);
+    }
+
+    return sockfd;
+}
+
+int Optimack::send_http_range_request(int sockfd, Interval range){
+    uint start = range.start, end = range.end;
+    if (start == end || (start == 0 || end == 0))
+        return -1;
+    
+    char range_request[MAX_RANGE_REQ_LEN];
+    memcpy(range_request, request, request_len);
+    sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
+    if (send(sockfd, range_request, strlen(range_request), 0) < 0){
+        // printf("[Range] bytes [%u, %u] failed\n", start, end);
+        log_debug("[Range] bytes %d - %d failed", start, end);
+        // pthread_join(range_thread, NULL);
+        // log_debug("[Range] new range thread created");
+        // range_sockfd = init_range(); // Resend the range in range_sent when start a new range watch
+        return -1;
+    } 
+    else{
+        requested_bytes += end - start + 1;
+        printf("[Range] bytes [%u, %u] requested\n", start+response_header_len+1, end+response_header_len+1);
+        log_debug("[Range] bytes %d - %d requested", start, end);
+        return 0;
+    }
+}
+
+
+
 
 
 
@@ -2084,14 +2294,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         seq_next_global = 1;
                         pthread_mutex_unlock(&mutex_subconn_infos);
                         log_debugv("P%d-S%d-out: process_tcp_packet:817: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
-                        if(RANGE_MODE){
-                            range_stop = 0;
-                            if (pthread_create(&range_thread, NULL, range_watch, (void *)this) != 0) {
-                                //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
-                                perror("Can't create range_watch thread\n");
-                                return -1;
-                            }
-                        }
                     }
                     else{
                             log_info("P%d-S%d-out: ack %u, win %d", thr_data->pkt_id, subconn_i, ack - subconn->ini_seq_rem, ntohs(tcphdr->th_win) * subconn->win_scale);
@@ -2488,6 +2690,8 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
 void 
 Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
 {
+    printf("#####################New version: CONN_NUM %d\n", CONN_NUM);
+
     time_in_HH_MM_SS_nospace(start_time);
     start_timestamp = std::chrono::system_clock::now();
 

@@ -70,6 +70,7 @@ void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
 void* range_watch(void* arg);
+void* range_recv(void* arg);
 void* send_all_requests(void* arg);
 
 class Optimack
@@ -170,14 +171,15 @@ public:
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
-    int init_range();
+    int establish_tcp_connection();
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
-    Interval get_lost_range(uint start, uint end);
-    int send_http_range_request(Interval range);
+    IntervalList* get_lost_range(uint start, uint end);
+    int send_http_range_request(int sockfd, Interval range);
+    void start_range_recv(IntervalList* list);
     pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
-    int range_sockfd, range_stop;
+    int range_stop, range_sockfd;
     IntervalList ranges_sent;
     uint response_header_len, requested_bytes = 0;
 };
