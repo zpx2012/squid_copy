@@ -16,17 +16,17 @@ struct Interval
     double sent_epoch_time, recved_epoch_time;//std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
 
     Interval()
-        : start(0), end(0), sent_epoch_time(0), last_recved(0)
+        : start(0), end(0), last_recved(0), sent_epoch_time(0), recved_epoch_time(0)
     {
         sent = false;
     }
     Interval(unsigned int s, unsigned int e)
-        : start(s), end(e), sent_epoch_time(0), last_recved(0)
+        : start(s), end(e), last_recved(0), sent_epoch_time(0), recved_epoch_time(0)
     {
         sent = false;
     }
     Interval(unsigned int s, unsigned int e, double sent_time)
-        : start(s), end(e), sent_epoch_time(sent_time), last_recved(0)
+        : start(s), end(e), last_recved(0), sent_epoch_time(sent_time), recved_epoch_time(0)
     {
     }
 };
