@@ -21,23 +21,23 @@ while true; do
     echo
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
         if [ $((i % 2)) -eq 0 ]; then
-            sed -i "s/define ACKPACING .*/define ACKPACING 1500/g" ~/squid_copy/src/optimack/Optimack.cc
+            sed -i "s/define ACKPACING .*/define ACKPACING 3000/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define CONN_NUM .*/define CONN_NUM ${nums[i/2%${#nums[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc
             cd ~/squid_copy/
             #./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
             make install
             echo
-            echo ${nums[i/2%${#nums[@]}]}optim+1range_ackpace1500
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1500 ${nums[i/2%${#nums[@]}]}optim+1range_ackpace1500
+            echo ${nums[i/2%${#nums[@]}]}optim+1range_ackpace3000
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace3000 ${nums[i/2%${#nums[@]}]}optim+1range_ackpace3000
         else
-            sed -i "s/define CONN_NUM .*/define CONN_NUM 8/g" ~/squid_copy/src/optimack/Optimack.cc
+            sed -i "s/define CONN_NUM .*/define CONN_NUM 6/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define ACKPACING .*/define ACKPACING ${ackpaces[i/2%${#ackpaces[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc
             cd ~/squid_copy/
             #./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
             make install
             echo
-            echo ackpace${ackpaces[i/2%${#ackpaces[@]}]}_8optim+1range
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_8optim ackpace${ackpaces[i%${#ackpaces[@]}]}_8optim+1range
+            echo ackpace${ackpaces[i/2%${#ackpaces[@]}]}_6optim+1range
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_6optim ackpace${ackpaces[i%${#ackpaces[@]}]}_6optim+1range
         fi
         i=$((i+1))
     else
