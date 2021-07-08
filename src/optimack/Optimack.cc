@@ -53,11 +53,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 3000
+#define ACKPACING 2000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -1388,6 +1388,11 @@ void Optimack::print_seq_table(){
     // }
     printf("\n");
 
+    printf("Recv_seq: ");
+    recved_seq.printIntervals();
+
+    printf("SACK: ");
+    sack_list.printIntervals();
     // for(uint i = 0; i < num_conns; i++){
     //     printf("%12u", subconn_infos[i].local_port);
     // }
@@ -2179,15 +2184,16 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         last_ack_time = std::chrono::system_clock::now();
                         memset(time_str, 0, 64);
                         log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str));
+                        pthread_mutex_lock(sack_list.getMutex());
+                        sack_list.clear();
                         if(tcp_opt_len){
-                            pthread_mutex_lock(sack_list.getMutex());
-                            sack_list.clear();
                             extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list, subconn->ini_seq_rem);
                             // log_info("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
                             // printf("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
                             // sack_list.printIntervals();
-                            pthread_mutex_unlock(sack_list.getMutex());
                         }
+                        pthread_mutex_unlock(sack_list.getMutex());
+
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size);
 
