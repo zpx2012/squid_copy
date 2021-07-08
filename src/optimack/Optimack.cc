@@ -53,7 +53,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
@@ -677,6 +677,8 @@ full_optimistic_ack_altogether(void* arg)
             else 
                 opa_ack_start += obj->squid_MSS;
 
+            // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
+
             // if (SPEEDUP_CONFIG){
             //     if(obj->cur_ack_rel > opa_ack_start && conn->next_seq_rem > opa_ack_start){
             //         opa_ack_start = conn->next_seq_rem;
@@ -688,47 +690,49 @@ full_optimistic_ack_altogether(void* arg)
         }
 
         //Overrun detection
-        if (elapsed(last_zero_window) > 1.5){
-            uint min_next_seq_rem = -1;
-            auto it = obj->subconn_infos.begin();
-            uint last_received = 0;
-            for (; it != obj->subconn_infos.end(); it++){
-                if(!it->second->is_backup){
-                    min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
-                    if (elapsed(it->second->last_data_received) >= 2){
-                        if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
-                            char time_str[20];
-                            memset(time_str, 0, 20);
-                            printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                            log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                            exit(-1);
-                        }
-                        break;
+        uint min_next_seq_rem = -1;
+        auto it = obj->subconn_infos.begin();
+        uint last_received = 0;
+        bool is_stall = false;
+        for (; it != obj->subconn_infos.end(); it++){
+            if(!it->second->is_backup){
+                min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+                if (elapsed(it->second->last_data_received) >= 2){
+                    is_stall = true;
+                    if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
+                        char time_str[20];
+                        memset(time_str, 0, 20);
+                        printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                        log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                        exit(-1);
                     }
                 }
             }
-            if (it != obj->subconn_infos.end()){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
-                // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-                if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
+        }
+        if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+            // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
+            if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
+                continue;
+            if(elapsed(last_restart) >= 2){
+                if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
                     continue;
-                if(elapsed(last_restart) >= 2){
-                    if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem) //Is in zero window period, received upon the window end, not overrun
-                        continue;
-                    if(opa_ack_start > min_next_seq_rem){
-                        obj->overrun_cnt++;
-                        obj->overrun_penalty += elapsed(last_restart);
-                    }
-                    printf("O: S%d overrun, current ack %u, ", it->second->id, opa_ack_start);
-                    opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
-                    last_restart = std::chrono::system_clock::now();
-                    printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, min_next_seq_rem);
+                if(zero_window_start <= min_next_seq_rem && elapsed(last_zero_window) > 5*send_ack_pace){
+                    obj->overrun_cnt++;
+                    obj->overrun_penalty += elapsed(last_restart);
+                    printf("O: overrun, ");
                 }
-
-                // if(elapsed(conn->last_data_received) >= 120){
-                //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
-                //     exit(-1);
-                // }
+                else
+                    printf("O: recover from zero window, ");
+                printf("current ack %u, ", opa_ack_start);
+                opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
+                last_restart = std::chrono::system_clock::now();
+                printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, min_next_seq_rem);
             }
+
+            // if(elapsed(conn->last_data_received) >= 120){
+            //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
+            //     exit(-1);
+            // }
         }
 
         usleep(10);
@@ -1516,6 +1520,7 @@ range_watch(void* arg)
             }
             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
             rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, 0);
+
             // printf("[Range]: rv %d\n", rv);
             if (rv > MAX_RANGE_SIZE)
                 printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
@@ -1643,7 +1648,7 @@ void* overrun_detector(void* arg){
 
     auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
-        if(is_timeout_and_update(last_print_seqs, 1)){
+        if(is_timeout_and_update(last_print_seqs, 2)){
             obj->print_seq_table();
             obj->is_nfq_full(stdout);
             obj->print_ss(stdout);
@@ -1662,46 +1667,76 @@ void* overrun_detector(void* arg){
     pthread_exit(NULL);
 }
 
+void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end){
+    IntervalList* intervallist = get_lost_range(start, end);
+    if (intervallist){
+        printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", start, end);
+        log_info("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u", start, end);
+        if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(start, end)){
+            we2squid_lost_cnt++;
+            we2squid_penalty += elapsed(last_ack_time);
+        }
+        log_info("we2squid lost: request range[%u, %u]",intervallist->getIntervalList().at(0).start, intervallist->getIntervalList().at(0).end);
+        start_range_recv(intervallist);
+    }
+}
+
+
 void Optimack::try_for_gaps_and_request(){
-    uint last_recv_inorder = recved_seq.getFirstEnd_withLock();
-    if(elapsed(last_ack_time) > 3){
+    uint last_recv_inorder;
+    if(elapsed(last_ack_time) > 1.5){
         if(elapsed(last_ack_time) > MAX_STALL_TIME){
             char time_str[20] = "";
             printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             exit(-1);
         }
-        if(cur_ack_rel < last_recv_inorder){
+        if(cur_ack_rel < recved_seq.getFirstEnd_withLock()){
+            last_recv_inorder = recved_seq.getFirstEnd_withLock();
+            // IntervalList* intervallist = NULL;
+            pthread_mutex_lock(sack_list.getMutex());
             if(sack_list.size() > 0){
-                printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
-                last_recv_inorder = sack_list.getElem_withLock(0,true);
-                print_ss(stdout);
-            }
-            IntervalList* intervallist = get_lost_range(cur_ack_rel, last_recv_inorder-1);
-            if (intervallist){
-                printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", cur_ack_rel, last_recv_inorder);
-                if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(cur_ack_rel, last_recv_inorder-1)){
-                    we2squid_lost_cnt++;
-                    we2squid_penalty += elapsed(last_ack_time);
+                // printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
+                // print_ss(stdout);
+                auto sack_interval_list = sack_list.getIntervalList();
+                we2squid_loss_and_start_range_recv(cur_ack_rel, sack_interval_list.at(0).start-1);
+                uint min_seq = get_min_next_seq_rem();
+                for(int i = 1; i < sack_interval_list.size(); i++){
+                    if(min_seq >= sack_interval_list.at(i-1).end)
+                        we2squid_loss_and_start_range_recv(sack_interval_list.at(i-1).end, sack_interval_list.at(i).start-1);
                 }
-                start_range_recv(intervallist);
-
             }
+            else{
+                we2squid_loss_and_start_range_recv(cur_ack_rel, last_recv_inorder-1);
+            }
+            pthread_mutex_unlock(sack_list.getMutex());
         }
     }
 
-    if(check_packet_lost_on_all_conns(last_recv_inorder)){
+    if(check_packet_lost_on_all_conns(recved_seq.getFirstEnd_withLock())){
         // printf("[Range]: lost on all conns\n");
         // lost_range [recved_seq[0].end, recved_seq[1].end]
         // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);
         if(first_out_of_order){
-            IntervalList* intervallist = get_lost_range(last_recv_inorder, first_out_of_order-1);
-            all_lost_seq.insertNewInterval_withLock(last_recv_inorder, first_out_of_order-1);
-            start_range_recv(intervallist);
+            IntervalList* intervallist = get_lost_range(recved_seq.getFirstEnd_withLock(), first_out_of_order-1);
+            if(intervallist){
+                all_lost_seq.insertNewInterval_withLock(intervallist->getIntervalList().at(0).start, intervallist->getIntervalList().at(0).end);
+                log_info("lost on all: request range[%u, %u]",intervallist->getIntervalList().at(0).start, intervallist->getIntervalList().at(0).end);
+                start_range_recv(intervallist);
+            }
         }
     }
+}
 
+uint Optimack::get_min_next_seq_rem(){
+    uint min_next_seq_rem = -1;
+    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+        if(!it->second->is_backup){
+            min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+        }
+    }
+    return min_next_seq_rem;
 }
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
@@ -1795,6 +1830,7 @@ range_recv(void* arg)
     unsigned int start_seq = range_job->getIntervalList().at(0).start + obj->response_header_len + 1;
     unsigned int end_seq = range_job->getIntervalList().at(0).end + obj->response_header_len + 1;
     printf("[Range]: range_recv thread starts for [%u, %u]\n", start_seq, end_seq);
+    log_info("[Range]: range_recv thread starts for [%u, %u]", start_seq, end_seq);
 
     // resend pending requests
     int request_len = obj->request_len;
@@ -1831,6 +1867,14 @@ range_recv(void* arg)
             }
             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
             rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, 0);
+            
+            if(obj->cur_ack_rel >= end_seq){
+                range_job->getIntervalList().clear();
+                printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early\n", start_seq, end_seq, obj->cur_ack_rel, end_seq);
+                log_info("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early", start_seq, end_seq, obj->cur_ack_rel, end_seq);
+                break;
+            }
+
             // printf("[Range]: rv %d\n", rv);
             if (rv > MAX_RANGE_SIZE)
                 printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
@@ -2139,7 +2183,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             pthread_mutex_lock(sack_list.getMutex());
                             sack_list.clear();
                             extract_sack_blocks(tcp_opt, tcp_opt_len, sack_list, subconn->ini_seq_rem);
-                            log_info("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
+                            // log_info("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
                             // printf("cur_ack: %u, ini_seq: %u, SACK: ", ack - subconn->ini_seq_rem, subconn->ini_seq_rem);
                             // sack_list.printIntervals();
                             pthread_mutex_unlock(sack_list.getMutex());
