@@ -52,7 +52,7 @@ trap INT_handler SIGINT
 
 
 
-screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N"
+screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N >> $squid_log"
 sleep 2
 
 echo Start: $(date -Iseconds) >> $normal_out
