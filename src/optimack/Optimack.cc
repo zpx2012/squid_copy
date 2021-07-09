@@ -53,7 +53,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 8
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
@@ -658,10 +658,12 @@ full_optimistic_ack_altogether(void* arg)
     log_info("Optimistic ack started");
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), last_restart = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1, zero_window_start = -1;
+    unsigned int opa_ack_start = 1;
+    long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
     int adjusted_rwnd = 0;
+    char log[200] = {0};
     while (!obj->optim_ack_stop) {
         if (elapsed(last_send_ack) >= send_ack_pace){
             //calculate adjusted window size
@@ -690,13 +692,13 @@ full_optimistic_ack_altogether(void* arg)
         }
 
         //Overrun detection
-        uint min_next_seq_rem = -1;
+        long min_next_seq_rem = INT_MAX;
         auto it = obj->subconn_infos.begin();
         uint last_received = 0;
         bool is_stall = false;
         for (; it != obj->subconn_infos.end(); it++){
             if(!it->second->is_backup){
-                min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+                min_next_seq_rem = std::min(min_next_seq_rem, (long)it->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
                     is_stall = true;
                     if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
@@ -716,17 +718,22 @@ full_optimistic_ack_altogether(void* arg)
             if(elapsed(last_restart) >= 2){
                 if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
                     continue;
-                if(zero_window_start <= min_next_seq_rem && elapsed(last_zero_window) > 5*send_ack_pace){
+                if(abs(zero_window_start-min_next_seq_rem) > 3*obj->squid_MSS && elapsed(last_zero_window) > 5*send_ack_pace){
                     obj->overrun_cnt++;
                     obj->overrun_penalty += elapsed(last_restart);
-                    printf("O: overrun, ");
+                    sprintf(log, "O: overrun, ");
                 }
                 else
-                    printf("O: recover from zero window, ");
-                printf("current ack %u, ", opa_ack_start);
-                opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
+                    sprintf(log, "O: recover from zero window, ");
+                sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+                if (min_next_seq_rem > 5*obj->squid_MSS)
+                    opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
+                else
+                    opa_ack_start = 1;
                 last_restart = std::chrono::system_clock::now();
-                printf("restart at %u, zero_window_start %u, next_seq_rem %u\n", opa_ack_start, zero_window_start, min_next_seq_rem);
+                sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
+                log_info(log);
+                printf(log);
             }
 
             // if(elapsed(conn->last_data_received) >= 120){
@@ -2392,6 +2399,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // TODO: let our reply through...for now
                     if (subconn_i)
                         return 0;
+                    send_ACK_adjusted_rwnd(subconn, seq_rel);// Reply to Keep-Alive
                     log_info("P%d-S%d-in: server or our ack %u", thr_data->pkt_id, subconn_i, ack - subconn->ini_seq_loc);
                     return -1;
                 }
