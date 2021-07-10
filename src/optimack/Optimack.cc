@@ -53,7 +53,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -698,17 +698,20 @@ full_optimistic_ack_altogether(void* arg)
         bool is_stall = false;
         for (; it != obj->subconn_infos.end(); it++){
             if(!it->second->is_backup){
-                min_next_seq_rem = std::min(min_next_seq_rem, (long)it->second->next_seq_rem);
                 if (elapsed(it->second->last_data_received) >= 2){
                     is_stall = true;
-                    if(elapsed(it->second->last_data_received) > MAX_STALL_TIME){
+                    if(elapsed(it->second->last_data_received) > 10 && elapsed(last_zero_window) > 5){
                         char time_str[20];
                         memset(time_str, 0, 20);
                         printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
                         log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        exit(-1);
+                        pthread_mutex_lock(&obj->mutex_subconn_infos);
+                        obj->subconn_infos.erase(it);
+                        pthread_mutex_unlock(&obj->mutex_subconn_infos);
+                        continue;
                     }
                 }
+                min_next_seq_rem = std::min(min_next_seq_rem, (long)it->second->next_seq_rem);
             }
         }
         if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
@@ -2603,6 +2606,16 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
                 return -1;
                 break;
+            }
+            case TH_RST:
+            case TH_RST | TH_ACK:
+            {
+                printf("S%d: Received RST. Close this connection.\n",subconn_i);
+                close(subconn->sockfd);
+                pthread_mutex_lock(&mutex_subconn_infos);
+                subconn_infos.erase(find_ret);
+                pthread_mutex_unlock(&mutex_subconn_infos);
+
             }
             default:
                 // printf("P%d-S%d: Invalid tcp flags: %s\n", thr_data->pkt_id, subconn_i, tcp_flags_str(tcphdr->th_flags));
