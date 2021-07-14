@@ -53,7 +53,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -1714,7 +1714,7 @@ void Optimack::try_for_gaps_and_request(){
             char time_str[20] = "";
             printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            exit(-1);
+            // exit(-1);
         }
         if(cur_ack_rel < recved_seq.getFirstEnd_withLock()){
             last_recv_inorder = recved_seq.getFirstEnd_withLock();
