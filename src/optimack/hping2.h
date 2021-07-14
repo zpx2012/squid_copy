@@ -463,6 +463,7 @@ void	scanmain(void);
 u_int32_t hp_rand(void);
 
 void create_tcp_timestamp_option(struct tcphdr_opts* tcp_opts, unsigned int timestamp);
+void create_sack_option(struct tcphdr_opts* tcp_opts, unsigned char* sack_str, int len);
 int find_offset_of_tcp_option(unsigned char *buf, unsigned char  len, unsigned char kind);
 
 /* ARS glue */

@@ -111,6 +111,7 @@ public:
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
     int get_ajusted_rwnd(int cur_ack);
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
+    int generate_sack_blocks(unsigned char * buf,int len, IntervalList* sack_list);
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
 
     // variables
@@ -120,7 +121,7 @@ public:
     unsigned int g_local_ip_int;
     unsigned int g_remote_ip_int;
     unsigned short g_remote_port;
-    unsigned short squid_port;
+    unsigned short squid_port, backup_port;
     char request[1000];
     unsigned short request_len;
     struct sockaddr_in dstAddr;

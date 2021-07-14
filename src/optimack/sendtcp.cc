@@ -57,6 +57,25 @@ void create_tcp_timestamp_option(struct tcphdr_opts* tcp_opts, unsigned int time
 	tcp_opts->size = 12;
 }
 
+
+void create_sack_option(struct tcphdr_opts* tcp_opts, unsigned char* sack_str, int len)
+{
+	if(len == 0 || !sack_str){
+		return;
+	}
+	
+    if(len > 32)
+        len = 32;
+
+	unsigned char* sack_option = tcp_opts->bytes;
+	/* tcp timestamp option */
+	sack_option[0] = 5;
+    sack_option[1] = len; /* NOOP */
+	tcp_opts->size = len+2;
+
+	memcpy(sack_option+2, &sack_str, len);
+}
+
 //++++++++++++++++++++++++++++++++++++++++++++++++
 //find_offset_of_tcp_option(): searches for tcp option with certain kind and returns offset to beginning of option
 //++++++++++++++++++++++++++++++++++++++++++++++++
