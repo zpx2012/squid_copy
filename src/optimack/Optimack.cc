@@ -670,8 +670,13 @@ full_optimistic_ack_altogether(void* arg)
             adjusted_rwnd = obj->get_ajusted_rwnd(opa_ack_start);
             obj->adjusted_rwnd = adjusted_rwnd;
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-                if(!it->second->is_backup)
+                if(!it->second->is_backup){
+                    if (adjusted_rwnd < it->second->win_scale){
+                        adjusted_rwnd = 0;
+                        break;
+                    }
                     obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                }
             }
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
             if(adjusted_rwnd <= 0)
@@ -700,7 +705,7 @@ full_optimistic_ack_altogether(void* arg)
             if(!it->second->is_backup){
                 if (elapsed(it->second->last_data_received) >= 2){
                     is_stall = true;
-                    if(elapsed(it->second->last_data_received) > 10 && elapsed(last_zero_window) > 5){
+                    if(elapsed(it->second->last_data_received) > 10 && elapsed(last_zero_window) > 30){
                         char time_str[20];
                         memset(time_str, 0, 20);
                         printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
@@ -747,7 +752,7 @@ full_optimistic_ack_altogether(void* arg)
 
         usleep(10);
     }
-
+ 
     // conn->optim_ack_stop = 0;
     log_info("Optimistic ack ends");
     pthread_exit(NULL);
@@ -921,31 +926,35 @@ void Optimack::log_seq_gaps(){
     // printf(cmd);
     // printf("\n");
     // system(cmd);    
+
     char time_str[30], tmp_str[1000];
-    sprintf(tmp_str, "%s/%s", output_dir, info_file_name);
-    FILE* info_file = fopen(tmp_str, "w");
-    fprintf(info_file, "Start: %s\n", start_time);
-    fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
-    fprintf(info_file, "Duration: %.2fs\n", elapsed(start_timestamp));
-    fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
-        fprintf(info_file, "%d, ", it->second->local_port);
-    fprintf(info_file, "\n");
-    fprintf(info_file, "Num of Conn: %d\n", CONN_NUM);
-    fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
-    fprintf(info_file, "Overrun count: %d\n", overrun_cnt);
-    fprintf(info_file, "Overrun penalty: %.2f\n", overrun_penalty);
-    fprintf(info_file, "We2Squid loss count: %d\n", we2squid_lost_cnt);
-    fprintf(info_file, "We2Squid loss penalty: %.2f\n", we2squid_penalty);
-    if (RANGE_MODE){
-        fprintf(info_file, "Packet lost on all: %d\n", all_lost_seq.total_bytes());
-        fprintf(info_file, "Packet lost between us and squid: %d\n", we2squid_lost_seq.total_bytes());
-        fprintf(info_file, "Range requested: %u\n", requested_bytes);
+    if(subconn_infos.size()){
+        sprintf(tmp_str, "%s/%s", output_dir, info_file_name);
+        FILE* info_file = fopen(tmp_str, "w");
+        fprintf(info_file, "Start: %s\n", start_time);
+        fprintf(info_file, "Stop: %s\n", time_in_HH_MM_SS_nospace(time_str));
+        fprintf(info_file, "Duration: %.2fs\n", elapsed(start_timestamp));
+        fprintf(info_file, "IP: %s\nPorts: ", g_remote_ip);
+        for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
+            fprintf(info_file, "%d, ", it->second->local_port);
+        fprintf(info_file, "\n");
+        fprintf(info_file, "Num of Conn: %d\n", CONN_NUM);
+        fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
+        fprintf(info_file, "Overrun count: %d\n", overrun_cnt);
+        fprintf(info_file, "Overrun penalty: %.2f\n", overrun_penalty);
+        fprintf(info_file, "We2Squid loss count: %d\n", we2squid_lost_cnt);
+        fprintf(info_file, "We2Squid loss penalty: %.2f\n", we2squid_penalty);
+        if (RANGE_MODE){
+            fprintf(info_file, "Packet lost on all: %d\n", all_lost_seq.total_bytes());
+            fprintf(info_file, "Packet lost between us and squid: %d\n", we2squid_lost_seq.total_bytes());
+            fprintf(info_file, "Range requested: %u\n", requested_bytes);
+        }
+        fprintf(info_file, "\n");
+        is_nfq_full(info_file);
+        fprintf(info_file,"\n");
+        fprintf(info_file, "Response: %s\n", response);
+        fclose(info_file);
     }
-    fprintf(info_file, "\n");
-    is_nfq_full(info_file);
-    fprintf(info_file,"\n");
-    fclose(info_file);
 
     // if(lost_on_all){
         // sprintf(tmp_str, "%s/seq_gaps_count_%s.csv", output_dir, time_in_HH_MM_SS_nospace(time_str));
@@ -1687,6 +1696,7 @@ void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end){
     if (intervallist){
         printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", start, end);
         log_info("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u", start, end);
+        exit(-1);
         if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(start, end)){
             we2squid_lost_cnt++;
             we2squid_penalty += elapsed(last_ack_time);
@@ -1699,7 +1709,7 @@ void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end){
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder;
-    if(elapsed(last_ack_time) > 5){
+    if(elapsed(last_ack_time) > 2){
         if(elapsed(last_ack_time) > MAX_STALL_TIME){
             char time_str[20] = "";
             printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
@@ -2204,7 +2214,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                     if (subconn_i == 0) {
                         this->rwnd = ntohs(tcphdr->th_win) * win_scale;
-                        this->rwnd = rwnd > 425984? 425984 : rwnd;
+                        this->rwnd = rwnd > 6291456? 6291456 : rwnd;
                         if(rwnd > max_win_size)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
@@ -2478,6 +2488,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     rp.parse(headerBuf);
                     response_header_len = rp.messageHeaderSize();
                     printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
+                    memcpy(response, payload, 400);
                     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
                     // src/http/StatusCode.h
                 }
@@ -2571,6 +2582,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //     printf("%s - forwarded to squid\n", log);
                 log_debug("%s - forwarded to squid", log); 
                 modify_to_main_conn_packet(subconn_i, tcphdr, thr_data->buf, thr_data->len, seq_rel);
+                // if(rand() % 100 < 1)
+                //     return -1;
                 return 0;
                 break;
             }
@@ -2787,10 +2800,15 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     char* cmd;
     int ret;
 
+    // unsigned int size = 6291456;
+    // if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+    //     printf("Error: can't set SOL_SOCKET to %u!\n", size);
+    // }
+
     struct tcp_info tcp_info;
     socklen_t tcp_info_length = sizeof(tcp_info);
     if ( getsockopt(fd, SOL_TCP, TCP_INFO, (void *)&tcp_info, &tcp_info_length ) == 0 ) {
-        printf("snd_wscale-%u, rcv_wscale-%u, snd_mss-%u, rcv_mss-%u, advmss-%u, %u %u %u %u %u %u %u %u %u %u %u %u\n",
+        printf("Squid: snd_wscale-%u, rcv_wscale-%u, snd_mss-%u, rcv_mss-%u, advmss-%u, %u %u %u %u %u %u %u %u %u %u %u %u\n",
             tcp_info.tcpi_snd_wscale,
             tcp_info.tcpi_rcv_wscale,
             tcp_info.tcpi_snd_mss,

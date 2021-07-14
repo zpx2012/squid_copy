@@ -11,3 +11,5 @@ sudo autoreconf -f -i
 ./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
 make
 sudo make install
+sudo sysctl -w net.core.rmem_max=8388608
+sudo sysctl -p

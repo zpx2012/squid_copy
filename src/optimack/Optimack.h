@@ -122,7 +122,7 @@ public:
     unsigned int g_remote_ip_int;
     unsigned short g_remote_port;
     unsigned short squid_port, backup_port;
-    char request[1000];
+    char request[1000], response[400];
     unsigned short request_len;
     struct sockaddr_in dstAddr;
     int squid_MSS;
