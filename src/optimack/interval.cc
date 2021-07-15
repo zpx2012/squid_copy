@@ -27,6 +27,13 @@ void IntervalList::insertNewInterval_withLock(unsigned int start, unsigned int e
     pthread_mutex_unlock(&mutex_intervals);
 }
 
+void IntervalList::insertNewInterval_withLock(Interval newInterval)
+{
+    pthread_mutex_lock(&mutex_intervals);
+    insertNewInterval(newInterval.start, newInterval.end);
+    pthread_mutex_unlock(&mutex_intervals);
+}
+
 bool IntervalList::checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end)
 {
     pthread_mutex_lock(&mutex_intervals);
@@ -232,7 +239,10 @@ void IntervalList::insert(Interval newInterval)
     }
 }
 
-
+void IntervalList::insertNewInterval(Interval newInterval)
+{
+    insertNewInterval(newInterval.start, newInterval.end);
+}
 
 // Function to insert new interval and
 // merge overlapping intervals

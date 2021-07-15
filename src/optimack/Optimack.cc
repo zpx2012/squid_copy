@@ -72,7 +72,7 @@ void test_write_key(SSL *s){
 // range
 #define MAX_REQUEST_LEN 1024
 #define MAX_RANGE_REQ_LEN 1536
-#define MAX_RANGE_SIZE 102400
+#define MAX_RANGE_SIZE 1460
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
@@ -401,7 +401,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 char empty_payload[] = "";
 
 int Optimack::get_ajusted_rwnd(int cur_ack){
-    int cur_rwnd = rwnd/2 + cur_ack_rel - cur_ack;
+    int cur_rwnd = rwnd/4 + cur_ack_rel - cur_ack;
     int diff = (int)(cur_rwnd - squid_MSS*2);
     uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
     if (diff <= 0)
@@ -1054,7 +1054,7 @@ Optimack::cleanup()
 
     if(!range_stop){
         range_stop++;
-        pthread_join(range_thread, NULL);
+        // pthread_join(range_thread, NULL);
         log_info("range_watch_thread exited");    
     }
 
@@ -1515,6 +1515,8 @@ range_watch(void* arg)
         }
 
         range_sockfd = obj->establish_tcp_connection();
+        if(range_sockfd <= 0)//TODO: remove ranges_sent?
+            break;
 
         memcpy(request, obj->request, request_len);
         std::vector<Interval> range_sent_intervals = obj->ranges_sent.getIntervalList();
@@ -1674,7 +1676,7 @@ void* overrun_detector(void* arg){
     while(!obj->overrun_stop){
         if(is_timeout_and_update(last_print_seqs, 2)){
             obj->print_seq_table();
-            obj->is_nfq_full(stdout);
+            // obj->is_nfq_full(stdout);
             obj->print_ss(stdout);
             printf("\n");
         }
@@ -1691,30 +1693,16 @@ void* overrun_detector(void* arg){
     pthread_exit(NULL);
 }
 
-void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end){
-    IntervalList* intervallist = get_lost_range(start, end);
-    if (intervallist){
-        printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", start, end);
-        log_info("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u", start, end);
-        exit(-1);
-        if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(start, end)){
-            we2squid_lost_cnt++;
-            we2squid_penalty += elapsed(last_ack_time);
-        }
-        log_info("we2squid lost: request range[%u, %u]",intervallist->getIntervalList().at(0).start, intervallist->getIntervalList().at(0).end);
-        start_range_recv(intervallist);
-    }
-}
-
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder;
+    IntervalList* lost_ranges = new IntervalList();
     if(elapsed(last_ack_time) > 2){
         if(elapsed(last_ack_time) > MAX_STALL_TIME){
             char time_str[20] = "";
             printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            // exit(-1);
+            exit(-1);
         }
         if(cur_ack_rel < recved_seq.getFirstEnd_withLock()){
             last_recv_inorder = recved_seq.getFirstEnd_withLock();
@@ -1724,15 +1712,21 @@ void Optimack::try_for_gaps_and_request(){
                 // printf("recved_seq[0].end %u, sack_list[0].start %u\n", last_recv_inorder, sack_list.getElem_withLock(0,true));
                 // print_ss(stdout);
                 auto sack_interval_list = sack_list.getIntervalList();
-                we2squid_loss_and_start_range_recv(cur_ack_rel, sack_interval_list.at(0).start-1);
+                we2squid_loss_and_start_range_recv(cur_ack_rel, sack_interval_list.at(0).start-1, lost_ranges);
+
                 uint min_seq = get_min_next_seq_rem();
                 for(int i = 1; i < sack_interval_list.size(); i++){
-                    if(min_seq >= sack_interval_list.at(i-1).end)
-                        we2squid_loss_and_start_range_recv(sack_interval_list.at(i-1).end, sack_interval_list.at(i).start-1);
+                    if(min_seq >= sack_interval_list.at(i-1).end){
+                        Interval we2squid_range2(sack_interval_list.at(i-1).end, sack_interval_list.at(i).start-1);
+                        if(get_lost_range(&we2squid_range2) >= 0){
+                            lost_ranges->insertNewInterval(we2squid_range2);
+                            log_info("we2squid lost: request range[%u, %u]", we2squid_range2.start, we2squid_range2.end);
+                        }
+                    }
                 }
             }
             else{
-                we2squid_loss_and_start_range_recv(cur_ack_rel, last_recv_inorder-1);
+                we2squid_loss_and_start_range_recv(cur_ack_rel, last_recv_inorder-1, lost_ranges);
             }
             pthread_mutex_unlock(sack_list.getMutex());
         }
@@ -1744,15 +1738,39 @@ void Optimack::try_for_gaps_and_request(){
         // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);
         if(first_out_of_order){
-            IntervalList* intervallist = get_lost_range(recved_seq.getFirstEnd_withLock(), first_out_of_order-1);
-            if(intervallist){
-                all_lost_seq.insertNewInterval_withLock(intervallist->getIntervalList().at(0).start, intervallist->getIntervalList().at(0).end);
-                log_info("lost on all: request range[%u, %u]",intervallist->getIntervalList().at(0).start, intervallist->getIntervalList().at(0).end);
-                start_range_recv(intervallist);
+            Interval lost_all_range(recved_seq.getFirstEnd_withLock(), first_out_of_order-1);
+            if(get_lost_range(&lost_all_range) >= 0){
+                lost_ranges->insertNewInterval(lost_all_range);
+                all_lost_seq.insertNewInterval_withLock(lost_all_range);
+                log_info("lost on all: request range[%u, %u]",lost_all_range.start, lost_all_range.end);
+                // start_range_recv(intervallist);
             }
         }
     }
+    
+    if(lost_ranges->size())
+        start_range_recv(lost_ranges);
+    else
+        free(lost_ranges);
 }
+
+void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_list){
+    Interval we2squid_range(start, end);
+    if(get_lost_range(&we2squid_range) >= 0){
+        printf("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u\n", start, end);
+        log_info("[Warn]: tool to squid packet loss! cur_ack_rel %u - last_recv_inorder %u", start, end);
+
+        intvl_list->insertNewInterval(we2squid_range);
+        start = we2squid_range.start;
+        end = we2squid_range.end;
+        if(we2squid_lost_seq.checkAndinsertNewInterval_withLock(start, end)){
+            we2squid_lost_cnt++;
+            we2squid_penalty += elapsed(last_ack_time);
+        }
+        log_info("we2squid lost: request range[%u, %u]", start, end);
+    }
+}
+
 
 uint Optimack::get_min_next_seq_rem(){
     uint min_next_seq_rem = -1;
@@ -1775,7 +1793,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     return true;
 }
 
-IntervalList* Optimack::get_lost_range(uint start, uint end)
+int Optimack::get_lost_range(Interval* intvl)
 {
     // uint min_next_seq_rem = recved_seq.getElem_withLock(1, true);
     // // recved_seq.printIntervals();
@@ -1788,21 +1806,53 @@ IntervalList* Optimack::get_lost_range(uint start, uint end)
     
     // if(min_next_seq_rem == -1)
     //     return Interval(0,0);
-
-    if(start == 0 || end == 0 || start < response_header_len || end < response_header_len)
-        return NULL;
+    uint start = intvl->start, end = intvl->end;
+    if(start == 0 || end == 0 || start < response_header_len+1 || end < response_header_len+1)
+        return -1;
 
     // check if the range has already been sent
-    IntervalList* lost_range = new IntervalList();
-    lost_range->clear();
-    lost_range->insertNewInterval(start-response_header_len-1, end-response_header_len-1);
-    lost_range->substract(&ranges_sent);
-    if(lost_range->size()){
-        return lost_range;
+    IntervalList lost_range;
+    lost_range.clear();
+    lost_range.insertNewInterval(start-response_header_len-1, end-response_header_len-1);
+    lost_range.substract(&ranges_sent);
+    if(lost_range.size()){
+        intvl->start = lost_range.getIntervalList().at(0).start;
+        intvl->end = lost_range.getIntervalList().at(0).end;
+        return 0;
     }
     else
-        return NULL;
+        return -1;
 }
+
+// IntervalList* Optimack::get_lost_range(uint start, uint end)
+// {
+//     // uint min_next_seq_rem = recved_seq.getElem_withLock(1, true);
+//     // // recved_seq.printIntervals();
+//     // if(min_next_seq_rem == 0)
+//     //     min_next_seq_rem = -1;
+    
+//     // // for (size_t i = 1; i < num_conns; i++)
+//     // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
+//     //     min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+    
+//     // if(min_next_seq_rem == -1)
+//     //     return Interval(0,0);
+
+//     if(start == 0 || end == 0 || start < response_header_len || end < response_header_len)
+//         return NULL;
+
+//     // check if the range has already been sent
+//     IntervalList* lost_range = new IntervalList();
+//     lost_range->clear();
+//     lost_range->insertNewInterval(start-response_header_len-1, end-response_header_len-1);
+//     lost_range->substract(&ranges_sent);
+//     if(lost_range->size()){
+//         return lost_range;
+//     }
+//     else
+//         return NULL;
+// }
+
 
 
 struct Range_Args{
@@ -1835,7 +1885,6 @@ void Optimack::start_range_recv(IntervalList* list){
 void*
 range_recv(void* arg)
 {
-
     int rv, range_sockfd, local_port, remote_port, seq_offset, seq_loc, ini_seq_loc;
     char response[MAX_RANGE_SIZE+1];
     char data[MAX_RANGE_SIZE+1];
@@ -1857,9 +1906,6 @@ range_recv(void* arg)
     printf("[Range]: range_recv thread starts for [%u, %u]\n", start_seq, end_seq);
     log_info("[Range]: range_recv thread starts for [%u, %u]", start_seq, end_seq);
 
-    // resend pending requests
-    int request_len = obj->request_len;
-    char request[MAX_RANGE_SIZE+1];
     pthread_mutex_t *mutex = &(obj->mutex_seq_gaps);
     subconn_info* subconn = (obj->subconn_infos.begin()->second);
 
@@ -1871,13 +1917,20 @@ range_recv(void* arg)
     // SBuf headerBuf;
     while(range_job->size() != 0){
 
+        if(obj->cur_ack_rel >= end_seq+obj->response_header_len+1){
+            range_job->getIntervalList().clear();
+            printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early\n", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
+            log_info("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
+            break;
+        }
+
         range_sockfd = obj->establish_tcp_connection();
 
-        memcpy(request, obj->request, request_len);
         // obj->ranges_sent.printIntervals();
         for(auto it : range_job->getIntervalList()) {
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
-            obj->send_http_range_request(range_sockfd, it);
+            if(obj->cur_ack_rel < it.end+obj->response_header_len+1)
+                obj->send_http_range_request(range_sockfd, it);
             // memset(request+request_len, 0, MAX_RANGE_SIZE-request_len);
             // sprintf(request+request_len-2, "Range: bytes=%d-%d\r\n\r\n", it.start, it.end);
             // send(range_sockfd, request, strlen(request), 0);
@@ -1893,10 +1946,10 @@ range_recv(void* arg)
             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
             rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, 0);
             
-            if(obj->cur_ack_rel >= end_seq){
+            if(obj->cur_ack_rel >= end_seq+obj->response_header_len+1){
                 range_job->getIntervalList().clear();
-                printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early\n", start_seq, end_seq, obj->cur_ack_rel, end_seq);
-                log_info("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early", start_seq, end_seq, obj->cur_ack_rel, end_seq);
+                printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early\n", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
+                log_info("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
                 break;
             }
 
@@ -2013,6 +2066,8 @@ range_recv(void* arg)
         } while (rv > 0);
         close(range_sockfd);
     }
+    free(header);
+    range_job->getIntervalList().clear();
     free(range_job);
     free(range_args);
 
@@ -2218,7 +2273,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         if(rwnd > max_win_size)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
-                        last_ack_time = std::chrono::system_clock::now();
                         memset(time_str, 0, 64);
                         log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str));
                         pthread_mutex_lock(sack_list.getMutex());
@@ -2294,6 +2348,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             // pthread_mutex_unlock(&mutex_seq_gaps);
                             // log_debugv("P%d-S%d-out: process_tcp_packet:737: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
                             last_ack_rel = cur_ack_rel;
+                            last_ack_time = std::chrono::system_clock::now();
                         }
                         pthread_mutex_unlock(&mutex_cur_ack_rel);
                         log_debugv("P%d-S%d-out: process_tcp_packet:710: mutex_cur_ack_rel - unlock", thr_data->pkt_id, subconn_i); 

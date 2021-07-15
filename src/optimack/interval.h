@@ -61,6 +61,8 @@ public:
     // Function to insert new interval and merge overlapping intervals
     void insert(Interval newInterval);
     void insertNewInterval(unsigned int start, unsigned int end);
+    void insertNewInterval(Interval newInterval);
+    void insertNewInterval_withLock(Interval newInterval);
     void insertNewInterval_withLock(unsigned int start, unsigned int end);
     unsigned int insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end);
     bool checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end);
