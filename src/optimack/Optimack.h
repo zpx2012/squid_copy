@@ -76,6 +76,7 @@ void* send_all_requests(void* arg);
 class Optimack
 {
 public:
+    Optimack();
     ~Optimack();
     void init();
     int setup_nfq(unsigned short id);
@@ -186,6 +187,20 @@ public:
     int range_stop, range_sockfd;
     IntervalList ranges_sent;
     uint response_header_len, requested_bytes = 0;
+
+    //receive buffer
+    struct data_segment{
+        unsigned char* data;
+        int len;
+        data_segment() 
+        { data = NULL; len = 0; }
+        data_segment(unsigned char* data_, int len_)
+        { data = data_; len = len_; }
+    };
+    std::map<uint, struct data_segment> recv_buffer;
+    pthread_mutex_t mutex_recv_buffer = PTHREAD_MUTEX_INITIALIZER;
+    int insert_to_recv_buffer(uint seq, unsigned char* data, int len);
+    int remove_recved_recv_buffer(uint seq);
 };
 
 
