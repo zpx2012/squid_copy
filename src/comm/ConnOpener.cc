@@ -291,12 +291,12 @@ Comm::ConnOpener::createFd()
         return false;
     }
 
-     /* Our code */
-    unsigned int size = 6291456/2;
-    if (setsockopt(temporaryFd_, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
-        int xerrno = errno;
-        debugs(50, DBG_CRITICAL, MYNAME << "FD " << temporaryFd_ << ", SIZE " << size << ": " << xstrerr(xerrno));
-    }
+    //  /* Our code */
+    // unsigned int size = 6291456/2;
+    // if (setsockopt(temporaryFd_, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+    //     int xerrno = errno;
+    //     debugs(50, DBG_CRITICAL, MYNAME << "FD " << temporaryFd_ << ", SIZE " << size << ": " << xstrerr(xerrno));
+    // }
 
     // Set TOS if needed.
     if (conn_->tos &&

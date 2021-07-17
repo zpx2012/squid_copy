@@ -53,7 +53,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
@@ -1867,19 +1867,20 @@ struct Range_Args{
 };
 
 void Optimack::start_range_recv(IntervalList* list){
-    if(list->size() != 1){
-        printf("start_range_recv: Error - intervallist size != 1");
-        list->printIntervals();
-    }
+    // if(list->size() != 1){
+    //     printf("start_range_recv: Error - intervallist size != 1");
+    //     list->printIntervals();
+    // }
+    ranges_sent.insertNewInterval_withLock(list->getIntervalList().at(0).start, list->getIntervalList().at(0).end);
 
     Range_Args* range_args = new Range_Args(this, list);
     pthread_t range_thread;
     if (pthread_create(&range_thread, NULL, range_recv, (void *)range_args) != 0) {
+        ranges_sent.removeInterval_withLock(list->getIntervalList().at(0).start, list->getIntervalList().at(0).end);
         //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
         perror("Can't create range_watch thread\n");
         return;
     }
-    ranges_sent.insertNewInterval_withLock(list->getIntervalList().at(0).start, list->getIntervalList().at(0).end);
 }
 
 void*
@@ -2015,7 +2016,7 @@ range_recv(void* arg)
                             * remove interval gaps (header->start, header->end) here
                             */
                             range_job->removeInterval(header->start, header->end);
-                            obj->ranges_sent.removeInterval_withLock(header->start, header->end);
+                            // obj->ranges_sent.removeInterval_withLock(header->start, header->end);
                         }
                         else {
                             // still need more data
@@ -2032,7 +2033,7 @@ range_recv(void* arg)
                             * remove interval gaps (header->start, header->start+unread-1) here
                             */
                             range_job->removeInterval(header->start, header->start+unsent);
-                            obj->ranges_sent.removeInterval_withLock(header->start, header->start+unsent);
+                            // obj->ranges_sent.removeInterval_withLock(header->start, header->start+unsent);
                         }
 
                         int sent;
@@ -2614,7 +2615,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
                 }
 
-                //Too many packets forwarded to squid will cause squid to discard right most packets
+                // Too many packets forwarded to squid will cause squid to discard right most packets
                 if(!is_new_segment && !subconn->is_backup){
                 // if (seq_rel + payload_len <= cur_ack_rel) {
                     // printf("P%d-S%d: discarded\n", thr_data->pkt_id, subconn_i); 
@@ -2758,12 +2759,17 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
         return;
     }
 
+    // unsigned int size =300000/2;
+    // if (setsockopt(new_subconn->sockfd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+    //     printf("Error: can't set SOL_SOCKET to %u!\n", size);
+    // }
+
     // Set server_addr
     bzero(&server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(g_remote_ip);
     server_addr.sin_port = htons(g_remote_port);
-    
+
     // Connect to server
     if (connect(new_subconn->sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connect server error");
@@ -2855,10 +2861,10 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     char* cmd;
     int ret;
 
-    // unsigned int size = 6291456;
-    // if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
-    //     printf("Error: can't set SOL_SOCKET to %u!\n", size);
-    // }
+    unsigned int size = 6291456/2;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+        printf("Error: can't set SOL_SOCKET to %u!\n", size);
+    }
 
     struct tcp_info tcp_info;
     socklen_t tcp_info_length = sizeof(tcp_info);
