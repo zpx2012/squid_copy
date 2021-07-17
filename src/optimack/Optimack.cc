@@ -2275,7 +2275,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         memset(time_str, 0, 64);
-                        log_info("P%d-Squid-out: squid ack %u, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str));
+                        log_info("P%d-Squid-out: squid ack %u, th_win %u, win_scale %d, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s", thr_data->pkt_id, cur_ack_rel, ntohs(tcphdr->th_win), win_scale, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str));
                         pthread_mutex_lock(sack_list.getMutex());
                         sack_list.clear();
                         if(tcp_opt_len){
@@ -2982,7 +2982,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
             open_one_duplicate_conn(subconn_infos, true);
         }
     }
-    log_info("[Squid Conn] port: %d", local_port);
+    log_info("[Squid Conn] port: %d, win_scale %d", local_port, squid_conn->win_scale);
 }
 
 
