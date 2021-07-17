@@ -53,11 +53,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 250
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -1706,7 +1706,7 @@ void* overrun_detector(void* arg){
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder;
     IntervalList* lost_ranges = new IntervalList();
-    if(elapsed(last_ack_time) > 2){
+    if(elapsed(last_ack_time) > 10){
         if(elapsed(last_ack_time) > MAX_STALL_TIME){
             char time_str[20] = "";
             printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
