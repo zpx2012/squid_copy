@@ -1515,8 +1515,6 @@ range_watch(void* arg)
         }
 
         range_sockfd = obj->establish_tcp_connection();
-        if(range_sockfd <= 0)//TODO: remove ranges_sent?
-            break;
 
         memcpy(request, obj->request, request_len);
         std::vector<Interval> range_sent_intervals = obj->ranges_sent.getIntervalList();
@@ -1926,7 +1924,9 @@ range_recv(void* arg)
         }
 
         range_sockfd = obj->establish_tcp_connection();
-
+        if(range_sockfd <= 0)//TODO: remove ranges_sent?
+            break;
+        
         // obj->ranges_sent.printIntervals();
         for(auto it : range_job->getIntervalList()) {
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
