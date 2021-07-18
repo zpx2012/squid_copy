@@ -658,7 +658,7 @@ full_optimistic_ack_altogether(void* arg)
     log_info("Optimistic ack started");
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), last_restart = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1;
+    unsigned int opa_ack_start = 1, last_restart_seq = 1;
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
@@ -721,28 +721,30 @@ full_optimistic_ack_altogether(void* arg)
         }
         if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
             // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
+            if(min_next_seq_rem == last_restart_seq && elapsed(last_restart) < 3)
+                continue;
             if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
                 continue;
-            if(elapsed(last_restart) >= 2){
-                if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
-                    continue;
-                if(abs(zero_window_start-min_next_seq_rem) > 3*obj->squid_MSS && elapsed(last_zero_window) > 5*send_ack_pace){
-                    obj->overrun_cnt++;
-                    obj->overrun_penalty += elapsed(last_restart);
-                    sprintf(log, "O: overrun, ");
-                }
-                else
-                    sprintf(log, "O: recover from zero window, ");
-                sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
-                if (min_next_seq_rem > 5*obj->squid_MSS)
-                    opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
-                else
-                    opa_ack_start = 1;
-                last_restart = std::chrono::system_clock::now();
-                sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
-                log_info(log);
-                printf(log);
+            if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
+                continue;
+            if(abs(zero_window_start-min_next_seq_rem) > 3*obj->squid_MSS && elapsed(last_zero_window) > 5*send_ack_pace){
+                obj->overrun_cnt++;
+                obj->overrun_penalty += elapsed(last_restart);
+                sprintf(log, "O: overrun, ");
             }
+            else
+                sprintf(log, "O: recover from zero window, ");
+            sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+            if (min_next_seq_rem > 5*obj->squid_MSS)
+                opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
+            else
+                opa_ack_start = 1;
+            last_restart_seq = min_next_seq_rem;
+            last_restart = std::chrono::system_clock::now();
+            sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
+            log_info(log);
+            printf(log);
+
 
             // if(elapsed(conn->last_data_received) >= 120){
             //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
@@ -2291,7 +2293,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                     if (subconn_i == 0) {
                         this->rwnd = ntohs(tcphdr->th_win) * win_scale;
-                        this->rwnd = rwnd > 6291456? 6291456 : rwnd;
+                        // this->rwnd = rwnd > 6291456? 6291456 : rwnd;
                         if(rwnd > max_win_size)
                             max_win_size = rwnd;
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
