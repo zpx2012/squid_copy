@@ -731,14 +731,21 @@ full_optimistic_ack_altogether(void* arg)
                 obj->overrun_cnt++;
                 obj->overrun_penalty += elapsed(last_restart);
                 sprintf(log, "O: overrun, ");
+                sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+                if (min_next_seq_rem > 5*obj->squid_MSS)
+                    opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
+                else
+                    opa_ack_start = 1;
             }
-            else
+            else{
                 sprintf(log, "O: recover from zero window, ");
-            sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
-            if (min_next_seq_rem > 5*obj->squid_MSS)
-                opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
-            else
-                opa_ack_start = 1;
+                sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+                if (min_next_seq_rem > obj->squid_MSS)
+                    opa_ack_start = min_next_seq_rem - obj->squid_MSS;
+                else
+                    opa_ack_start = 1;
+            }
+
             last_restart_seq = min_next_seq_rem;
             last_restart = std::chrono::system_clock::now();
             sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
@@ -1933,7 +1940,7 @@ range_recv(void* arg)
 
         if(obj->cur_ack_rel >= end_seq+obj->response_header_len+1){
             range_job_vector.clear();
-            printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early before sending\n", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
+            // printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early before sending\n", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
             log_info("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early before sending", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
             break;
         }
@@ -1971,7 +1978,7 @@ range_recv(void* arg)
             
             if(obj->cur_ack_rel >= end_seq+obj->response_header_len+1){
                 range_job_vector.clear();
-                printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early in recv\n", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
+                // printf("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early in recv\n", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
                 log_info("[Range]: [%u, %u], cur_ack_rel(%u) >= end_seq(%u), thread ends early in recv", start_seq+obj->response_header_len+1, end_seq+obj->response_header_len+1, obj->cur_ack_rel, end_seq+obj->response_header_len+1);
                 break;
             }
@@ -2083,9 +2090,10 @@ range_recv(void* arg)
                     log_debug("[Range] error: unread < 0");
             }
             else if (rv < 0){
-                log_debug("[Range] error: ret %d errno %d", rv, errno);
-                if(!(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+                if(!(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)){
+                    log_debug("[Range] error: ret %d errno %d", rv, errno);
                     break;
+                }
             }
             else{ 
                 log_debug("[Range]: ret %d, sockfd %d closed ", rv, range_sockfd);
@@ -2100,7 +2108,7 @@ range_recv(void* arg)
     free(range_job);
     free(range_args);
 
-    printf("[Range]: [%u, %u] Recved, range_recv thread exits...\n", start_seq, end_seq);
+    log_info("[Range]: [%u, %u] Recved, range_recv thread exits...", start_seq, end_seq);
     pthread_exit(NULL);
 }
 
@@ -2299,6 +2307,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         memset(time_str, 0, 64);
                         log_info("P%d-Squid-out: squid ack %u, th_win %u, win_scale %d, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s", thr_data->pkt_id, cur_ack_rel, ntohs(tcphdr->th_win), win_scale, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str));
+                        remove_recved_recv_buffer(cur_ack_rel);
                         pthread_mutex_lock(sack_list.getMutex());
                         sack_list.clear();
                         if(tcp_opt_len){
@@ -2373,8 +2382,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             // log_debugv("P%d-S%d-out: process_tcp_packet:737: mutex_seq_gaps - unlock", thr_data->pkt_id, subconn_i); 
                             last_ack_rel = cur_ack_rel;
                             last_ack_time = std::chrono::system_clock::now();
-                            remove_recved_recv_buffer(cur_ack_rel);
-
                         }
                         pthread_mutex_unlock(&mutex_cur_ack_rel);
                         log_debugv("P%d-S%d-out: process_tcp_packet:710: mutex_cur_ack_rel - unlock", thr_data->pkt_id, subconn_i); 
@@ -2636,7 +2643,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if(is_new_segment){//change to Interval
                     unsigned char* payload_recv_buffer = new unsigned char[payload_len];
                     memcpy(payload_recv_buffer, payload, payload_len);
-                    insert_to_recv_buffer(seq, payload_recv_buffer, payload_len);
+                    insert_to_recv_buffer(seq_rel, payload_recv_buffer, payload_len);
                 }
 
                 if(payload_len != subconn_infos.begin()->second->payload_len){
@@ -3029,7 +3036,7 @@ Optimack::exec_iptables(char action, char* rule)
 int Optimack::insert_to_recv_buffer(uint seq, unsigned char* data, int len)
 {
     pthread_mutex_lock(&mutex_recv_buffer);
-    auto ret = recv_buffer.insert ( std::pair<uint , struct data_segment>(seq, data_segment(data, len)) );
+    auto ret = recv_buffer.insert( std::pair<uint , struct data_segment>(seq, data_segment(data, len)) );
     if (ret.second == false) {
         printf("recv_buffer: %u already existed.\n", seq);
         if(ret.first->second.len < len){
@@ -3039,6 +3046,8 @@ int Optimack::insert_to_recv_buffer(uint seq, unsigned char* data, int len)
             recv_buffer.insert ( std::pair<uint , struct data_segment>(seq, data_segment(data, len)) );
         }
     }
+    else
+        log_info("recv_buffer: insert [%u, %u] len %d", seq, seq+len-1, len);
     pthread_mutex_unlock(&mutex_recv_buffer);
     return 0;
 }
@@ -3049,27 +3058,35 @@ int Optimack::remove_recved_recv_buffer(uint seq)
     struct subconn_info* squid_conn = subconn_infos[squid_port];
     pthread_mutex_lock(&mutex_recv_buffer);
     for(auto it = recv_buffer.begin(); it != recv_buffer.end();){
-        if(it->first+it->second.len < seq){
+        if(it->first+it->second.len-1 < seq){
+            log_info("recv_buffer: remove [%u, %u], cur seq %u\n", it->first, it->first+it->second.len-1, seq);
             free(it->second.data);
-            recv_buffer.erase(it);
+            recv_buffer.erase(it++);
         }
         else if(it->first < seq){
-            int len_left = it->second.len - (seq-it->first);
+            int len_recv = seq-it->first;
+            int len_left = it->second.len - len_recv;
+            printf("recv_buffer: remove [%u, %u] of [%u, %u], cur seq %u\n", it->first, it->first+len_recv, it->first, it->first+it->second.len, seq);
             unsigned char* data_left = new unsigned char[len_left];
-            memcpy(data_left, it->second.data, len_left);
+            memcpy(data_left, it->second.data+len_recv, len_left);
             free(it->second.data);
-            recv_buffer.erase(it);
+            recv_buffer.erase(it++);
             recv_buffer.insert(std::pair<uint , struct data_segment>(seq, data_segment(data_left, len_left)));
             int len_send = len_left <= squid_MSS? len_left : squid_MSS;
-            send_ACK_payload(g_local_ip, g_remote_ip, squid_port, g_remote_port, data_left, len_send, squid_conn->ini_seq_rem + seq, squid_conn->ini_seq_loc + squid_conn->next_seq_loc);
+            printf("recv_buffer: send [%u, %u]\n", seq, seq+len_send-1);
+            send_ACK_payload(g_local_ip, g_remote_ip, squid_port, g_remote_port, data_left, len_send, squid_conn->ini_seq_loc + squid_conn->next_seq_loc, squid_conn->ini_seq_rem + seq);
         }
         else if (it->first == seq){
             int len_send = it->second.len <= squid_MSS? it->second.len : squid_MSS;
-            send_ACK_payload(g_local_ip, g_remote_ip, squid_port, g_remote_port, it->second.data, len_send, squid_conn->ini_seq_rem + seq, squid_conn->ini_seq_loc + squid_conn->next_seq_loc);
+            log_info("recv_buffer: send [%u, %u]\n", seq, seq+len_send-1);
+            send_ACK_payload(g_local_ip, g_remote_ip, squid_port, g_remote_port, it->second.data, len_send, squid_conn->ini_seq_loc + squid_conn->next_seq_loc, squid_conn->ini_seq_rem + seq);
+            it++;
             break;
         }
-        else
-           break;
+        else{
+            // printf("recv_buffer: [%u, %u] > seq %u, break\n", it->first, it->first+it->second.len, seq);
+            break;
+        }
     }
     pthread_mutex_unlock(&mutex_recv_buffer);
     return 0;
