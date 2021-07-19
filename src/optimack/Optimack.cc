@@ -53,11 +53,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 2000
+#define ACKPACING 1750
 #endif
 
 #define MAX_STALL_TIME 240
@@ -657,8 +657,9 @@ full_optimistic_ack_altogether(void* arg)
 
     log_info("Optimistic ack started");
 
-    auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), last_restart = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1, last_restart_seq = 1, last_restart_port = 1;
+    auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
+         last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
+    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 1;
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
@@ -679,8 +680,10 @@ full_optimistic_ack_altogether(void* arg)
                 }
             }
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
-            if(adjusted_rwnd <= 0)
+            if(adjusted_rwnd <= 0){
                 zero_window_start = opa_ack_start;
+                opa_ack_start = obj->get_min_next_seq_rem();
+            }
             else 
                 opa_ack_start += obj->squid_MSS;
 
@@ -697,74 +700,77 @@ full_optimistic_ack_altogether(void* arg)
         }
 
         //Overrun detection
-        long min_next_seq_rem = INT_MAX;
-        uint stall_seq = 0, stall_port = 0;
-        bool is_stall = false;
-        pthread_mutex_lock(&obj->mutex_subconn_infos);
-        for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-            if(!it->second->is_backup){
-                if (elapsed(it->second->last_data_received) >= 2){
-                    is_stall = true;
-                    stall_port = it->second->local_port;
-                    stall_seq = it->second->next_seq_rem;
-                    if(elapsed(it->second->last_data_received) > 10 && elapsed(last_zero_window) > 30){
-                        char time_str[20];
-                        memset(time_str, 0, 20);
-                        printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        obj->subconn_infos.erase(it);
-                        continue;
+        if (elapsed(last_overrun_check) >= 0.1){
+            uint min_next_seq_rem = obj->get_min_next_seq_rem();
+            uint stall_seq = 0, stall_port = 0;
+            bool is_stall = false;
+            pthread_mutex_lock(&obj->mutex_subconn_infos);
+            for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
+                if(!it->second->is_backup){
+                    if (elapsed(it->second->last_data_received) >= 2){
+                        is_stall = true;
+                        stall_port = it->second->local_port;
+                        stall_seq = it->second->next_seq_rem;
+                        if(it->second->next_seq_rem >= min_next_seq_rem && elapsed(it->second->last_data_received) > MAX_STALL_TIME && elapsed(last_zero_window) > 30){
+                            char time_str[20];
+                            memset(time_str, 0, 20);
+                            printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                            log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+                            obj->subconn_infos.erase(it++);
+                        }
+                        break;
                     }
                 }
-                min_next_seq_rem = std::min(min_next_seq_rem, (long)it->second->next_seq_rem);
+                it++;
             }
-        }
-        pthread_mutex_unlock(&obj->mutex_subconn_infos);
+            pthread_mutex_unlock(&obj->mutex_subconn_infos);
 
-        if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
-            // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-            if(stall_seq == last_restart_seq && stall_port == last_restart_port && elapsed(last_restart) < 3)
-                continue;
-            if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
-                continue;
-            if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
-                continue;
-            if(elapsed(last_restart) < 1)
-                continue;
-            if(abs(zero_window_start-min_next_seq_rem) > 3*obj->squid_MSS && elapsed(last_zero_window) > 5*send_ack_pace){
-                obj->overrun_cnt++;
-                obj->overrun_penalty += elapsed(last_restart);
-                sprintf(log, "O: overrun, ");
-                sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
-                if (min_next_seq_rem > 5*obj->squid_MSS)
-                    opa_ack_start = min_next_seq_rem - 5*obj->squid_MSS;
-                else
-                    opa_ack_start = 1;
+            if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+                // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
+                if (elapsed(last_zero_window) <= 2)//should be 2*rtt
+                    continue;
+                if(stall_seq == last_stall_seq && stall_port == last_stall_port && elapsed(last_restart) < 3)
+                    continue;
+                if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
+                    continue;
+                uint restart_seq = min_next_seq_rem > 5*obj->squid_MSS? min_next_seq_rem > 5*obj->squid_MSS : 1;
+                if(restart_seq == last_restart_seq)
+                    continue;
+                // if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
+                //     continue;
+                // if(elapsed(last_restart) <= 0)
+                //     continue;
+                // if(abs(zero_window_start-min_next_seq_rem) > 3*obj->squid_MSS && elapsed(last_zero_window) > 5*send_ack_pace){
+                    obj->overrun_cnt++;
+                    obj->overrun_penalty += elapsed(last_restart);
+                    sprintf(log, "O: overrun, ");
+                    sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+                    opa_ack_start = restart_seq;
+                // }
+                // else{
+                    // sprintf(log, "O: recover from zero window, ");
+                    // sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+                    // if (min_next_seq_rem > obj->squid_MSS)
+                    //     opa_ack_start = min_next_seq_rem - obj->squid_MSS;
+                    // else
+                    //     opa_ack_start = 1;
+                // }
+                last_stall_port = stall_port;
+                last_stall_seq = stall_seq;
+                last_restart_seq = restart_seq;
+                last_restart = std::chrono::system_clock::now();
+                sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
+                log_info(log);
+                printf(log);
             }
-            else{
-                sprintf(log, "O: recover from zero window, ");
-                sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
-                if (min_next_seq_rem > obj->squid_MSS)
-                    opa_ack_start = min_next_seq_rem - obj->squid_MSS;
-                else
-                    opa_ack_start = 1;
-            }
-            last_restart_port = stall_port;
-            last_restart_seq = stall_seq;
-            // last_restart_seq = min_next_seq_rem;
-            last_restart = std::chrono::system_clock::now();
-            sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
-            log_info(log);
-            printf(log);
-
-
+            last_overrun_check = std::chrono::system_clock::now();
             // if(elapsed(conn->last_data_received) >= 120){
             //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
             //     exit(-1);
             // }
         }
 
-        usleep(10);
+        // usleep(10);
     }
  
     // conn->optim_ack_stop = 0;
@@ -1062,34 +1068,37 @@ Optimack::cleanup()
 
     if(!overrun_stop){
         overrun_stop++;
-        pthread_join(overrun_thread, NULL);
-        log_info("overrun_thread exited");    
+        // pthread_join(overrun_thread, NULL);
+        log_info("ask overrun_thread to exit");    
     }
 
     if(!range_stop){
         range_stop++;
         // pthread_join(range_thread, NULL);
-        log_info("range_watch_thread exited");    
+        log_info("ask range_watch_thread to exit");    
     }
 
     if(!optim_ack_stop){
         optim_ack_stop++;
-        pthread_join(optim_ack_thread, NULL);
-        log_info("optimack_thread exited");    
+        // pthread_join(optim_ack_thread, NULL);
+        log_info("ask optimack_altogether_thread to exit");    
     }
 
     // stop other optimistic_ack threads and close fd
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-    // for (size_t i=0; i < subconn_infos.size(); i++) {
-        // TODO: mutex?
-        if (!it->second->optim_ack_stop) {
-            it->second->optim_ack_stop++;
-            pthread_join(it->second->thread, NULL);
-            close(it->second->sockfd);
-        }
-    }
-    log_info("NFQ %d all optimistic threads exited", nfq_queue_num);
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+    // // for (size_t i=0; i < subconn_infos.size(); i++) {
+    //     // TODO: mutex?
+    //     if (!it->second->optim_ack_stop) {
+    //         it->second->optim_ack_stop++;
+    //         pthread_join(it->second->thread, NULL);
+    //         close(it->second->sockfd);
+    //     }
+    // }
+    // log_info("NFQ %d all optimistic threads exited", nfq_queue_num);
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 
+    pthread_mutex_lock(&mutex_subconn_infos);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         free(it->second);
     subconn_infos.clear();
@@ -1100,6 +1109,7 @@ Optimack::cleanup()
     }
     iptables_rules.clear();
     request_recved = false;
+    pthread_mutex_unlock(&mutex_subconn_infos);
 }
 
 Optimack::Optimack()
@@ -1115,7 +1125,7 @@ Optimack::~Optimack()
     log_info("enter destructor");
 
     // stop nfq_loop thread
-    pthread_mutex_lock(&mutex_subconn_infos);
+    // pthread_mutex_lock(&mutex_subconn_infos);
     if(nfq_stop)
         return;
 
@@ -1124,7 +1134,7 @@ Optimack::~Optimack()
     log_info("NFQ %d nfq_thread exited", nfq_queue_num);
 
     cleanup();
-    pthread_mutex_unlock(&mutex_subconn_infos);
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 
      // clear thr_pool
     thr_pool_destroy(pool);
@@ -1727,7 +1737,7 @@ void Optimack::try_for_gaps_and_request(){
             log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             exit(-1);
         }
-        if(cur_ack_rel < recved_seq.getFirstEnd_withLock()){
+        if(cur_ack_rel < recved_seq.getFirstEnd_withLock() && cur_ack_rel < get_min_next_seq_rem()){
             last_recv_inorder = recved_seq.getFirstEnd_withLock();
             // IntervalList* intervallist = NULL;
             pthread_mutex_lock(sack_list.getMutex());
@@ -2530,6 +2540,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                 }
 
+
                 // if(!subconn->payload_len && subconn->optim_ack_stop){
                 if(BACKUP_MODE){
                     if(subconn->is_backup && subconn->optim_ack_stop){
@@ -2599,10 +2610,10 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 pthread_mutex_unlock(&mutex_seq_next_global);
 
                 pthread_mutex_lock(&subconn->mutex_opa);
+                subconn->last_data_received = std::chrono::system_clock::now();
                 sprintf(log, "%s - cur next_seq_rem %u", log, subconn->next_seq_rem);
                 if (subconn->next_seq_rem <= seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
                     subconn->next_seq_rem = seq_rel + payload_len;
-                    subconn->last_data_received = std::chrono::system_clock::now();
                 }
                 memset(time_str, 0, 64);
                 sprintf(log,"%s - update next_seq_rem to %u - update last_data_received %s - ", log, subconn->next_seq_rem, print_chrono_time(subconn->last_data_received, time_str));

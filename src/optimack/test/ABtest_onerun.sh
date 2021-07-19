@@ -1,7 +1,8 @@
 #! /bin/bash
 # usage: ./test_off_packet.sh [tag]
 
-url='http://142.93.117.107/ubuntu-16.04.6-server-i386.template'
+# url='http://142.93.117.107/ubuntu-16.04.6-server-i386.template'
+url='http://142.93.117.107/md5sums.gz'
 site='142.93.117.107'
 
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
