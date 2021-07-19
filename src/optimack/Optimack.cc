@@ -53,11 +53,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 4
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1750
+#define ACKPACING 3000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -733,7 +733,7 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
                     continue;
-                uint restart_seq = min_next_seq_rem > 5*obj->squid_MSS? min_next_seq_rem > 5*obj->squid_MSS : 1;
+                uint restart_seq = min_next_seq_rem > 5*obj->squid_MSS? min_next_seq_rem - 5*obj->squid_MSS : 1;
                 if(restart_seq == last_restart_seq)
                     continue;
                 // if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
