@@ -1,9 +1,9 @@
 #! /bin/bash
 # usage: ./test_off_packet.sh [tag]
 
-# url='http://142.93.117.107/ubuntu-16.04.6-server-i386.template'
-url='http://142.93.117.107/md5sums.gz'
 site='142.93.117.107'
+url="http://$site/ubuntu-16.04.6-server-i386.template"
+# url="http://$site/md5sums.gz"
 
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
@@ -44,7 +44,7 @@ function cleanup()
     sudo iptables -t mangle -F
     rm /usr/local/squid/var/logs/cache.log
 }
-
+tc qdisc add dev eth0 root netem loss 10% delay 200ms
 
 function INT_handler()
 {
