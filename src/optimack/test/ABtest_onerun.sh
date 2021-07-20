@@ -1,7 +1,9 @@
 #! /bin/bash
 # usage: ./test_off_packet.sh [tag]
 
-site='142.93.117.107'
+site='142.93.117.07'
+# site='138.68.49.206' #SF-HTTP-SV
+# site='67.205.159.15' #NY-HTTP-SV
 url="http://$site/ubuntu-16.04.6-server-i386.template"
 # url="http://$site/md5sums.gz"
 
@@ -44,7 +46,6 @@ function cleanup()
     sudo iptables -t mangle -F
     rm /usr/local/squid/var/logs/cache.log
 }
-tc qdisc add dev eth0 root netem loss 10% delay 200ms
 
 function INT_handler()
 {
