@@ -16,7 +16,7 @@ static FILE *exp_log_file;
 int opt_logging_to_file = 1;
 
 // Logging level: 0 - error, 1 - warning, 2 - info, 3 - debug, 4 - debug (verbose)
-int opt_logging_level = 3;
+int opt_logging_level = 2;
 
 
 int init_log()

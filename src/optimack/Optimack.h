@@ -9,11 +9,13 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval.h"
+#ifdef OPENSSL
+#include <openssl/ssl.h>
+#endif
 // #include "comm/Connection.h"
 // #include "../comm/forward.h"
 // #include <bits/stdc++.h>
 // using namespace std;
-
 class Optimack;
 
 struct subconn_info
@@ -49,6 +51,10 @@ struct subconn_info
     // pthread_mutex_t mutex_seq_gaps;
 
     bool is_backup;
+#ifdef OPENSSL
+    SSL *ssl;
+    unsigned char *salt, *session_key;
+#endif
 };
 
 // Multithread
@@ -108,7 +114,7 @@ public:
     int send_ACK_adjusted_rwnd(struct subconn_info* conn, int cur_ack);
     int send_optimistic_ack_with_timer(struct subconn_info* conn, int cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
-    int modify_to_main_conn_packet(int id, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
+    int modify_to_main_conn_packet(struct subconn_info* subconn, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
     int get_ajusted_rwnd(int cur_ack);
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
@@ -201,6 +207,13 @@ public:
     pthread_mutex_t mutex_recv_buffer = PTHREAD_MUTEX_INITIALIZER;
     int insert_to_recv_buffer(uint seq, unsigned char* data, int len);
     int remove_recved_recv_buffer(uint seq);
+
+    //TLS
+#ifdef OPENSSL
+    SSL * open_ssl_conn(int fd);
+    int open_duplicate_ssl_conns(SSL *squid_ssl);
+    int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
+#endif
 };
 
 

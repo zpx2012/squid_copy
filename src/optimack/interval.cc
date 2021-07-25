@@ -1,5 +1,7 @@
 #include "interval.h"
 #include <stdio.h>
+#include "logging.h"
+#include <string.h>
 
 void IntervalList::clear(){
     Intervals.clear();
@@ -151,8 +153,10 @@ bool IntervalList::contains(unsigned int start, unsigned int end){
         return false;
     
     for(int i = 0; i < n; i++)
-        if(does_a_contains_b(Intervals[i], newInterval))
+        if(does_a_contains_b(Intervals[i], newInterval)){
+            log_info("%s - [%u, %u] contains newInterval [%u, %u]", Intervals2str().c_str(), Intervals[i].start, Intervals[i].end, start, end);
             return true;
+        }
     return false;
 }
 
@@ -413,7 +417,12 @@ void IntervalList::printIntervals(){
 
 std::string IntervalList::Intervals2str(){
     std::string result = "";
-    for (size_t i = 0; i < Intervals.size(); i++)
-        result += "[" + std::to_string(Intervals[i].start) + ", " + std::to_string(Intervals[i].end) + "], ";
+    char temp[100] = {0};
+    for (size_t i = 0; i < Intervals.size(); i++){
+        memset(temp, 0, 100);
+        sprintf(temp, "[%u, %u], ", Intervals[i].start, Intervals[i].end);
+        result += temp;
+    }
+        // result += "[" + std::to_string(Intervals[i].start) + ", " + std::to_string(Intervals[i].end) + "], ";
     return result;
 }
