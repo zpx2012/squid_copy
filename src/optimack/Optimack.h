@@ -210,6 +210,12 @@ public:
 
     //TLS
 #ifdef OPENSSL
+    struct TLSHeader{
+        unsigned char type;
+        unsigned short version;
+        unsigned short length;
+        unsigned char* ciphertext;
+    };
     SSL * open_ssl_conn(int fd);
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);

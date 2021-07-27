@@ -24,16 +24,20 @@ using namespace std;
 #include "socket.h"
 #include "util.h"
 #include "checksum.h"
-#include "Debug.h"
+// #include "Debug.h"
 #include "logging.h"
 
 // for http parsing
 #include <cstring>
 #include <algorithm>
-#include "squid.h"
-#include "sbuf/SBuf.h"
-#include "http/one/RequestParser.h"
-#include "http/one/ResponseParser.h"
+// #include "squid.h"
+// #include "sbuf/SBuf.h"
+// #include "http/one/RequestParser.h"
+// #include "http/one/ResponseParser.h"
+// #include "../../include/squid.h"
+// #include "../sbuf/SBuf.h"
+// #include "../http/one/RequestParser.h"
+// #include "../http/one/ResponseParser.h"
 
 #include "Optimack.h"
 #include <openssl/ssl.h>
@@ -54,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -220,7 +224,7 @@ nfq_loop(void *arg)
         }
         else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                debugs(0, DBG_CRITICAL,"recv() ret " << rv << " errno " << errno);
+                // debugs(0, DBG_CRITICAL,"recv() ret " << rv << " errno " << errno);
                 // printf("recv() ret %d errno %d\n", rv, errno);
             }
             usleep(100); //10000
@@ -803,7 +807,7 @@ int Optimack::start_optim_ack_backup(uint id, unsigned int opa_ack_start, unsign
     struct int_thread* ack_thr = (struct int_thread*)malloc(sizeof(struct int_thread));
     if (!ack_thr)
     {
-        debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
+        // debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
         return -1;
     }
     memset(ack_thr, 0, sizeof(struct int_thread));
@@ -835,7 +839,7 @@ int Optimack::start_optim_ack(uint id, unsigned int opa_ack_start, unsigned int 
     struct int_thread* ack_thr = (struct int_thread*)malloc(sizeof(struct int_thread));
     if (!ack_thr)
     {
-        debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
+        // debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
         return -1;
     }
     memset(ack_thr, 0, sizeof(struct int_thread));
@@ -870,7 +874,7 @@ int Optimack::start_optim_ack_altogether(unsigned int opa_ack_start, unsigned in
     struct int_thread* ack_thr = (struct int_thread*)malloc(sizeof(struct int_thread));
     if (!ack_thr)
     {
-        debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
+        // debugs(0, DBG_CRITICAL, "optimistic_ack: error during thr_data malloc");
         return -1;
     }
     memset(ack_thr, 0, sizeof(struct int_thread));
@@ -986,6 +990,7 @@ void Optimack::log_seq_gaps(){
         fprintf(info_file, "\n");
         is_nfq_full(info_file);
         fprintf(info_file,"\n");
+        fprintf(info_file, "Request: %s\n", request);
         fprintf(info_file, "Response: %s\n", response);
         fclose(info_file);
     }
@@ -1182,14 +1187,14 @@ Optimack::init()
     sockraw = open_sockraw();
     if (setsockopt(sockraw, SOL_SOCKET, SO_MARK, &MARK, sizeof(MARK)) < 0)
     {
-        debugs(0, DBG_CRITICAL, "couldn't set mark");
+        // debugs(0, DBG_CRITICAL, "couldn't set mark");
         exit(1);
     }
 
     int portno = 80;
     sockpacket = open_sockpacket(portno);
     if (sockpacket == -1) {
-        debugs(0, DBG_CRITICAL, "[main] can't open packet socket");
+        // debugs(0, DBG_CRITICAL, "[main] can't open packet socket");
         exit(EXIT_FAILURE);
     }
     //if (signal(SIGINT, signal_handler) == SIG_ERR) {
@@ -1207,7 +1212,7 @@ Optimack::init()
 
     pool = thr_pool_create(4, 16, 300, NULL);
     if (!pool) {
-            debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
+            // debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
             exit(1);                
     }
 
@@ -1277,41 +1282,41 @@ Optimack::setup_nfq(unsigned short id)
 {
     g_nfq_h = nfq_open();
     if (!g_nfq_h) {
-        debugs(0, DBG_CRITICAL,"error during nfq_open()");
+        // debugs(0, DBG_CRITICAL,"error during nfq_open()");
         return -1;
     }
 
-    debugs(0, DBG_CRITICAL,"unbinding existing nf_queue handler for AF_INET (if any)");
+    // debugs(0, DBG_CRITICAL,"unbinding existing nf_queue handler for AF_INET (if any)");
     if (nfq_unbind_pf(g_nfq_h, AF_INET) < 0) {
-        debugs(0, DBG_CRITICAL,"error during nfq_unbind_pf()");
+        // debugs(0, DBG_CRITICAL,"error during nfq_unbind_pf()");
         return -1;
     }
 
-    debugs(0, DBG_CRITICAL,"binding nfnetlink_queue as nf_queue handler for AF_INET");
+    // debugs(0, DBG_CRITICAL,"binding nfnetlink_queue as nf_queue handler for AF_INET");
     if (nfq_bind_pf(g_nfq_h, AF_INET) < 0) {
-        debugs(0, DBG_CRITICAL,"error during nfq_bind_pf()");
+        // debugs(0, DBG_CRITICAL,"error during nfq_bind_pf()");
         return -1;
     }
 
     // set up a queue
     nfq_queue_num = id;
-    debugs(0, DBG_CRITICAL,"binding this socket to queue " << nfq_queue_num);
+    // debugs(0, DBG_CRITICAL,"binding this socket to queue " << nfq_queue_num);
     g_nfq_qh = nfq_create_queue(g_nfq_h, nfq_queue_num, &cb, (void*)this);
     if (!g_nfq_qh) {
-        debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
+        // debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
         return -1;
     }
-    debugs(0, DBG_CRITICAL,"nfq queue handler: " << g_nfq_qh);
+    // debugs(0, DBG_CRITICAL,"nfq queue handler: " << g_nfq_qh);
 
-    debugs(0, DBG_CRITICAL,"setting copy_packet mode");
+    // debugs(0, DBG_CRITICAL,"setting copy_packet mode");
     if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
-        debugs(0, DBG_CRITICAL,"can't set packet_copy mode");
+        // debugs(0, DBG_CRITICAL,"can't set packet_copy mode");
         return -1;
     }
 
     unsigned int bufsize = 0x3fffffff, rc = 0;//
     if (nfq_set_queue_maxlen(g_nfq_qh, bufsize/1024) < 0) {
-        debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
+        // debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
         return -1;
     }
     struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
@@ -1338,7 +1343,7 @@ Optimack::setup_nfqloop()
     // pass the Optimack obj
     nfq_stop = cb_stop = 0;
     if (pthread_create(&nfq_thread, NULL, nfq_loop, (void*)this) != 0) {
-        debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
+        // debugs(1, DBG_CRITICAL,"Fail to create nfq thread.");
         return -1;
     }
     return 0;
@@ -1356,13 +1361,13 @@ Optimack::teardown_nfq()
 #ifdef INSANE
     /* normally, applications SHOULD NOT issue this command, since
      * it detaches other programs/sockets from AF_INET, too ! */
-    debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
+    // debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
     nfq_unbind_pf(g_nfq_h, AF_INET);
 #endif
 
-    debugs(0, DBG_CRITICAL,"closing library handle");
+    // debugs(0, DBG_CRITICAL,"closing library handle");
     if (nfq_close(g_nfq_h) != 0) {
-        debugs(0, DBG_CRITICAL,"error during nfq_close()");
+        // debugs(0, DBG_CRITICAL,"error during nfq_close()");
         return -1;
     }
 
@@ -1394,7 +1399,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
     if (!thr_data)
     {
-        debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
+        // debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
         return -1;
     }
     memset(thr_data, 0, sizeof(struct thread_data));
@@ -1404,7 +1409,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     ph = nfq_get_msg_packet_hdr(nfa);
     // printf("P%d: hook %d\n", ph->packet_id, ph->hook);
     if (!ph) {
-        debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+        // debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
         return -1;
     }
 
@@ -1413,7 +1418,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     thr_data->buf = (unsigned char *)malloc(packet_len+1);
     thr_data->obj = obj;
     if (!thr_data->buf){
-            debugs(0, DBG_CRITICAL, "cb: error during malloc");
+            // debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
     }
     memcpy(thr_data->buf, packet, packet_len);
@@ -1425,7 +1430,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
 
     // pool_handler((void *)thr_data);
     if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-        debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
+        // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
         return -1;
     }
     return 0;
@@ -1729,7 +1734,7 @@ void* overrun_detector(void* arg){
         if(is_timeout_and_update(last_print_seqs, 2)){
             obj->print_seq_table();
             // obj->is_nfq_full(stdout);
-            obj->print_ss(stdout);
+            // obj->print_ss(stdout);
             printf("\n");
         }
 
@@ -2624,12 +2629,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
 
                 if(seq_rel == 1 && local_port == squid_port){
-                    Http1::ResponseParser rp;
-                    SBuf headerBuf;
-                    headerBuf.assign((char*)payload, payload_len);
-                    rp.parse(headerBuf);
-                    response_header_len = rp.messageHeaderSize();
-                    printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
+                    // Http1::ResponseParser rp;
+                    // SBuf headerBuf;
+                    // headerBuf.assign((char*)payload, payload_len);
+                    // rp.parse(headerBuf);
+                    // response_header_len = rp.messageHeaderSize();
+                    // printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
+                    response_header_len = 398;
                     memcpy(response, payload, 400);
                     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
                     // src/http/StatusCode.h
@@ -2928,14 +2934,14 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
     sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    // debugs(11, 2, cmd << ret);
 
     //TODO: iptables too broad??
     cmd = (char*) malloc(IPTABLESLEN);
     sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    // debugs(11, 2, cmd << ret);
 
     // probe seq and ack
     // leave the INPUT rule cleanup to process_tcp_packet
@@ -3008,13 +3014,13 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    // debugs(11, 2, cmd << ret);
 
     cmd = (char*) malloc(IPTABLESLEN);
     sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
-    debugs(11, 2, cmd << ret);
+    // debugs(11, 2, cmd << ret);
  
     strncpy(g_local_ip, local_ip, 16); //TODO: change position
     strncpy(g_remote_ip, remote_ip, 16);
@@ -3278,6 +3284,70 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     return 0;
 }
 #endif
+
+// int main(){
+//     //open a connection
+//     int sockfd;
+//     struct sockaddr_in server_addr;
+//     char server_ip[] = "67.205.159.15";
+
+//     // Open socket
+//     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+//         perror("Can't open stream socket.");
+//         return -1;
+//     }
+
+//     // Set server_addr
+//     bzero(&server_addr, sizeof(server_addr));
+//     server_addr.sin_family = AF_INET;
+//     server_addr.sin_addr.s_addr = inet_addr(server_ip);
+//     server_addr.sin_port = htons(80);
+
+//     // Connect to server
+//     if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+//         perror("Connect server error");
+//         close(sockfd);
+//         return -1;
+//     }
+
+//     // Get my port
+//     struct sockaddr_in my_addr;
+//     socklen_t len = sizeof(my_addr);
+//     bzero(&my_addr, len);
+//     if (getsockname(sockfd, (struct sockaddr*)&my_addr, &len) < 0) {
+//         perror("getsockname error");
+//         close(sockfd);
+//         return 0;
+//     }
+//     unsigned int local_port = ntohs(my_addr.sin_port);
+
+//     char cmd[128];
+//     sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT");
+//     system(cmd);
+//     sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT");
+//     system(cmd);
+
+//     Optimack op;
+//     op.init();
+//     op.setup_nfq(80);
+//     op.nfq_stop = 0;
+//     op.setup_nfqloop();
+//     op.open_duplicate_conns(server_ip, "167.172.22.132", 80, local_port, sockfd);
+//     sleep(4);
+
+//     //send request
+//     char request[] = "GET /ubuntu-16.04.6-server-i386.template HTTP/1.1";//\r\nUser-Agent: curl/7.47.0\r\nAccept: */*\r\nHost: 67.205.159.15\r\nVia: 1.1 NY-DGO-O2C (squid/4.12)\r\nX-Forwarded-For: 127.0.0.1\r\nCache-Control: max-age=259200\r\nConnection: keep-alive\r\n\r\n";
+//     if (send(sockfd, request, 50, 0) < 0){
+//         printf("Send error\n");
+//     }
+//     int rv = 1;
+//     char buf[1024];
+//     while(rv > 0){
+//         rv = recv(sockfd, buf, sizeof(buf), 0);
+//     }
+
+// }
+
 
 
 // int 
