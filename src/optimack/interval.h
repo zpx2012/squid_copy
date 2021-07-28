@@ -11,19 +11,19 @@ struct Interval
 {
     unsigned int start;
     unsigned int end;
-    bool sent;
+    // bool sent;
     unsigned int last_recved;
     double sent_epoch_time, recved_epoch_time;//std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
 
     Interval()
         : start(0), end(0), last_recved(0), sent_epoch_time(0), recved_epoch_time(0)
     {
-        sent = false;
+        // sent = false;
     }
     Interval(unsigned int s, unsigned int e)
         : start(s), end(e), last_recved(0), sent_epoch_time(0), recved_epoch_time(0)
     {
-        sent = false;
+        // sent = false;
     }
     Interval(unsigned int s, unsigned int e, double sent_time)
         : start(s), end(e), last_recved(0), sent_epoch_time(sent_time), recved_epoch_time(0)
@@ -60,6 +60,7 @@ public:
 
     // Function to insert new interval and merge overlapping intervals
     void insert(Interval newInterval);
+    void insert_withLock(Interval newInterval);
     void insertNewInterval(unsigned int start, unsigned int end);
     void insertNewInterval(Interval newInterval);
     void insertNewInterval_withLock(Interval newInterval);

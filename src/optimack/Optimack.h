@@ -187,6 +187,7 @@ public:
     int send_http_range_request(int sockfd, Interval range);
     void start_range_recv(IntervalList* list);
     void we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_lis);
+    void we2squid_loss_and_insert(uint start, uint end);
     uint get_min_next_seq_rem();
     pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;

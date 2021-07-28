@@ -36,6 +36,13 @@ void IntervalList::insertNewInterval_withLock(Interval newInterval)
     pthread_mutex_unlock(&mutex_intervals);
 }
 
+void IntervalList::insert_withLock(Interval newInterval)
+{
+    pthread_mutex_lock(&mutex_intervals);
+    insert(newInterval);
+    pthread_mutex_unlock(&mutex_intervals);
+}
+
 bool IntervalList::checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end)
 {
     pthread_mutex_lock(&mutex_intervals);
@@ -380,11 +387,15 @@ void IntervalList::removeInterval(unsigned int start, unsigned int end)
     {
         if(doesOverlap(Intervals[i], Interval(start, end))){
             if(Intervals[i].start < start){
-                Interval left(Intervals[i].start, start);
+                Interval left = Intervals[i];
+                left.end = start;
+                // Interval left(Intervals[i].start, start);
                 ans.push_back(left);
             }
             if(end < Intervals[i].end){
-                Interval right(end, Intervals[i].end);
+                Interval right = Intervals[i];
+                right.start = end;
+                // Interval right(end, Intervals[i].end);
                 ans.push_back(right);
             }
         }

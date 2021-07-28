@@ -2,8 +2,8 @@
 # usage: ./test_off_packet.sh [tag]
 
 # site='142.93.117.107'
-# site='138.68.49.206' #SF-HTTP-SV
-site='67.205.159.15' #NY-HTTP-SV
+site='138.68.49.206' #SF-HTTP-SV
+#site='67.205.159.15' #NY-HTTP-SV
 url="http://$site/ubuntu-16.04.6-server-i386.template"
 # url="http://$site/md5sums.gz"
 
