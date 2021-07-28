@@ -30,10 +30,10 @@ using namespace std;
 // for http parsing
 #include <cstring>
 #include <algorithm>
-// #include "squid.h"
-// #include "sbuf/SBuf.h"
-// #include "http/one/RequestParser.h"
-// #include "http/one/ResponseParser.h"
+#include "squid.h"
+#include "sbuf/SBuf.h"
+#include "http/one/RequestParser.h"
+#include "http/one/ResponseParser.h"
 // #include "../../include/squid.h"
 // #include "../sbuf/SBuf.h"
 // #include "../http/one/RequestParser.h"
@@ -2761,14 +2761,14 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
 
                 if(seq_rel == 1 && local_port == squid_port){
-                    // Http1::ResponseParser rp;
-                    // SBuf headerBuf;
-                    // headerBuf.assign((char*)payload, payload_len);
-                    // rp.parse(headerBuf);
-                    // response_header_len = rp.messageHeaderSize();
-                    // printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
-                    response_header_len = 398;
-                    memcpy(response, payload, 400);
+                    Http1::ResponseParser rp;
+                    SBuf headerBuf;
+                    headerBuf.assign((char*)payload, payload_len);
+                    rp.parse(headerBuf);
+                    response_header_len = rp.messageHeaderSize();
+                    printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
+                    // response_header_len = 398;
+                    memcpy(response, payload, response_header_len);
                     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
                     // src/http/StatusCode.h
                 }
@@ -2794,17 +2794,19 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 sprintf(log,"%s - update seq_next_global to %u", log, seq_next_global);
                 pthread_mutex_unlock(&mutex_seq_next_global);
 
-                pthread_mutex_lock(&subconn->mutex_opa);
+                // pthread_mutex_lock(subconn->recved_seq.getMutex());
+                subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
+                subconn->next_seq_rem = recved_seq.getLastEnd_withLock();
+                // pthread_mutex_lock(&subconn->mutex_opa);
                 subconn->last_data_received = std::chrono::system_clock::now();
                 sprintf(log, "%s - cur next_seq_rem %u", log, subconn->next_seq_rem);
-                if (subconn->next_seq_rem <= seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
-                    subconn->next_seq_rem = seq_rel + payload_len;
-                }
+                // if (subconn->next_seq_rem <= seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+                //     subconn->next_seq_rem = seq_rel + payload_len;
+                // }
                 memset(time_str, 0, 64);
                 sprintf(log,"%s - update next_seq_rem to %u - update last_data_received %s - ", log, subconn->next_seq_rem, print_chrono_time(subconn->last_data_received, time_str));
-                pthread_mutex_unlock(&subconn->mutex_opa);
+                // pthread_mutex_unlock(&subconn->mutex_opa);
 
-                subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
                     // printf("%s - insert interval[%u, %u]\n", time_str, subconn->next_seq_rem, seq_rel);
                     // log_debug(Intervals2str(subconn->seq_gaps).c_str());
                     // log_info("%d, [%u, %u]", subconn_i, subconn->next_seq_rem, seq_rel);
@@ -2943,11 +2945,12 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_RST:
             case TH_RST | TH_ACK:
             {
-                printf("S%d: Received RST. Close this connection.\n",subconn_i);
-                close(subconn->sockfd);
-                pthread_mutex_lock(&mutex_subconn_infos);
-                subconn_infos.erase(find_ret);
-                pthread_mutex_unlock(&mutex_subconn_infos);
+                printf("S%d: Received RST. Ignore.\n",subconn_i);
+                // printf("S%d: Received RST. Close this connection.\n",subconn_i);
+                // close(subconn->sockfd);
+                // pthread_mutex_lock(&mutex_subconn_infos);
+                // subconn_infos.erase(find_ret);
+                // pthread_mutex_unlock(&mutex_subconn_infos);
 
             }
             default:
