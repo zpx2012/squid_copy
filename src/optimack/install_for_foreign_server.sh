@@ -1,3 +1,4 @@
+sudo apt-get update
 sudo apt-get install -y libnetfilter-queue-dev
 sudo apt-get install -y autotools-dev autogen autoconf libtool
 # sudo apt-get -y install wireshark tshark

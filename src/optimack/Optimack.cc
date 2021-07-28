@@ -40,9 +40,9 @@ using namespace std;
 // #include "../http/one/ResponseParser.h"
 
 #include "Optimack.h"
-#include <openssl/ssl.h>
 
 #ifdef OPENSSL
+#include <openssl/ssl.h>
 #include "get_server_key.h"
 void test_write_key(SSL *s){
     if(!s)
