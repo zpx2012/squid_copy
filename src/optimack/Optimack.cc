@@ -1971,7 +1971,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
             return false;
         }
     }
-    usleep(500000);
+    usleep(300000);
     // char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
