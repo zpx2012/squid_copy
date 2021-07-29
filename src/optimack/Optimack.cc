@@ -411,8 +411,8 @@ bool Optimack::does_packet_lost_on_all_conns(){
 char empty_payload[] = "";
 
 int Optimack::get_ajusted_rwnd(int cur_ack){
-    int cur_rwnd = rwnd/4 + cur_ack_rel - cur_ack;
-    int diff = (int)(cur_rwnd - squid_MSS*2);
+    int cur_rwnd = rwnd/2 + cur_ack_rel - cur_ack;
+    int diff = (int)(cur_rwnd - squid_MSS);
     uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
     if (diff <= 0)
         return 0;
@@ -695,8 +695,12 @@ full_optimistic_ack_altogether(void* arg)
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
             if(adjusted_rwnd <= 0){
                 zero_window_start = opa_ack_start;
-                opa_ack_start = obj->get_min_next_seq_rem();
-            }
+                uint min_next_seq_rem = obj->get_min_next_seq_rem();
+                if(abs(zero_window_start-min_next_seq_rem) > 2*obj->squid_MSS){
+                    opa_ack_start = min_next_seq_rem-10*obj->squid_MSS;
+                    printf("zero window restart at %u, zero_window_start %u\n", opa_ack_start, zero_window_start);
+                }
+	    }
             else 
                 opa_ack_start += obj->squid_MSS;
 
@@ -723,8 +727,8 @@ full_optimistic_ack_altogether(void* arg)
                     if (elapsed(it->second->last_data_received) >= 2){
                         is_stall = true;
                         stall_port = it->second->local_port;
-                        stall_seq = it->second->next_seq_rem;
-                        if(it->second->next_seq_rem >= min_next_seq_rem && elapsed(it->second->last_data_received) > MAX_STALL_TIME && elapsed(last_zero_window) > 30){
+                        stall_seq = it->second->recved_seq.getLastEnd();
+                        if(it->second->recved_seq.getLastEnd() >= min_next_seq_rem && elapsed(it->second->last_data_received) > MAX_STALL_TIME && elapsed(last_zero_window) > 30){
                             char time_str[20];
                             memset(time_str, 0, 20);
                             printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
@@ -1457,7 +1461,7 @@ void Optimack::print_seq_table(){
     printf("%12s%12u", "next_seq_rem", recved_seq.getFirstEnd_withLock());
     // for (auto const& [port, subconn] : subconn_infos){
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        printf("%12u", it->second->next_seq_rem);
+        printf("%12u", it->second->recved_seq.getLastEnd());
     }
     printf("\n");
 
@@ -1955,7 +1959,7 @@ uint Optimack::get_min_next_seq_rem(){
     uint min_next_seq_rem = -1;
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         if(!it->second->is_backup){
-            min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
+            min_next_seq_rem = std::min(min_next_seq_rem, it->second->recved_seq.getLastEnd());
         }
     }
     return min_next_seq_rem;
@@ -1967,7 +1971,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
         return false;
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        if(!it->second->is_backup && it->second->next_seq_rem <= last_recv_inorder){
+        if(!it->second->is_backup && it->second->recved_seq.getLastEnd() <= last_recv_inorder){
             return false;
         }
     }
@@ -1975,7 +1979,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     // char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
-        if(!it->second->is_backup && it->second->next_seq_rem <= last_recv_inorder){
+        if(!it->second->is_backup && it->second->recved_seq.getLastEnd() <= last_recv_inorder){
             return false;
         }
     }
