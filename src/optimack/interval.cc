@@ -161,7 +161,7 @@ bool IntervalList::contains(unsigned int start, unsigned int end){
     
     for(int i = 0; i < n; i++)
         if(does_a_contains_b(Intervals[i], newInterval)){
-            log_info("%s - [%u, %u] contains newInterval [%u, %u]", Intervals2str().c_str(), Intervals[i].start, Intervals[i].end, start, end);
+            // log_info("%s - [%u, %u] contains newInterval [%u, %u]", Intervals2str().c_str(), Intervals[i].start, Intervals[i].end, start, end);
             return true;
         }
     return false;

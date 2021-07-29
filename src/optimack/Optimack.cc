@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1500
+#define ACKPACING 286
 #endif
 
 #define MAX_STALL_TIME 240
@@ -983,7 +983,7 @@ void Optimack::log_seq_gaps(){
         fprintf(info_file, "We2Squid loss penalty: %.2f\n", we2squid_penalty);
         if (RANGE_MODE){
             fprintf(info_file, "Packet lost on all: %d\n", all_lost_seq.total_bytes());
-            fprintf(info_file, all_lost_seq.Intervals2str().c_str());
+            fprintf(info_file, "%s\n", all_lost_seq.Intervals2str().c_str());
             fprintf(info_file, "Packet lost between us and squid: %d\n", we2squid_lost_seq.total_bytes());
             fprintf(info_file, "Range requested: %u\n", requested_bytes);
         }
@@ -2777,26 +2777,28 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //     fprintf(seq_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), seq_rel);
                 // }
                 
-                pthread_mutex_lock(&mutex_seq_next_global);
+                // pthread_mutex_lock(&mutex_seq_next_global);
                 bool is_new_segment = recved_seq.checkAndinsertNewInterval_withLock(seq_rel, seq_rel+payload_len);
+                
                 // sprintf(log, "%s - %s", log, recved_seq.Intervals2str().c_str());
                 // log_info(recved_seq.Intervals2str().c_str());
-                if (!is_new_segment && recved_seq.getLastEnd() != seq_next_global){
-                    printf("not new segment but seq_next_global changed from %u to %u\n", seq_next_global, recved_seq.getLastEnd());
-                    log_info("not new segment but seq_next_global changed from %u to %u\n", seq_next_global, recved_seq.getLastEnd());
-                    sleep(5);
-                    exit(-1);
-                }
+                // if (!is_new_segment && recved_seq.getLastEnd() != seq_next_global){
+                //     printf("not new segment but seq_next_global changed from %u to %u\n", seq_next_global, recved_seq.getLastEnd());
+                //     log_info("not new segment but seq_next_global changed from %u to %u\n", seq_next_global, recved_seq.getLastEnd());
+                //     sleep(5);
+                //     exit(-1);
+                // }
                 // bytes_per_second[time_in_HH_MM_SS(time_str)] += seq_rel + payload_len - subconn->next_seq_rem;
                 sprintf(log, "%s - cur seq_next_global %u", log, seq_next_global);
-                if (seq_next_global < seq_rel + payload_len)
-                    seq_next_global = seq_rel + payload_len;
+                seq_next_global = recved_seq.getLastEnd();
+                // if (seq_next_global < seq_rel + payload_len)
+                //     seq_next_global = seq_rel + payload_len;
                 sprintf(log,"%s - update seq_next_global to %u", log, seq_next_global);
-                pthread_mutex_unlock(&mutex_seq_next_global);
+                // pthread_mutex_unlock(&mutex_seq_next_global);
 
                 // pthread_mutex_lock(subconn->recved_seq.getMutex());
                 subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
-                subconn->next_seq_rem = recved_seq.getLastEnd_withLock();
+                subconn->next_seq_rem = recved_seq.getLastEnd();
                 // pthread_mutex_lock(&subconn->mutex_opa);
                 subconn->last_data_received = std::chrono::system_clock::now();
                 sprintf(log, "%s - cur next_seq_rem %u", log, subconn->next_seq_rem);
@@ -2945,7 +2947,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_RST:
             case TH_RST | TH_ACK:
             {
-                printf("S%d: Received RST. Ignore.\n",subconn_i);
+                printf("S%d: Received RST. Make it backup.\n",subconn_i);
+                subconn->is_backup = true;
                 // printf("S%d: Received RST. Close this connection.\n",subconn_i);
                 // close(subconn->sockfd);
                 // pthread_mutex_lock(&mutex_subconn_infos);

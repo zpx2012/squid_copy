@@ -76,6 +76,7 @@ cd squid_copy
 make install
 
 while true; do
+
     screen -dmS normal bash -c "echo Start: $(date --rfc-3339=second) >> ${normal_out}; curl -v --limit-rate 500k --speed-time 120 $url -o /dev/null 2>&1 | tee -a ${normal_out}"
     screen -dmS td tcpdump -w $tcpdump_out host $site
     # screen -dmS mtr bash -c "while true; do sudo ~/mtr-modified/mtr -zwnr4 -i 0.01 -c 100 -P 80 $site | tee -a $mtr_out; done"

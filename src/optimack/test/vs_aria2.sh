@@ -49,18 +49,24 @@ trap INT_handler SIGINT
 
 while true;do
 
-    echo Start: $(date -Iseconds) >> $normal_out
-    screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}"
+    echo $(date -Iseconds): Slowdown test
+    curl_singlerun=curl_proxy_singlerun_$(date +%s)
+    curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
+    echo
+    if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
+        echo Start: $(date -Iseconds) >> $normal_out
+        screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}"
 
-    echo Start: $(date -Iseconds) >> ${aria2_out} 
-    aria2c $url -x 10 --continue=false | tee -a ${aria2_out}
-    rm -v ubuntu-16.04.5-server-i386.iso*
+        echo Start: $(date -Iseconds) >> ${aria2_out} 
+        aria2c $url -x 10 --continue=false | tee -a ${aria2_out}
+        rm -v ubuntu-16.04.5-server-i386.iso*
 
-    bash ~/squid_copy/src/optimack/test/ks.sh normal
-    # screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N >> ${squid_log}"
-    # sleep 2
+        bash ~/squid_copy/src/optimack/test/ks.sh normal
+        # screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N >> ${squid_log}"
+        # sleep 2
 
-    # echo Start: $(date -Iseconds) >> $squid_out 
-    # curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 -m 120 2>&1 | tee -a ${squid_out}
-    # cleanup
+        # echo Start: $(date -Iseconds) >> $squid_out 
+        # curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 -m 120 2>&1 | tee -a ${squid_out}
+        # cleanup
+    fi
 done
