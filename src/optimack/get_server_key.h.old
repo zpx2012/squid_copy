@@ -5,6 +5,7 @@
 #include "modes_local.h"
 #include "include/openssl/aes.h"
 #include "include/openssl/engine.h"
+// #include <openssl/evp.h>
 
 #ifdef NDEBUG
 # define ossl_assert(x) ((x) != 0)
@@ -3778,93 +3779,96 @@ static void get_server_session_key_and_iv_salt(SSL *s, unsigned char *iv_salt, u
     return;    
 }
 
-static size_t get_server_write_key(SSL *s, unsigned char **buffer) {
-    size_t key_block_buffer_length;
+static void get_server_write_key(SSL *s, unsigned char *buffer) {
     unsigned char *key_block_buffer;
-    unsigned char *server_write_key_buffer;
-    const EVP_CIPHER *c;
-    const EVP_MD *hash;
-    SSL_COMP *comp;
-    size_t mac_secret_size = 0;
-    int mac_type = NID_undef;
-    size_t key_length, iv_length;
-    if (!ssl_cipher_get_evp(ssl->session, &c, &hash, &mac_type, &mac_secret_size, &comp, ssl->ext.use_etm)) {
-        return 0;
-    }
-    key_length = EVP_CIPHER_key_length(c);
-    iv_length = EVP_CIPHER_iv_length(c);
-    printf("mac_secret_size: %ld\n", mac_secret_size);
-    printf("EVP_CIPHER_key_length(c): %ld\n", key_length);
-    printf("EVP_CIPHER_iv_length(c): %ld\n", iv_length);
-    key_block_buffer_length = key_length + mac_secret_size + iv_length;
-    key_block_buffer_length *= 2;
 
-    key_block_buffer = (unsigned char*) malloc(key_block_buffer_length);
-    memset(key_block_buffer, 0, key_block_buffer_length);
-    tls1_generate_key_block(ssl, key_block_buffer, key_block_buffer_length);
+    key_block_buffer = (unsigned char*) malloc(56);
+    memset(key_block_buffer, 0, 56);
+    tls1_generate_key_block(s, key_block_buffer, 56);
     printf("key_block_buffer: \n");
-    for (unsigned int i = 0; i < key_block_buffer_length; i++)
+    for (int i = 0; i < 56; i++)
         printf("\\x%02X", key_block_buffer[i]);
     printf("\n");
-
-    size_t n = mac_secret_size + mac_secret_size + key_length;
-    printf("server_write_key: \n");
-    for (size_t i = n; i < n + key_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
+    printf("key:");
+    memcpy(buffer, key_block_buffer + 16, 16);
+    for (int i = 0; i < 16; i++)
+        printf("\\x%02X", buffer[i]);
     printf("\n");
-
-    server_write_key_buffer = (unsigned char*) malloc(key_length);
-    memcpy(server_write_key_buffer, key_block_buffer + n, key_length);
-    *buffer = server_write_key_buffer;
     free(key_block_buffer);
-    return key_length;
+    return;
 }
 
-static size_t get_server_write_iv_salt(SSL *s, unsigned char **buffer) {
-    size_t key_block_buffer_length;
+static void get_server_write_iv_salt(SSL *s, unsigned char *buffer) {
     unsigned char *key_block_buffer;
-    unsigned char *server_write_iv_buffer;
-    const EVP_CIPHER *c;
-    const EVP_MD *hash;
-    SSL_COMP *comp;
-    size_t mac_secret_size = 0;
-    int mac_type = NID_undef;
-    size_t key_length, iv_length;
-    if (!ssl_cipher_get_evp(ssl->session, &c, &hash, &mac_type, &mac_secret_size, &comp, ssl->ext.use_etm)) {
-        return 0;
-    }
-    key_length = EVP_CIPHER_key_length(c);
-    iv_length = EVP_CIPHER_iv_length(c);
-    printf("mac_secret_size: %ld\n", mac_secret_size);
-    printf("EVP_CIPHER_key_length(c): %ld\n", key_length);
-    printf("EVP_CIPHER_iv_length(c): %ld\n", iv_length);
-    key_block_buffer_length = key_length + mac_secret_size + iv_length;
-    key_block_buffer_length *= 2;
 
-    key_block_buffer = (unsigned char*) malloc(key_block_buffer_length);
-    memset(key_block_buffer, 0, key_block_buffer_length);
-    tls1_generate_key_block(ssl, key_block_buffer, key_block_buffer_length);
-    printf("key_block_buffer: \n");
-    for (unsigned int i = 0; i < key_block_buffer_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
+    key_block_buffer = (unsigned char*) malloc(56);
+    memset(key_block_buffer, 0, 56);
+    tls1_generate_key_block(s, key_block_buffer, 56);
+    memcpy(buffer, key_block_buffer + 36, 4);
+    printf("iv_salt:");
+    for (int i = 0; i < 4; i++)
+        printf("\\x%02X", buffer[i]);
     printf("\n");
-
-    size_t n = mac_secret_size + mac_secret_size + key_length + key_length + iv_length;
-    printf("server_write_iv: \n");
-    for (size_t i = n; i < n + iv_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
-    printf("\n");
-
-    server_write_iv_buffer = (unsigned char*) malloc(iv_length);
-    memcpy(server_write_iv_buffer, key_block_buffer + n, iv_length);
-    *buffer = server_write_iv_buffer;
     free(key_block_buffer);
-    return iv_length;
+    return;
 }
 
 int test_include() {
     printf("Hello from openssl-bio-fetch!!!\n");
     return 1;
+}
+
+int gcm_encrypt(unsigned char *plaintext, int plaintext_len,
+                unsigned char *key,
+                unsigned char *iv, int iv_len,
+                unsigned char *ciphertext)
+{
+    EVP_CIPHER_CTX *ctx;
+
+    int len;
+
+    int ciphertext_len;
+
+
+    /* Create and initialise the context */
+    if(!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
+
+    /* Initialise the encryption operation. */
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL))
+        handleErrors();
+
+    /*
+     * Set IV length if default 12 bytes (96 bits) is not appropriate
+     */
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
+        handleErrors();
+
+    /* Initialise key and IV */
+    if(1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
+        handleErrors();
+
+
+    /*
+     * Provide the message to be encrypted, and obtain the encrypted output.
+     * EVP_EncryptUpdate can be called multiple times if necessary
+     */
+    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+        handleErrors();
+    ciphertext_len = len;
+
+    /*
+     * Finalise the encryption. Normally ciphertext bytes may be written at
+     * this stage, but this does not occur in GCM mode
+     */
+    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+        handleErrors();
+    ciphertext_len += len;
+
+    /* Clean up */
+    EVP_CIPHER_CTX_free(ctx);
+
+    return ciphertext_len;
 }
 
 int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,

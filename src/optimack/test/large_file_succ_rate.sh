@@ -25,12 +25,12 @@ site='mirrors.mit.edu'
 # url='http://167.172.22.132/ubuntu-16.04.6-server-i386.template'
 # site='NY-DGO-O2C'
 
-mkdir -p ~/rs/large_file_succ_rate/
-outdir=~/rs/large_file_succ_rate/$(date +%Y-%m-%d)
+mkdir -p ~/rs/ABtest_onerun/
+outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)
 mkdir -p $outdir
 
 stime=$(date +%Y%m%d%H%M)
-tag=$(hostname)_${site}_ACKP1500_6conn_succrate_${stime}
+tag=$(hostname)_${site}_daylong_ACKP1500+7conn_succrate_${stime}
 log=$outdir/curl_squid_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
@@ -69,6 +69,11 @@ function INT_handler()
 }
 
 trap INT_handler SIGINT
+
+sed -i "s/define ACKPACING .*/define ACKPACING 2000/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define CONN_NUM .*/define CONN_NUM 6/g" ~/squid_copy/src/optimack/Optimack.cc
+cd squid_copy
+make install
 
 while true; do
     screen -dmS normal bash -c "echo Start: $(date --rfc-3339=second) >> ${normal_out}; curl -v --limit-rate 500k --speed-time 120 $url -o /dev/null 2>&1 | tee -a ${normal_out}"

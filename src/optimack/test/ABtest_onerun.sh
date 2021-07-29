@@ -2,9 +2,9 @@
 # usage: ./test_off_packet.sh [tag]
 
 # site='142.93.117.107'
-site='138.68.49.206' #SF-HTTP-SV
+# site='138.68.49.206' #SF-HTTP-SV
 #site='67.205.159.15' #NY-HTTP-SV
-url="http://$site/ubuntu-16.04.6-server-i386.template"
+# url="http://$site/ubuntu-16.04.6-server-i386.template"
 # url="http://$site/md5sums.gz"
 
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
@@ -20,6 +20,8 @@ url="http://$site/ubuntu-16.04.6-server-i386.template"
 # url='http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz'
 # site='mirror.math.princeton.edu'
 
+site=$3
+url=$4
 
 mkdir -p ~/rs/ABtest_onerun/
 outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/
@@ -30,6 +32,7 @@ squid_out=$outdir/curl_squid_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
 tcpdump_out=$outdir/tcpdump_${tag}.pcap
+
 
 
 function cleanup()

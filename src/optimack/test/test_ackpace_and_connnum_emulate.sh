@@ -1,18 +1,18 @@
 #!/bin/bash
 
-# site='142.93.117.107'
+site='142.93.117.107'
 # site='138.68.49.206' #SF-HTTP-SV
 #site='67.205.159.15' #NY-HTTP-SV
-# url="http://$site/ubuntu-16.04.6-server-i386.template"
+url="http://$site/ubuntu-16.04.6-server-i386.template"
 # url="http://$site/md5sums.gz"
 
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
-url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
+# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-site='mirrors.mit.edu'
+# site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
@@ -25,11 +25,11 @@ ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
 
 i=0
 while true; do
-    echo $(date -Iseconds): Slowdown test
-    curl_singlerun=curl_proxy_singlerun_$(date +%s)
-    curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
-    echo
-    if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
+    # echo $(date -Iseconds): Slowdown test
+    # curl_singlerun=curl_proxy_singlerun_$(date +%s)
+    # curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
+    # echo
+    # if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
         if [ $((i % 2)) -eq 0 ]; then
             sed -i "s/define ACKPACING .*/define ACKPACING 1500/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define CONN_NUM .*/define CONN_NUM ${nums[i/2%${#nums[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc
@@ -50,9 +50,9 @@ while true; do
             bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_5optim ackpace${ackpaces[i%${#ackpaces[@]}]}_5optim+1range $site $url
         fi
         i=$((i+1))
-    else
-        sleep 120
-    fi
+    # else
+    #     sleep 120
+    # fi
     echo
     rm $curl_singlerun
 done
