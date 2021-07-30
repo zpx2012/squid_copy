@@ -1,4 +1,5 @@
 import os, sys, random, pandas as pd, time, json, multiprocessing, traceback, subprocess as sp, pipes
+from datetime import datetime
 from interval import remove_interval, intersect_intervals, total_bytes
 from loss_rate_optimack_end2end import pcap2df
 from loss_rate_optimack_client import loss_rate_optimack_client
@@ -11,8 +12,8 @@ def remove_received_intervals(intervals, df_port):
         sec, seq, data_len = row['time_epoch'], row['tcp_seq_rel'], row['data_len']
         # print(seq, seq+data_len)
         remove_interval(intervals, [seq, seq+data_len])
-        if next_seq != seq:
-            print(next_seq, seq, data_len)
+        # if next_seq != seq:
+        #     print(next_seq, seq, data_len)
         next_seq = seq + data_len
         # print(intervals)
     # return intervals
@@ -50,7 +51,7 @@ def get_info_per_conn(df, ports, out_file):
         all_bytes = min(all_bytes, max_len)
         gaps_left_per_conn.append([[1, max_len]])
         remove_received_intervals(gaps_left_per_conn[i], df_port)
-        print('%2d' % i, port, max_len, total_bytes(gaps_left_per_conn[i]))
+        # print('%2d' % i, port, max_len, total_bytes(gaps_left_per_conn[i]))
         # print(gaps_left_per_conn[i])
     print("Max byte:"+str(all_bytes))
 
@@ -132,7 +133,8 @@ def get_possibility(info_per_conn, out_file):
         else:
             loss_rate = 0
         loss_rates.append(loss_rate)
-        print(i, ports[index], loss_rate)
+        # print(i, ports[index], loss_rate)
+    print("bytes lost %d" % total_bytes(gaps_left))
     print(loss_rates)
 
     # print("Missing packet rate adding one:")
@@ -153,6 +155,7 @@ def get_possibility(info_per_conn, out_file):
 
     print("Write possibility result to: " + out_file)
     with open(out_file, 'w') as outf:
+        outf.writelines("bytes lost on all: %d\n" % total_bytes(gaps_left))
         for loss in loss_rates:
             outf.writelines(str(loss)+'\n')
     
@@ -187,19 +190,34 @@ def parse_tshark(root, f):
         print(f+' Not exists!')
         return
 
+    print('Parse: '+f)
+    time_str = f.split(extension)[0].split('_')[-1]
+    # print("time_str: %s" % time_str)
+    info_file = ''
+    for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
+        for finfo in sorted(files):
+            if finfo.startswith("info_"):
+                time_str_info = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S').strftime("%Y%m%d%H%M")
+                # print(time_str_info)
+                if time_str_info == time_str:
+                    info_file = root+'/'+finfo
+                    print("found %s" % info_file)
+                    break
+    if not info_file:
+        print("No info file found for %s" % f)
+        return
+
     prob_file = root+'/'+f.replace(extension,'_prob.csv')
     gap_info_file = root+'/'+f.replace(extension, '.infos')
     gaps_count_file = root+'/'+f.replace(extension, '_gaps_count.csv')
     loss_file = root+'/'+f.replace(extension,"_loss.csv")
-    time_str = f.split(extension)[0].split('_')[1]
     # if os.path.exists(out_file):
     #     print('Skip: '+out_file+' exists')
         # os.remove(root+'/'+f)
         # print('Removed: '+f)
         # continue
-    print('Parse: '+f)
     df = tshark2df(root+'/'+f)
-    ip, ports = parse_info_file(root+'/info_'+time_str+'.txt')
+    ip, ports = parse_info_file(info_file)
     print(ip, ports)
     if ip and ports:
         df = df[df.ip_src == ip]
@@ -207,12 +225,12 @@ def parse_tshark(root, f):
         info_per_conn = get_info_per_conn(df, ports, gap_info_file)
         # info_per_conn = get_info_per_conn(pd.DataFrame(), [], gap_info_file)
         # get_seq_lost_count(info_per_conn, gaps_count_file)
-        # get_possibility(info_per_conn, prob_file)
-        loss_rate_optimack_client(df, ports, loss_file)
+        get_possibility(info_per_conn, prob_file)
+        # loss_rate_optimack_client(df, ports, loss_file)
     else:
         print("Info file not exists.")
-    os.remove(root+'/'+f)
-    print('Removed: '+f)
+    # os.remove(root+'/'+f)
+    # print('Removed: '+f)
     print
     print
 
