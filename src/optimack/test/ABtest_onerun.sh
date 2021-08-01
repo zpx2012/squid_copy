@@ -62,7 +62,7 @@ trap INT_handler SIGINT
 
 
 screen -dmS td tcpdump -w $tcpdump_out -s 600 host $site and tcp port 80
-screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 $squid_log"
+screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 >$squid_log"
 sleep 2
 
 echo Start: $(date -Iseconds) >> $normal_out
@@ -71,15 +71,15 @@ screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal
 curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 --speed-time 120 2>&1 | tee -a ${squid_out}
 cleanup
 
-if grep -q "left intact" $curl_singlerun;
+if grep -q "left intact" $squid_out;
 then
     screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80' > ${tcpdump_out}.tshark; rm $tcpdump_out"
-if grep -q "curl: (28) Operation too slow" $curl_singlerun; 
+if grep -q "curl: (28) Operation too slow" $squid_out; 
     then
         cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
         mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
         mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
-elif grep -q "curl: (18)" $curl_singlerun ;
+elif grep -q "curl: (18)" $squid_out ;
 then
         cat ${squid_log} >> $outdir/squid_log_e18_$(date -Iseconds).log
         mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log

@@ -4,9 +4,9 @@ sudo apt-get install -y autotools-dev autogen autoconf libtool
 sudo apt-get -y install python-pip python-setuptools python-dev screen
 curl http://47.116.141.4/get-pip.py --output ~/get-pip.py
 pip install numpy pandas
-wget http://47.116.141.4/squid_copy.tar.gz
-tar -xvzf squid_copy.tar.gz
-cd squid_copy
+# wget http://47.116.141.4/squid_copy.tar.gz
+# tar -xvzf squid_copy.tar.gz
+cd ~/squid_copy
 sudo autoreconf -f -i
 ./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
 make
