@@ -10,13 +10,14 @@
 # site='terran'
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
-url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
+# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-site='mirrors.mit.edu'
+# site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
-# site='mirror.math.princeton.edu'
+url='http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz' #28.5M
+site='mirror.math.princeton.edu'
 
 
 nums=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
@@ -27,7 +28,7 @@ i=0
 while true; do
     echo $(date -Iseconds): Slowdown test
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
-    curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
+    curl -LJ4vk -o /dev/null -m 20 --limit-rate 800k $url 2>&1 | tee $curl_singlerun
     echo
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
         if [ $((i % 2)) -eq 0 ]; then

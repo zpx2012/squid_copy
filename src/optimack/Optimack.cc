@@ -107,7 +107,7 @@ void test_write_key(SSL *s){
 
 // Utility
 double get_current_epoch_time(){
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start){
@@ -1690,6 +1690,7 @@ range_watch(void* arg)
         if(range_sockfd <= 0){
             //clear all sent timestamp, to resend it
             // pthread_mutex_lock(p_mutex_range_job_vector);
+restart:
             for (auto it = range_job_vector.begin(); it != range_job_vector.end();it++){
                 it->sent_epoch_time = 0;
             }
@@ -1722,10 +1723,14 @@ range_watch(void* arg)
                 it->sent_epoch_time = get_current_epoch_time();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
+            else if (get_current_epoch_time() - it->sent_epoch_time >= 5){//timeout, send it again
+                printf("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, get_current_epoch_time() - it->sent_epoch_time);
+                close(range_sockfd);
+                range_sockfd = -1;
+                break;
+            }
             it++;
-            // else{//timeout, send it again
-                
-            // }
+
         }
         // pthread_mutex_unlock(p_mutex_range_job_vector);
 
@@ -3361,7 +3366,7 @@ int Optimack::remove_recved_recv_buffer(uint seq)
                 break;
             }
             
-            if (count > 10){
+            if (count > 20){
                 log_error("count > 10, break");
                 break;
             }
