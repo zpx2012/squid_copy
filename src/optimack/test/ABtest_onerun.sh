@@ -74,14 +74,14 @@ cleanup
 if grep -q "left intact" $squid_out;
 then
     screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80' > ${tcpdump_out}.tshark; rm $tcpdump_out"
-if grep -q "curl: (28) Operation too slow" $squid_out; 
-    then
-        cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
-        mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
-        mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
+elif grep -q "curl: (28) Operation too slow" $squid_out; 
+then
+    cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
+    mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
+    mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
 elif grep -q "curl: (18)" $squid_out ;
 then
-        cat ${squid_log} >> $outdir/squid_log_e18_$(date -Iseconds).log
-        mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
-        mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
+    cat ${squid_log} >> $outdir/squid_log_e18_$(date -Iseconds).log
+    mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
+    mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
 fi
