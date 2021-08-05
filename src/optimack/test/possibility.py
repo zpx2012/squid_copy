@@ -43,7 +43,7 @@ def get_info_per_conn(df, ports, out_file):
             return json.load(inf)
 
     print("Missing gaps per conn:\nI, Port,  Max len, Bytes Lost")
-    gaps_left_per_conn, max_lens, all_bytes = [], [], sys.maxint
+    gaps_left_per_conn, max_lens, loss_rates, all_bytes = [], [], [], sys.maxint
     for i, port in enumerate(ports):
         df_port = df[df.dstport == port ].sort_values('tcp_seq_rel')
         max_len = df_port['tcp_seq_rel'].max()
@@ -51,9 +51,11 @@ def get_info_per_conn(df, ports, out_file):
         all_bytes = min(all_bytes, max_len)
         gaps_left_per_conn.append([[1, max_len]])
         remove_received_intervals(gaps_left_per_conn[i], df_port)
-        # print('%2d' % i, port, max_len, total_bytes(gaps_left_per_conn[i]))
+        loss_rates.append(total_bytes(gaps_left_per_conn[i])*1.0/max_len)
+        print('%2d' % i, port, max_len, total_bytes(gaps_left_per_conn[i]), total_bytes(gaps_left_per_conn[i])*1.0/max_len)
         # print(gaps_left_per_conn[i])
     print("Max byte:"+str(all_bytes))
+    # print(df['data_len'])
 
     info_per_conn = {
         'ports': ports,

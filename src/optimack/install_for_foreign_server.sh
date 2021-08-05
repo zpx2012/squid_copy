@@ -5,6 +5,9 @@ sudo apt-get install -y autotools-dev autogen autoconf libtool
 sudo apt-get -y install python-pip python-setuptools python-dev screen
 curl  https://bootstrap.pypa.io/get-pip.py  --output ~/get-pip.py
 pip install numpy pandas
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y install wireshark tshark
+echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
+sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure wireshark-common
 # wget http://47.116.141.4/squid_copy.tar.gz
 # tar -xvzf squid_copy.tar.gz
 cd squid_copy
