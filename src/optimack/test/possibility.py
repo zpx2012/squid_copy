@@ -106,6 +106,33 @@ def get_seq_lost_count(info_per_conn, out_file):
     print(max_gap)
     return max_gap
 
+def get_overall_lossbyte_and_mean_loss_rate(info_per_conn, out_file):
+    if os.path.exists(out_file):
+        print('File exists: '+out_file)
+        return []
+
+    max_lens = info_per_conn['max_lens']
+    all_bytes = max(max_lens)
+    ports = info_per_conn['ports']
+    gaps_left_per_conn = info_per_conn['gaps']
+    num = len(ports)
+
+    print("Missing packet rate adding one(intersect gaps):")
+    gaps_left = [[1, all_bytes]]
+    loss_byte_sum, all_byte_sum = 0,0
+    for i in range(num):
+        loss_byte_sum += total_bytes(gaps_left_per_conn[i])
+        all_byte_sum += max_lens[i]
+        if gaps_left:
+            gaps_left[:] = intersect_intervals(gaps_left, gaps_left_per_conn[i])
+    avg_lossrate = loss_byte_sum*1.0/all_byte_sum
+    print("bytes lost %d, avg_lossrate %f" % (total_bytes(gaps_left), avg_lossrate))
+
+    print("Write possibility result to: " + out_file)
+    with open(out_file, 'w') as outf:
+        outf.writelines("overall lost bytes: %d\n avg loss rate: %f" % (total_bytes(gaps_left), avg_lossrate))
+
+    return
 
 def get_possibility(info_per_conn, out_file):
 
@@ -132,9 +159,9 @@ def get_possibility(info_per_conn, out_file):
             loss_rate = total_bytes(gaps_left)*1.0/(all_bytes-1)
         else:
             loss_rate = 0
-        loss_rates.append(loss_rate)
-        # print(i, ports[index], loss_rate)
-    print("bytes lost %d" % total_bytes(gaps_left))
+        # loss_rates.append(loss_rate)
+        print(i, ports[index], loss_rate)
+    # print("bytes lost %d" % total_bytes(gaps_left))
     print(loss_rates)
 
     # print("Missing packet rate adding one:")
@@ -208,6 +235,7 @@ def parse_tshark(root, f):
         return
 
     prob_file = root+'/'+f.replace(extension,'_prob.csv')
+    avg_file = root+'/'+f.replace(extension,'_avg.csv')
     gap_info_file = root+'/'+f.replace(extension, '.infos')
     gaps_count_file = root+'/'+f.replace(extension, '_gaps_count.csv')
     loss_file = root+'/'+f.replace(extension,"_loss.csv")
@@ -225,7 +253,8 @@ def parse_tshark(root, f):
         info_per_conn = get_info_per_conn(df, ports, gap_info_file)
         # info_per_conn = get_info_per_conn(pd.DataFrame(), [], gap_info_file)
         # get_seq_lost_count(info_per_conn, gaps_count_file)
-        get_possibility(info_per_conn, prob_file)
+        # get_possibility(info_per_conn, prob_file)
+        get_overall_lossbyte_and_mean_loss_rate(info_per_conn, avg_file)
         # loss_rate_optimack_client(df, ports, loss_file)
     else:
         print("Info file not exists.")
@@ -271,13 +300,13 @@ if __name__ == '__main__':
                     extension = '.pcap.tshark'
                     parse_tshark(root, f)
                     # args_list.append([root, f])
-                elif f.endswith('.pcap'):
-                    extension = '.pcap'
-                    parse_pcap(root, f)
-                elif f.endswith('.tshark'):
-                    # get_total_loss(root, f)
-                    extension = '.tshark'
-                    parse_tshark(root, f)
+                # elif f.endswith('.pcap'):
+                #     extension = '.pcap'
+                #     parse_pcap(root, f)
+                # elif f.endswith('.tshark'):
+                #     # get_total_loss(root, f)
+                #     extension = '.tshark'
+                #     parse_tshark(root, f)
 
             except KeyboardInterrupt:
                 os._exit(-1)
