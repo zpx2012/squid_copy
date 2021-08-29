@@ -129,7 +129,7 @@ while true; do
     elif grep -q "curl: (18)" $curl_singlerun ;
     then
         mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
-        cat ${squid_log} >> $outdir/${squid_log}optack_e18
+        cat ${squid_log} >> $outdir/${squid_log}_e18
         mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
     #     mv ~/rs/exp.log $outdir/exp_lost_all_$(date -Iseconds).log
     #     mv ~/rs/optack.log $outdir/optack_lost_all_$(date -Iseconds).log    

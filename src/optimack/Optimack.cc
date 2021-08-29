@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 250
+#define ACKPACING 1500
 #endif
 
 #define MAX_STALL_TIME 240
@@ -1312,11 +1312,13 @@ Optimack::init()
 }
 
 void log_seq(FILE* file, uint seq){
+    return;
     char time_str[30];
     fprintf(file, "%f, %u\n", get_current_epoch_time_nanosecond(), seq);
 }
 
 void log_seq(FILE* file, int port, uint seq){
+    return;
     fprintf(file, "%f, %d, %u\n", get_current_epoch_time_nanosecond(), port, seq);
 }
 
