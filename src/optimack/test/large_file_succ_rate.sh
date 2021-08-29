@@ -70,7 +70,7 @@ function INT_handler()
 
 trap INT_handler SIGINT
 
-sed -i "s/define ACKPACING .*/define ACKPACING 2000/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define ACKPACING .*/define ACKPACING 1500/g" ~/squid_copy/src/optimack/Optimack.cc
 sed -i "s/define CONN_NUM .*/define CONN_NUM 6/g" ~/squid_copy/src/optimack/Optimack.cc
 cd squid_copy
 make install
@@ -120,16 +120,17 @@ while true; do
 
     if grep -q "curl: (28) Operation too slow" $curl_singlerun; 
     then
-        # mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
-        cat ${squid_log} >> $outdir/squid_log_e28_$(date -Iseconds).log
+        mv /var/optack.log $outdir/optack_e28_$(date -Iseconds).log
+        cat ${squid_log} >> $outdir/${squid_log}_e28
         mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
         # exit
     #     mv ~/rs/exp.log $outdir/exp_idle.log
     #     mv ~/rs/optack.log $outdir/optack_idle.log
     elif grep -q "curl: (18)" $curl_singlerun ;
     then
-        # mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
-        cat ${squid_log} >> $outdir/squid_log_e18_$(date -Iseconds).log
+        mv /var/optack.log $outdir/optack_e18_$(date -Iseconds).log
+        cat ${squid_log} >> $outdir/${squid_log}optack_e18
+        mv ${tcpdump_out} ${tcpdump_out}_$(date -Iseconds)
     #     mv ~/rs/exp.log $outdir/exp_lost_all_$(date -Iseconds).log
     #     mv ~/rs/optack.log $outdir/optack_lost_all_$(date -Iseconds).log    
     #     if ! grep -q "cat /proc/net/netfilter/nfnetlink_queue" $squid_log ;
