@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# site='142.93.117.107'
+# site='138.68.49.206' #SF-HTTP-SV
+site='67.205.159.15' #NY-HTTP-SV
+# url="http://$site/ubuntu-16.04.6-server-i386.template"
+url="http://$site/ubuntu-16.04.6-server-i386.iso"
+# url="http://$site/md5sums.gz"
+
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
@@ -8,9 +15,9 @@
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
 # site='mirrors.mit.edu'
 
-url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
+# url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
-site='mirror.math.princeton.edu'
+# site='mirror.math.princeton.edu'
 
 sed -i "s/define CONN_NUM .*/define CONN_NUM $1/g" ~/squid_copy/src/optimack/Optimack.cc
 sed -i "s/define ACKPACING .*/define ACKPACING $2/g" ~/squid_copy/src/optimack/Optimack.cc

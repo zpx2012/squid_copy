@@ -50,9 +50,46 @@ bool IntervalList::checkAndinsertNewInterval_withLock(unsigned int start, unsign
         pthread_mutex_unlock(&mutex_intervals);
         return false;
     }
+    unsigned int last_first_end = getFirstEnd();
     insertNewInterval(start, end);
     pthread_mutex_unlock(&mutex_intervals);
     return true;
+}
+
+
+bool IntervalList::checkAndinsertNewInterval(unsigned int start, unsigned int end, int& order_flag)
+{
+    if(contains(start,end)){
+        pthread_mutex_unlock(&mutex_intervals);
+        return false;
+    }
+    char log[1000]={0};
+    std::string before = Intervals2str();
+    insertNewInterval(start, end);
+    unsigned int last_first_end = getFirstEnd();
+    snprintf(log, 1000, "[interval]: before-%s, insert[%u,%u], after-%s", before.c_str(), start, end, Intervals2str().c_str());
+    if(last_first_end < end){
+        order_flag = OUT_OF_ORDER;
+        log_info("%s out-of-order", log);
+    }
+    else if (last_first_end == end){
+        order_flag = IN_ORDER_NEWEST;
+        log_info("%s in order newest", log);
+    }
+    else{
+        order_flag = IN_ORDER_FILL;
+        log_info("%s in order fill", log);
+    }
+    return true;
+}
+
+bool IntervalList::checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end, int& order_flag)
+{
+    bool ret;
+    pthread_mutex_lock(&mutex_intervals);
+    ret = checkAndinsertNewInterval(start, end, order_flag);
+    pthread_mutex_unlock(&mutex_intervals);
+    return ret;
 }
 
 unsigned int IntervalList::insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end)

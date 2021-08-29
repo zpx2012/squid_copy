@@ -120,6 +120,7 @@ public:
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int generate_sack_blocks(unsigned char * buf,int len, IntervalList* sack_list);
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
+    void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
 
     // variables
     int main_fd;
@@ -164,7 +165,7 @@ public:
                  last_speedup_ack_rel = 1,
                  last_slowdown_ack_rel = 0; 
     int win_scale = 1 << 7, 
-        rwnd = 1, adjusted_rwnd = 0,
+        rwnd = 1, adjusted_rwnd = 0, win_end = 1,
         max_win_size = 0,
         same_ack_cnt = 0,
         overrun_cnt = 0,
@@ -173,7 +174,8 @@ public:
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;
-    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
+    double last_ack_epochtime, last_inorder_data_epochtime;
+    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *forward_seq_file, *recv_seq_file, *processed_seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
     char output_dir[100];
     char home_dir[10];
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
@@ -207,16 +209,35 @@ public:
     std::map<uint, struct data_segment> recv_buffer;
     pthread_mutex_t mutex_recv_buffer = PTHREAD_MUTEX_INITIALIZER;
     int insert_to_recv_buffer(uint seq, unsigned char* data, int len);
+    int insert_to_recv_buffer_withLock(uint seq, unsigned char* data, int len);
     int remove_recved_recv_buffer(uint seq);
+    int remove_recved_recv_buffer_withLock(uint seq);
+    int send_out_of_order_recv_buffer(uint seq);
+    int send_out_of_order_recv_buffer(uint start, uint end);
+    int send_out_of_order_recv_buffer(uint start, uint end, int max_count);
+    int send_out_of_order_recv_buffer_withLock(uint seq);
+    int send_out_of_order_recv_buffer_withLock(uint start, uint end, int max_count);
+    int resend_cnt = 0;
 
     //TLS
 #ifdef OPENSSL
+    typedef enum
+    {
+        TLS_TYPE_NONE               = 0,
+        TLS_TYPE_CHANGE_CIPHER_SPEC = 20,
+        TLS_TYPE_ALERT              = 21,
+        TLS_TYPE_HANDSHAKE          = 22,
+        TLS_TYPE_APPLICATION_DATA   = 23,
+        TLS_TYPE_HEARTBEAT          = 24,
+        TLS_TYPE_ACK                = 25  //RFC draft
+    } TlsContentType;
     struct TLSHeader{
         unsigned char type;
         unsigned short version;
         unsigned short length;
         unsigned char* ciphertext;
     };
+    bool is_ssl = false;
     SSL * open_ssl_conn(int fd);
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);

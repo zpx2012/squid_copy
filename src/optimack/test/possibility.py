@@ -132,7 +132,7 @@ def get_overall_lossbyte_and_mean_loss_rate(info_per_conn, out_file):
 
     print("Write possibility result to: " + out_file)
     with open(out_file, 'w') as outf:
-        outf.writelines("overall lost bytes: %d\n avg loss rate: %f" % (total_bytes(gaps_left), avg_lossrate))
+        outf.writelines("overall lost bytes: %d\navg loss rate: %f" % (total_bytes(gaps_left), avg_lossrate))
 
     return
 

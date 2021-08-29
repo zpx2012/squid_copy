@@ -31,7 +31,12 @@ struct Interval
     }
 };
 
-
+typedef enum
+{
+    OUT_OF_ORDER = 0,
+    IN_ORDER_NEWEST = 1,
+    IN_ORDER_FILL = 2
+} ORDER_TYPE;
 
 class IntervalList {
 public:
@@ -66,6 +71,8 @@ public:
     void insertNewInterval_withLock(Interval newInterval);
     void insertNewInterval_withLock(unsigned int start, unsigned int end);
     unsigned int insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end);
+    bool checkAndinsertNewInterval(unsigned int start, unsigned int end, int &order_flag);
+    bool checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end, int &order_flag);
     bool checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end);
 
     // Function to insert new interval and merge overlapping intervals
