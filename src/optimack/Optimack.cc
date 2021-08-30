@@ -2821,7 +2821,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                 }
 
-                subconn->last_data_received = std::chrono::system_clock::now();
 
                 // if(!subconn->payload_len && subconn->optim_ack_stop){
                 if(BACKUP_MODE){
@@ -2900,6 +2899,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 pthread_mutex_lock(&subconn->mutex_opa);
                 if (subconn->next_seq_rem <= seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
                     subconn->next_seq_rem = seq_rel + payload_len;
+                    subconn->last_data_received = std::chrono::system_clock::now();
                 }
                 // subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
                 // subconn->next_seq_rem = subconn->recved_seq.getLastEnd();
