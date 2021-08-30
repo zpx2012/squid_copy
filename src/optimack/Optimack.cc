@@ -2849,12 +2849,22 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 if(seq_rel > 1 && optim_ack_stop){
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
-                    pthread_mutex_lock(&subconn->mutex_opa);
+                    pthread_mutex_lock(&mutex_subconn_infos);
                     if(optim_ack_stop){
-                        start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
-                        printf("P%d-S%d: Start optimistic_ack\n", thr_data->pkt_id, subconn_i);
+                        std::map<uint, struct subconn_info*>::iterator it;
+                        for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
+                            if (it->second->next_seq_rem <= 1) {
+                                send_optimistic_ack(it->second, 1, get_ajusted_rwnd(1));
+                                break;
+                            }
+                        if (it == subconn_infos.end()){
+                            if(optim_ack_stop){
+                                start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
+                                printf("P%d-S%d: Start optimistic_ack_altogether\n", thr_data->pkt_id, subconn_i);
+                            }
+                        }
                     }
-                    pthread_mutex_unlock(&subconn->mutex_opa);
+                    pthread_mutex_unlock(&mutex_subconn_infos);
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
                 }
 
