@@ -2869,7 +2869,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
 
                 if(overrun_stop == -1) {
-                    log_info("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
+                    // log_info("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
                     pthread_mutex_lock(&mutex_subconn_infos);
                     std::map<uint, struct subconn_info*>::iterator it;
                     for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
@@ -2885,7 +2885,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         }
                     }
                     pthread_mutex_unlock(&mutex_subconn_infos);
-                    log_info("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
+                    // log_info("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
                 }
 
                 if(seq_rel == 1 && local_port == squid_port){
@@ -2935,11 +2935,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             int intvl_data_len = it->end-it->start;
                             if(order_flag == IN_ORDER_NEWEST){
                                 send_data_to_squid(it->start, intvl_data, intvl_data_len);
+                                log_debug("%s inorder newest, forwarded to squid\n", log); 
                             }
                             else if(order_flag == IN_ORDER_FILL){
                                 log_info("process_tcp_packet: resend in order fill, seq %u", it->start);
                                 send_data_to_squid(it->start, intvl_data, intvl_data_len);
                                 send_out_of_order_recv_buffer(it->end);
+                                log_debug("%s - inorder fill, sent to squid\n", log); 
                             }
                             else{
                                 insert_to_recv_buffer(it->start, intvl_data, intvl_data_len);
@@ -3032,7 +3034,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if(!is_new_segment && !subconn->is_backup){
                 // if (seq_rel + payload_len <= cur_ack_rel) {
                     // printf("P%d-S%d: discarded\n", thr_data->pkt_id, subconn_i); 
-                    // log_debug("%s - discarded\n", log);
+                    log_debug("%s - discarded\n", log);
                     return -1;
                 }
 
