@@ -280,12 +280,12 @@ pool_handler(void* arg)
 
     if (ret == 0){
         nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        log_info("Verdict: Accept");
+        // log_info("Verdict: Accept");
         //debugs(0, DBG_CRITICAL, "Verdict: Accept");
     }
     else{
         nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
-        log_info("Verdict: Drop");
+        // log_info("Verdict: Drop");
         //debugs(0, DBG_CRITICAL, "Verdict: Drop");
     }
 
@@ -696,9 +696,11 @@ full_optimistic_ack_altogether(void* arg)
                     if (adjusted_rwnd < it->second->win_scale){
                         adjusted_rwnd = 0;
                         obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
+                        continue;
                         // break;
                     }
-                    obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                    else
+                        obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                 }
             }
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);

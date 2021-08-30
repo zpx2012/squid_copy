@@ -139,13 +139,14 @@ while true; do
     #         mv ~/rs/exp.log $outdir/exp_28_noprint.log
     #         mv ~/rs/optack.log $outdir/optack_28_noprint.log
     #     fi
-    fi
+    # fi
 
-    # elif grep -q "intact"  $curl_singlerun ;
-    # then
+    elif grep -q "intact"  $curl_singlerun ;
+    then
+        rm ${tcpdump_out}
     #     mv ~/rs/seq.csv $outdir/seq_success.csv
     #     mv ~/rs/ack.csv $outdir/ack_success.csv
-    # fi
+    fi
     rm $curl_singlerun
 
 
