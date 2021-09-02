@@ -18,7 +18,7 @@ unsigned int IntervalList::total_bytes()
 {
     unsigned int sum_bytes = 0;
     for (size_t i = 0; i < Intervals.size(); i++)
-       sum_bytes += Intervals[i].end - Intervals[i].start + 1;
+       sum_bytes += Intervals[i].end - Intervals[i].start;
     return sum_bytes;
 }
 
