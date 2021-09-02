@@ -33,7 +33,8 @@ normal_out=$outdir/curl_normal_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
 tcpdump_out=$outdir/tcpdump_${tag}.pcap
 
-
+inf=$(ip route | grep default | sed -e "s/^.*dev.//" -e "s/.proto.*//")
+sudo ethtool -K $inf tso off gso off gro off
 
 function cleanup()
 {

@@ -729,6 +729,8 @@ full_optimistic_ack_altogether(void* arg)
 
         //Overrun detection
         if (elapsed(last_overrun_check) >= 0.1){
+            continue;
+            
             uint min_next_seq_rem = -1;
             struct subconn_info* slowest_subconn;
             // uint min_next_seq_rem = obj->get_min_next_seq_rem();
