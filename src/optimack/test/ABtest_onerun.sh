@@ -37,6 +37,7 @@ tcpdump_out=$outdir/tcpdump_${tag}.pcap
 
 function cleanup()
 {
+    sleep 2
     sudo /usr/local/squid/sbin/squid -k interrupt
     sleep 5
     if screen -ls | grep 'squid'; 
@@ -84,4 +85,5 @@ then
     cat ${squid_log} >> ${squid_log}_e18
     mv /var/optack.log $outdir/optack_e18_${tag}.log
     mv ${tcpdump_out} ${tcpdump_out}_e18
+    mv /usr/local/squid/var/cache/squid/core $outdir/core_e18_${tag}
 fi

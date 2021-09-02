@@ -169,8 +169,9 @@ public:
         max_win_size = 0,
         same_ack_cnt = 0,
         overrun_cnt = 0,
-        we2squid_lost_cnt = 0;
-    float overrun_penalty = 0, we2squid_penalty = 0;
+        we2squid_lost_cnt = 0,
+        range_timeout_cnt = 0;
+    float overrun_penalty = 0, we2squid_penalty = 0, range_timeout_penalty = 0;
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;

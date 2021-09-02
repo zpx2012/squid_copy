@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1500
+#define ACKPACING 250
 #endif
 
 #define MAX_STALL_TIME 240
@@ -111,7 +111,7 @@ double get_current_epoch_time_second(){
 }
 
 double get_current_epoch_time_nanosecond(){
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()/1000000000.0;
 }
 
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start){
@@ -729,39 +729,56 @@ full_optimistic_ack_altogether(void* arg)
 
         //Overrun detection
         if (elapsed(last_overrun_check) >= 0.1){
-            uint min_next_seq_rem = obj->get_min_next_seq_rem();
+            uint min_next_seq_rem = -1;
+            struct subconn_info* slowest_subconn;
+            // uint min_next_seq_rem = obj->get_min_next_seq_rem();
             uint stall_seq = 0, stall_port = 0;
             bool is_stall = false;
             pthread_mutex_lock(&obj->mutex_subconn_infos);
-            for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
-                if(!it->second->is_backup){
-                    if (elapsed(it->second->last_data_received) >= 2){
-                        is_stall = true;
-                        stall_port = it->second->local_port;
-                        stall_seq = it->second->next_seq_rem;
-                        // if(it->second->recved_seq.getLastEnd() >= min_next_seq_rem && elapsed(it->second->last_data_received) > MAX_STALL_TIME && elapsed(last_zero_window) > 30){
-                        //     char time_str[20];
-                        //     memset(time_str, 0, 20);
-                        //     printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        //     log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
-                        //     obj->subconn_infos.erase(it++);
-                        // }
-                        break;
-                    }
+            // Get slowest subconn
+            for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                if(it->second->next_seq_rem < min_next_seq_rem){
+                    slowest_subconn = it->second;
+                    min_next_seq_rem = it->second->next_seq_rem;
                 }
-                it++;
             }
+            if(elapsed(slowest_subconn->last_data_received) >= 6){
+                is_stall = true;
+                stall_port = slowest_subconn->local_port;
+                stall_seq = slowest_subconn->next_seq_rem;
+            }
+            // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
+            //     if(!it->second->is_backup){
+            //         if (elapsed(it->second->last_data_received) >= 2){
+            //             is_stall = true;
+            //             stall_port = it->second->local_port;
+            //             stall_seq = it->second->next_seq_rem;
+
+            //             // if(it->second->recved_seq.getLastEnd() >= min_next_seq_rem && elapsed(it->second->last_data_received) > MAX_STALL_TIME && elapsed(last_zero_window) > 30){
+            //             //     char time_str[20];
+            //             //     memset(time_str, 0, 20);
+            //             //     printf("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+            //             //     log_info("Full optimistic altogether: S%d Reach max stall time, last_data_received %s, exit...\n", it->second->id, print_chrono_time(it->second->last_data_received, time_str));
+            //             //     obj->subconn_infos.erase(it++);
+            //             // }
+            //             break;
+            //         }
+            //     }
+            //     it++;
+            // }
             pthread_mutex_unlock(&obj->mutex_subconn_infos);
 
             if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-                if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
+                if(abs(zero_window_start-min_next_seq_rem) <= 3*obj->squid_MSS && elapsed(last_zero_window) <= 0.7) //zero window, exhausted receive window, waiting for new squid ack
+                // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
                     continue;
                 char time_str[20];
                 log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if(stall_seq == last_stall_seq && stall_port == last_stall_port && elapsed(last_restart) < 3)
+                if(stall_seq >= last_stall_seq && elapsed(last_restart) <= 2)
                     continue;
-                if(!SPEEDUP_CONFIG && opa_ack_start < min_next_seq_rem)
+
+                if(!SPEEDUP_CONFIG && opa_ack_start <= min_next_seq_rem+10*obj->squid_MSS)
                     continue;
                 uint restart_seq = min_next_seq_rem > 5*obj->squid_MSS? min_next_seq_rem - 5*obj->squid_MSS : 1;
                 if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
@@ -771,10 +788,9 @@ full_optimistic_ack_altogether(void* arg)
                 //     continue;
                 // if(elapsed(last_restart) <= 0)
                 //     continue;
-                // if(abs(zero_window_start-min_next_seq_rem) > 3*obj->squid_MSS && elapsed(last_zero_window) > 5*send_ack_pace){
                     obj->overrun_cnt++;
-                    obj->overrun_penalty += elapsed(last_restart);
-                    sprintf(log, "O: overrun,");
+                    obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
+                    sprintf(log, "O: S%d overrun,", stall_port);
                     sprintf(log, "%s current ack %u,", log, opa_ack_start);
                     opa_ack_start = restart_seq;
                 // }
@@ -997,6 +1013,8 @@ void Optimack::log_seq_gaps(){
         fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
         fprintf(info_file, "Overrun count: %d\n", overrun_cnt);
         fprintf(info_file, "Overrun penalty: %.2f\n", overrun_penalty);
+        fprintf(info_file, "Range timeout count: %d\n", range_timeout_cnt);
+        fprintf(info_file, "Range timeout penalty: %.2f\n", range_timeout_penalty);
         fprintf(info_file, "We2Squid loss count: %d\n", we2squid_lost_cnt);
         fprintf(info_file, "We2Squid loss penalty: %.2f\n", we2squid_penalty);
         if (RANGE_MODE){
@@ -1268,25 +1286,25 @@ Optimack::init()
     adjust_rwnd_file = fopen(tmp_str, "w");
     fprintf(adjust_rwnd_file, "time,adjust_rwnd\n");
 
-    memset(tmp_str, 0, 600);
-    sprintf(tmp_str, "%s/forward_seq_%s_%s.csv", output_dir, hostname, start_time);
-    forward_seq_file = fopen(tmp_str, "w");
-    fprintf(forward_seq_file, "time,fwd_seq_num\n");
+    // memset(tmp_str, 0, 600);
+    // sprintf(tmp_str, "%s/forward_seq_%s_%s.csv", output_dir, hostname, start_time);
+    // forward_seq_file = fopen(tmp_str, "w");
+    // fprintf(forward_seq_file, "time,fwd_seq_num\n");
 
-    memset(tmp_str, 0, 600);
-    sprintf(tmp_str, "%s/recv_seq_%s_%s.csv", output_dir, hostname, start_time);
-    recv_seq_file = fopen(tmp_str, "w");
-    fprintf(recv_seq_file, "time,port,recv_seq_num\n");
+    // memset(tmp_str, 0, 600);
+    // sprintf(tmp_str, "%s/recv_seq_%s_%s.csv", output_dir, hostname, start_time);
+    // recv_seq_file = fopen(tmp_str, "w");
+    // fprintf(recv_seq_file, "time,port,recv_seq_num\n");
 
     memset(tmp_str, 0, 600);
     sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
     processed_seq_file = fopen(tmp_str, "w");
     fprintf(processed_seq_file, "time,processed_seq_num\n");
    
-    memset(tmp_str, 0, 600);
-    sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
-    ack_file = fopen(tmp_str, "w");
-    fprintf(ack_file, "time,ack_num\n");
+    // memset(tmp_str, 0, 600);
+    // sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
+    // ack_file = fopen(tmp_str, "w");
+    // fprintf(ack_file, "time,ack_num\n");
     
     // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
     sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s_%s.csv", output_dir, start_time, hostname);
@@ -1314,13 +1332,13 @@ Optimack::init()
 }
 
 void log_seq(FILE* file, uint seq){
-    return;
+    // return;
     char time_str[30];
     fprintf(file, "%f, %u\n", get_current_epoch_time_nanosecond(), seq);
 }
 
 void log_seq(FILE* file, int port, uint seq){
-    return;
+    // return;
     fprintf(file, "%f, %d, %u\n", get_current_epoch_time_nanosecond(), port, seq);
 }
 
@@ -1756,6 +1774,7 @@ restart:
         // for(auto it : range_job->getIntervalList()) {
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
             if (obj->cur_ack_rel >= it->end+obj->response_header_len+1){
+                log_info("[Range]: cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, it->end+obj->response_header_len+1);
                 printf("[Range]: cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, it->end+obj->response_header_len+1);
                 // printf("before erase it: [%u, %u]\n", it->start, it->end);
                 range_job_vector.erase(it++);
@@ -1769,8 +1788,12 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_second() - it->sent_epoch_time >= 5){//timeout, send it again
-                printf("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, get_current_epoch_time_second() - it->sent_epoch_time);
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 3){//timeout, send it again
+                double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
+                obj->range_timeout_cnt++;
+                obj->range_timeout_penalty += delay;
+                log_info("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
+                printf("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
                 close(range_sockfd);
                 range_sockfd = -1;
                 break;
@@ -2032,6 +2055,8 @@ uint Optimack::get_min_next_seq_rem(){
     }
     return min_next_seq_rem;
 }
+
+
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     // uint seq_recved_global = recved_seq.getFirstEnd_withLock();//TODO: Or ?  cur_ack_rel
@@ -2566,7 +2591,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         uint cur_ack_rel_local = ack - subconn->ini_seq_rem;
                         this->win_end = cur_ack_rel + rwnd;
-                        log_seq(ack_file, cur_ack_rel_local);
+                        // log_seq(ack_file, cur_ack_rel_local);
 
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", thr_data->pkt_id, cur_ack_rel, rwnd, max_win_size);
@@ -2905,11 +2930,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 //     fprintf(seq_file, "%s, %u\n", time_in_HH_MM_SS_US(time_str), seq_rel);
                 // }
 
-                log_seq(recv_seq_file, local_port, seq_rel);
+                // log_seq(recv_seq_file, local_port, seq_rel);
                 pthread_mutex_lock(&subconn->mutex_opa);
-                if (subconn->next_seq_rem <= seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+                if (subconn->next_seq_rem < seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
                     subconn->next_seq_rem = seq_rel + payload_len;
                     subconn->last_data_received = std::chrono::system_clock::now();
+                    memset(time_str, 0, 64);
+                    sprintf(log,"%s - update next_seq_rem to %u - update last_data_received %s", log, subconn->next_seq_rem, print_chrono_time(subconn->last_data_received, time_str));
                 }
                 // subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
                 // subconn->next_seq_rem = subconn->recved_seq.getLastEnd();
@@ -3297,7 +3324,7 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
 void 
 Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
 {
-    printf("#####################New version: CONN_NUM %d\n", CONN_NUM);
+    printf("New version: CONN_NUM %d, ACK PACE %d\n", CONN_NUM, ACKPACING);
 
     time_in_HH_MM_SS_nospace(start_time);
     start_timestamp = std::chrono::system_clock::now();
@@ -3685,7 +3712,7 @@ void Optimack::send_data_to_squid(unsigned int seq, unsigned char* payload, int 
         log_info("send_data_to_squid: seq %u, len %d", seq+sent, packet_len);
         // usleep(1);
     }
-    log_seq(forward_seq_file, seq);
+    // log_seq(forward_seq_file, seq);
 }
 
 #ifdef OPENSSL
