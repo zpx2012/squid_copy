@@ -23,7 +23,7 @@ if __name__ == '__main__':
                     time_str = datetime.strptime(time_str, "%Y%m%d%H%M").strftime('%Y-%m-%dT%H:%M')
                     hostname = f.split(extension)[0].split('_')[1]
                     list_ = [time_str, hostname]
-                    with open(infile, 'r') as inf:
+                    with open(root+'/'+f, 'r') as inf:
                         for i, line in enumerate(inf.read().splitlines()):
                             cells = line.split(': ')
                             list_.append(cells[1])
