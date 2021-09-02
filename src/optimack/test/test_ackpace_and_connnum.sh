@@ -11,13 +11,13 @@
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
-# url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-# site='mirrors.mit.edu'
+url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
+site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
-url='http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz' #28.5M
-site='mirror.math.princeton.edu'
+# url='http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz' #28.5M
+# site='mirror.math.princeton.edu'
 
 
 nums=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
@@ -25,8 +25,8 @@ nums=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
 # nums=(2 4 6 8 10 12 14 16)
 # ackpaces=(200 250 333 500 1000 3333)
 # ackpaces=(222 286 400 667 2000 10000)
-ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
-# ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
+# ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
+ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
 
 i=0
 while true; do
