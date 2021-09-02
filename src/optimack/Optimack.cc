@@ -768,7 +768,7 @@ full_optimistic_ack_altogether(void* arg)
             // }
             pthread_mutex_unlock(&obj->mutex_subconn_infos);
 
-            if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+            if (false){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
                 if(abs(zero_window_start-min_next_seq_rem) <= 3*obj->squid_MSS && elapsed(last_zero_window) <= 0.7) //zero window, exhausted receive window, waiting for new squid ack
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
@@ -2876,17 +2876,18 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                     pthread_mutex_lock(&mutex_subconn_infos);
                     if(optim_ack_stop){
-                        std::map<uint, struct subconn_info*>::iterator it;
-                        for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
-                            if (it->second->next_seq_rem <= 1) {
-                                send_optimistic_ack(it->second, 1, get_ajusted_rwnd(1));
-                                break;
-                            }
-                        if (it == subconn_infos.end()){
-                            if(optim_ack_stop){
+                        // std::map<uint, struct subconn_info*>::iterator it;
+                        // for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
+                        //     if (it->second->next_seq_rem <= 1) {
+                        //         send_optimistic_ack(it->second, 1, get_ajusted_rwnd(1));
+                        //         break;
+                        //     }
+                        // if (it == subconn_infos.end()){
+                        if(recved_seq.getFirstEnd() > 1){
+                            // if(optim_ack_stop){
                                 start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                                 printf("P%d-S%d: Start optimistic_ack_altogether\n", thr_data->pkt_id, subconn_i);
-                            }
+                            // }
                         }
                     }
                     pthread_mutex_unlock(&mutex_subconn_infos);
