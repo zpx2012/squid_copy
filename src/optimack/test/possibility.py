@@ -187,7 +187,7 @@ def get_possibility(info_per_conn, out_file):
         outf.writelines("bytes lost on all: %d\n" % total_bytes(gaps_left))
         for loss in loss_rates:
             outf.writelines(str(loss)+'\n')
-    
+
     return loss_rates
 
 def parse_info_file(info_file):

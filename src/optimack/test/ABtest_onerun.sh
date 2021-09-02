@@ -26,7 +26,7 @@ url=$4
 mkdir -p ~/rs/ABtest_onerun/
 outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/
 mkdir -p $outdir
-stime=$(date +%Y%m%d%H%M)
+stime=$(date +%Y%m%d%H%M%S)
 tag=$(hostname)_${site}_http_${2}_${stime}
 squid_out=$outdir/curl_squid_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
