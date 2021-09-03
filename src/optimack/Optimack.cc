@@ -729,7 +729,6 @@ full_optimistic_ack_altogether(void* arg)
 
         //Overrun detection
         if (elapsed(last_overrun_check) >= 0.1){
-            continue;
             
             uint min_next_seq_rem = -1;
             struct subconn_info* slowest_subconn;
@@ -744,7 +743,7 @@ full_optimistic_ack_altogether(void* arg)
                     min_next_seq_rem = it->second->next_seq_rem;
                 }
             }
-            if(elapsed(slowest_subconn->last_data_received) >= 6){
+            if(elapsed(slowest_subconn->last_data_received) >= 4){
                 is_stall = true;
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
@@ -770,7 +769,7 @@ full_optimistic_ack_altogether(void* arg)
             // }
             pthread_mutex_unlock(&obj->mutex_subconn_infos);
 
-            if (false){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+            if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
                 if(abs(zero_window_start-min_next_seq_rem) <= 3*obj->squid_MSS && elapsed(last_zero_window) <= 0.7) //zero window, exhausted receive window, waiting for new squid ack
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
