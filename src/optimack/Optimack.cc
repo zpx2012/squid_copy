@@ -1297,10 +1297,10 @@ Optimack::init()
     // recv_seq_file = fopen(tmp_str, "w");
     // fprintf(recv_seq_file, "time,port,recv_seq_num\n");
 
-    memset(tmp_str, 0, 600);
-    sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
-    processed_seq_file = fopen(tmp_str, "w");
-    fprintf(processed_seq_file, "time,processed_seq_num\n");
+    // memset(tmp_str, 0, 600);
+    // sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
+    // processed_seq_file = fopen(tmp_str, "w");
+    // fprintf(processed_seq_file, "time,processed_seq_num\n");
    
     // memset(tmp_str, 0, 600);
     // sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
@@ -2985,7 +2985,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
                 pthread_mutex_unlock(&mutex_recv_buffer);
 
-                log_seq(processed_seq_file, local_port, seq_rel);
+                // log_seq(processed_seq_file, local_port, seq_rel);
 
                 if(recved_seq.getFirstEnd() == 1){
                     send_optimistic_ack(subconn, 1, get_ajusted_rwnd(1));
