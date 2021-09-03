@@ -11,6 +11,7 @@ df1, df2 = pd.read_csv(os.path.expanduser(sys.argv[1])), pd.read_csv(os.path.exp
 # df2.columns = ['time','VPN']
 # df2 = df2.groupby('time', as_index=False).mean()
 union = pd.merge(df1,df2,on=['dstport','seq'],how='left')
+union = union[union]
 # union['time_offset'] = union.recv_time - union.Recv_time
 union.sort_values(by=['dstport','seq'],inplace=True)
 # union.sort_values('time',inplace=True)
