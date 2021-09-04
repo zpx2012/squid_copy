@@ -62,7 +62,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 250
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -1300,7 +1300,7 @@ Optimack::init()
     // memset(tmp_str, 0, 600);
     // sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
     // processed_seq_file = fopen(tmp_str, "w");
-    // fprintf(processed_seq_file, "time,processed_seq_num\n");
+    // fprintf(processed_seq_file, "time,port,processed_seq_num\n");
    
     // memset(tmp_str, 0, 600);
     // sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
@@ -2933,16 +2933,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // }
 
                 // log_seq(recv_seq_file, local_port, seq_rel);
-                pthread_mutex_lock(&subconn->mutex_opa);
-                if (subconn->next_seq_rem < seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
-                    subconn->next_seq_rem = seq_rel + payload_len;
-                    subconn->last_data_received = std::chrono::system_clock::now();
-                    memset(time_str, 0, 64);
-                    sprintf(log,"%s - update next_seq_rem to %u - update last_data_received %s", log, subconn->next_seq_rem, print_chrono_time(subconn->last_data_received, time_str));
-                }
-                // subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
-                // subconn->next_seq_rem = subconn->recved_seq.getLastEnd();
-                pthread_mutex_unlock(&subconn->mutex_opa);
 
                 // pthread_mutex_lock(&mutex_seq_next_global);
                 int order_flag;
@@ -2985,7 +2975,18 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
                 pthread_mutex_unlock(&mutex_recv_buffer);
 
-                // log_seq(processed_seq_file, local_port, seq_rel);
+                pthread_mutex_lock(&subconn->mutex_opa);
+                if (subconn->next_seq_rem < seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+                    subconn->next_seq_rem = seq_rel + payload_len;
+                    subconn->last_data_received = std::chrono::system_clock::now();
+                    memset(time_str, 0, 64);
+                    sprintf(log,"%s - update next_seq_rem to %u - update last_data_received %s", log, subconn->next_seq_rem, print_chrono_time(subconn->last_data_received, time_str));
+                    // log_seq(processed_seq_file, local_port, seq_rel);
+                }
+                // subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
+                // subconn->next_seq_rem = subconn->recved_seq.getLastEnd();
+                pthread_mutex_unlock(&subconn->mutex_opa);
+
 
                 if(recved_seq.getFirstEnd() == 1){
                     send_optimistic_ack(subconn, 1, get_ajusted_rwnd(1));
