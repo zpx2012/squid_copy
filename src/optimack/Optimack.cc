@@ -743,7 +743,7 @@ full_optimistic_ack_altogether(void* arg)
                     min_next_seq_rem = it->second->next_seq_rem;
                 }
             }
-            if(elapsed(slowest_subconn->last_data_received) >= 4){
+            if(elapsed(slowest_subconn->last_data_received) >= 2){
                 is_stall = true;
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
