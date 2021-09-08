@@ -775,7 +775,7 @@ full_optimistic_ack_altogether(void* arg)
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
                     continue;
                 char time_str[20];
-                log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
+                // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
                 if(stall_seq >= last_stall_seq && elapsed(last_restart) <= 2)
                     continue;
 
@@ -1688,15 +1688,16 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 ack = subconn->ini_seq_loc + subconn->next_seq_loc;
                 seq_rel = 1 + obj->response_header_len + header->start + sent;
                 seq = subconn->ini_seq_rem +  seq_rel; // Adding the offset back
-                send_ACK_payload(obj->g_local_ip, obj->g_remote_ip, obj->squid_port, obj->g_remote_port, (u_char*)(data + sent), packet_len, ack, seq);
+                // send_ACK_payload(obj->g_local_ip, obj->g_remote_ip, obj->squid_port, obj->g_remote_port, (u_char*)(data + sent), packet_len, ack, seq);
                 // log_error("range_recv:2132: recved_seq - lock"); 
                 obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
                 // log_error("range_recv:2132: recved_seq - unlock"); 
                 // log_error("range_recv:2132: all_lost_seq - lock"); 
                 obj->all_lost_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
                 // log_error("range_recv:2132: all_lost_seq - unlock"); 
+                obj->send_data_to_squid(seq_rel, (u_char*)(data + sent), packet_len);
                 log_debug("[Range]: insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+packet_len);
-                obj->insert_to_recv_buffer_withLock(seq_rel, (u_char*)data+sent, packet_len);
+                // obj->insert_to_recv_buffer_withLock(seq_rel, (u_char*)data+sent, packet_len);
                 log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc);
                 // printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
             }
@@ -3162,6 +3163,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
 
                 if(payload_len){
+                    log_debug("%s - sent to squid\n", log); 
                     tcphdr->th_flags = TH_ACK | TH_PUSH;
                     modify_to_main_conn_packet(subconn, tcphdr, thr_data->buf, thr_data->len, seq-subconn->ini_seq_rem);
                     compute_checksums(thr_data->buf, 20, thr_data->len);
