@@ -27,6 +27,8 @@ nums=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
 # ackpaces=(222 286 400 667 2000 10000)
 # ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
 ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
+fix_num=6
+fix_ackpace=1500
 
 i=0
 while true; do
@@ -36,23 +38,23 @@ while true; do
     echo
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
         if [ $((i % 2)) -eq 0 ]; then
-            sed -i "s/define ACKPACING .*/define ACKPACING 1500/g" ~/squid_copy/src/optimack/Optimack.cc
+            sed -i "s/define ACKPACING .*/define ACKPACING ${fix_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define CONN_NUM .*/define CONN_NUM ${nums[i/2%${#nums[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc
             cd ~/squid_copy/
             #./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
             make install
             echo
-            echo ${nums[i/2%${#nums[@]}]}optim+1range_ackpace1500
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1500 ${nums[i/2%${#nums[@]}]}optim+1range_ackpace1500 $site $url
+            echo ${nums[i/2%${#nums[@]}]}optim+1range_ackpace${fix_ackpace}
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace${fix_ackpace} ${nums[i/2%${#nums[@]}]}optim+1range_ackpace${fix_ackpace} $site $url
         else
-            sed -i "s/define CONN_NUM .*/define CONN_NUM 6/g" ~/squid_copy/src/optimack/Optimack.cc
+            sed -i "s/define CONN_NUM .*/define CONN_NUM ${fix_num}/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define ACKPACING .*/define ACKPACING ${ackpaces[i/2%${#ackpaces[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc
             cd ~/squid_copy/
             #./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
             make install
             echo
-            echo ackpace${ackpaces[i/2%${#ackpaces[@]}]}_6optim+1range
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_6optim ackpace${ackpaces[i/2%${#ackpaces[@]}]}_6optim+1range $site $url
+            echo ackpace${ackpaces[i/2%${#ackpaces[@]}]}_${fix_num}optim+1range
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_${fix_num}optim ackpace${ackpaces[i/2%${#ackpaces[@]}]}_${fix_num}optim+1range $site $url
         fi
         i=$((i+1))
     else
