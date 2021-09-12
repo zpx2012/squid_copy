@@ -104,6 +104,7 @@ public:
     bool is_nfq_full(FILE* out_file);
     void print_ss(FILE* out_file);
     bool does_packet_lost_on_all_conns();
+    int get_localport(int fd);
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
@@ -194,7 +195,7 @@ public:
     uint get_min_next_seq_rem();
     pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
-    int range_stop, range_sockfd;
+    int range_stop, range_sockfd, range_request_count = 0;
     IntervalList ranges_sent;
     uint response_header_len, requested_bytes = 0;
 

@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 1500
 #endif
 
 #define MAX_STALL_TIME 240
@@ -717,14 +717,16 @@ full_optimistic_ack_altogether(void* arg)
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
 
-            // if (SPEEDUP_CONFIG){
-            //     if(obj->cur_ack_rel > opa_ack_start && conn->next_seq_rem > opa_ack_start){
-            //         opa_ack_start = conn->next_seq_rem;
-            //     }
+            if (SPEEDUP_CONFIG){
+                uint min_next_seq_rem = obj->get_min_next_seq_rem();
+                if(obj->cur_ack_rel > opa_ack_start && min_next_seq_rem > opa_ack_start){
+                    opa_ack_start = obj->cur_ack_rel;
+                    printf("speedup: cur ack %u, to %u\n", opa_ack_start, obj->cur_ack_rel);
+                }
             //     if(conn->next_seq_rem > opa_ack_start){
             //         opa_ack_start = conn->next_seq_rem;
             //     }
-            // }
+            }
         }
 
         //Overrun detection
@@ -1763,6 +1765,7 @@ restart:
             // pthread_mutex_unlock(p_mutex_range_job_vector);
 
             range_sockfd = obj->establish_tcp_connection();
+            printf("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
         }
         if(range_sockfd <= 0){ //TODO: remove ranges_sent?{
             perror("Can't create range_sockfd, range thread break\n");
@@ -2439,8 +2442,9 @@ int Optimack::send_http_range_request(int sockfd, Interval range){
     } 
     else{
         requested_bytes += end - start + 1;
-        printf("[Range] bytes [%u, %u] requested\n", start+response_header_len+1, end+response_header_len+1);
-        log_debug("[Range] bytes %d - %d requested", start+response_header_len+1, end+response_header_len+1);
+        range_request_count++;
+        printf("[Range] bytes [%u, %u] requested, No.%d\n", start+response_header_len+1, end+response_header_len+1, range_request_count);
+        log_debug("[Range] bytes %d - %d requested, No.%d", start+response_header_len+1, end+response_header_len+1, range_request_count);
         return 0;
     }
 }
@@ -2874,7 +2878,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     }
                 }
 
-                if(seq_rel > 1 && optim_ack_stop){
+                if(seq_rel >= 1 && optim_ack_stop){
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                     pthread_mutex_lock(&mutex_subconn_infos);
                     if(optim_ack_stop){
@@ -3206,6 +3210,19 @@ int Optimack::modify_to_main_conn_packet(struct subconn_info* subconn, struct my
         return 0;
 }
 
+int Optimack::get_localport(int fd){
+    // Get my port
+    struct sockaddr_in my_addr;
+    socklen_t len = sizeof(my_addr);
+    bzero(&my_addr, len);
+    if (getsockname(fd, (struct sockaddr*)&my_addr, &len) < 0) {
+        perror("getsockname error");
+        close(fd);
+        return -1;
+    }
+    return ntohs(my_addr.sin_port);
+}
+
 void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_dict, bool is_backup){
     int ret;
 
@@ -3227,7 +3244,7 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
     new_subconn->id = subconn_count++;
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    struct sockaddr_in server_addr, my_addr;
+    struct sockaddr_in server_addr;
 
     // Open socket
     if ((new_subconn->sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -3279,15 +3296,8 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
     }
 
 
-    // Get my port
-    socklen_t len = sizeof(my_addr);
-    bzero(&my_addr, len);
-    if (getsockname(new_subconn->sockfd, (struct sockaddr*)&my_addr, &len) < 0) {
-        perror("getsockname error");
-        close(new_subconn->sockfd);
-        return;
-    }
-    new_subconn->local_port = ntohs(my_addr.sin_port);
+
+    new_subconn->local_port = get_localport(new_subconn->sockfd);
     new_subconn->win_scale = 1 << tcp_info.tcpi_rcv_wscale;
     new_subconn->payload_len = tcp_info.tcpi_advmss;
     // subconn_info_dict[new_subconn->local_port] = new_subconn;
