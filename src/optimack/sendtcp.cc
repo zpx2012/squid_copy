@@ -69,11 +69,13 @@ void create_sack_option(struct tcphdr_opts* tcp_opts, unsigned char* sack_str, i
 
 	unsigned char* sack_option = tcp_opts->bytes;
 	/* tcp timestamp option */
-	sack_option[0] = 5;
-    sack_option[1] = len; /* NOOP */
-	tcp_opts->size = len+2;
+	sack_option[0] = sack_option[1] = 1;
+	sack_option[2] = 5;
+    sack_option[3] = len+2; /* NOOP */
+	tcp_opts->size = len+4;
 
-	memcpy(sack_option+2, &sack_str, len);
+	memcpy(sack_option+4, &sack_str, len);
+	// printf("tcp_opts size: %d\n", tcp_opts->size);
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++
@@ -107,9 +109,11 @@ void send_tcp(int sport, int dport, struct tcphdr_bsd* tcp_in, struct tcphdr_opt
 	unsigned char		*tcp_option_bytes;
 
 	int tcp_opt_size = 0;
-	if(tcp_opts != NULL)
+	if(tcp_opts != NULL && tcp_opts->size)
 	{
 		tcp_opt_size = tcp_opts->size;
+		// printf("tcp_opts size in send_tcp: %d\n", tcp_opts->size);
+
 	}
 
 	packet_size = TCPHDR_SIZE + tcp_opt_size + payload_size;
@@ -147,6 +151,8 @@ void send_tcp(int sport, int dport, struct tcphdr_bsd* tcp_in, struct tcphdr_opt
 		memcpy(tcp_option_bytes, tcp_opts->bytes, tcp_opts->size);
 
 	tcp->th_off	= ((TCPHDR_SIZE + tcp_opt_size) >> 2);
+	// if(tcp_opts != NULL && tcp_opts->size)
+		// printf("tcp->th_off: %d, %d, %d\n", tcp->th_off, tcp->th_off*4, TCPHDR_SIZE + tcp_opt_size);
 	tcp->th_win	= htons(tcp_in->th_win);
 	tcp->th_flags	= tcp_in->th_flags;
 

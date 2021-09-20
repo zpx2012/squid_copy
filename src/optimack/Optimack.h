@@ -115,6 +115,7 @@ public:
     int send_ACK_adjusted_rwnd(struct subconn_info* conn, int cur_ack);
     int send_optimistic_ack_with_timer(struct subconn_info* conn, int cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
+    void send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq);
     int modify_to_main_conn_packet(struct subconn_info* subconn, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
     int get_ajusted_rwnd(int cur_ack);
