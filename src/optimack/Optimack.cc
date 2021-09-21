@@ -2500,7 +2500,7 @@ int Optimack::generate_sack_blocks(unsigned char * buf, int len, IntervalList* s
     int offset = 0;
     pthread_mutex_lock(seq_list->getMutex());
     auto seq_intvl_list = seq_list->getIntervalList();
-    for(int i = 1; i < seq_list->size() && i < 5 && offset+8 <= len; i++){
+    for(int i = 1; i < seq_list->size() && i < 4 && offset+8 <= len; i++){
         *((uint32_t*) (buf + offset)) = ntohl(seq_intvl_list.at(i).start);
         *((uint32_t*) (buf + offset + 4)) = ntohl(seq_intvl_list.at(i).end);
         offset += 8;
@@ -3816,7 +3816,7 @@ void Optimack::send_data_to_squid(unsigned int seq, unsigned char* payload, int 
         packet_len = unsent >= squid_MSS? squid_MSS : unsent;
         send_ACK_payload(g_local_ip, g_remote_ip, squid_port, g_remote_port, payload+sent, packet_len, squid_conn->ini_seq_loc + squid_conn->next_seq_loc, squid_conn->ini_seq_rem + seq + sent);
         log_info("send_data_to_squid: seq %u, len %d", seq+sent, packet_len);
-        // usleep(1);
+        usleep(1);
     }
     // log_seq(forward_seq_file, seq);
 }
