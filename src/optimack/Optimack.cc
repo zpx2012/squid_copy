@@ -1580,8 +1580,10 @@ void Optimack::print_seq_table(){
     printf("Recv_seq: ");
     recved_seq.printIntervals();
 
-    printf("Backup: ");
-    subconn_infos[backup_port]->recved_seq.printIntervals();
+    if(BACKUP_MODE){
+        printf("Backup: ");
+        subconn_infos[backup_port]->recved_seq.printIntervals();
+    }
     // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
     //     it->second->recved_seq.printIntervals();
     // }
