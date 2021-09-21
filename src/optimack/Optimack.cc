@@ -2937,10 +2937,12 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if(RANGE_MODE){
                     if(seq_rel > 1 && range_stop){
                         pthread_mutex_lock(&mutex_range);
-                        range_stop++;
-                        if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
-                            log_error("Fail to create range_watch thread.");
-                        }                        
+                        if(seq_rel > 1 && range_stop){
+                            range_stop = 0;
+                            if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
+                                log_error("Fail to create range_watch thread.");
+                            }
+                        }
                         pthread_mutex_unlock(&mutex_range);
 
                     }
