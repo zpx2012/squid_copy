@@ -72,15 +72,15 @@ bool IntervalList::checkAndinsertNewInterval(unsigned int start, unsigned int en
     snprintf(log, 10000, "[interval]: before-%s insert[%u,%u], after-%s", before.substr(0,4900).c_str(), start, end, Intervals2str().c_str());
     if(last_first_end < end){
         order_flag = OUT_OF_ORDER;
-        log_debugv("%s out-of-order", log);
+        log_debug("%s out-of-order", log);
     }
     else if (last_first_end == end){
         order_flag = IN_ORDER_NEWEST;
-        log_debugv("%s in order newest", log);
+        log_debug("%s in order newest", log);
     }
     else{
         order_flag = IN_ORDER_FILL;
-        log_debugv("%s in order fill", log);
+        log_debug("%s in order fill", log);
     }
     return true;
 }
