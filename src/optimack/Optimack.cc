@@ -1771,7 +1771,7 @@ range_watch(void* arg)
 {
     printf("[Range]: range_watch thread starts\n");
 
-    int rv, range_sockfd;
+    int rv, range_sockfd, range_sockfd_old;
     char response[MAX_RANGE_SIZE+1];
 
     Optimack* obj = ((Optimack*)arg);
@@ -1790,6 +1790,24 @@ range_watch(void* arg)
     // Http1::RequestParser rp;
     // SBuf headerBuf;
 
+    // int fd = open("/dev/null", O_RDONLY);
+    // dup2(fd, STDIN_FILENO);
+    // close(fd);
+    // for(int fd=0; fd < 3; fd++){
+    //     int nfd;
+    //     nfd = open("/dev/null", O_RDWR);
+
+    //     if(nfd<0) /* We're screwed. */
+    //     continue;
+
+    //     if(nfd==fd)
+    //     continue;
+
+    //     dup2(nfd, fd);
+    //     if(nfd > 2)
+    //     close(nfd);
+    // }
+
     while(!obj->range_stop) {
 
         // printf("try_for_gaps_and_request\n");
@@ -1801,7 +1819,7 @@ range_watch(void* arg)
             continue;
         }
 
-        if(range_sockfd <= 0){
+        if(range_sockfd <= 0 || obj->range_request_count >= 95){
             //clear all sent timestamp, to resend it
             // pthread_mutex_lock(p_mutex_range_job_vector);
 restart:
@@ -1811,7 +1829,10 @@ restart:
             // pthread_mutex_unlock(p_mutex_range_job_vector);
 
             range_sockfd = obj->establish_tcp_connection();
+            close(range_sockfd_old);
             printf("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
+            log_info("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
+            obj->range_request_count = 0;
         }
         if(range_sockfd <= 0){ //TODO: remove ranges_sent?{
             perror("Can't create range_sockfd, range thread break\n");
@@ -1839,13 +1860,14 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 3){//timeout, send it again
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 5){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
                 obj->range_timeout_cnt++;
                 obj->range_timeout_penalty += delay;
                 log_info("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
                 printf("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
-                close(range_sockfd);
+                // close(range_sockfd);
+                range_sockfd_old = range_sockfd;
                 range_sockfd = -1;
                 break;
             }
@@ -1866,13 +1888,15 @@ restart:
             if (rv < 0){
                 log_debug("[Range] error: ret %d errno %d", rv, errno);
                 printf("[Range] error: ret %d errno %d\n", rv, errno);
-                close(range_sockfd);
+                // close(range_sockfd);
+                range_sockfd_old = range_sockfd;
                 range_sockfd = -1;
             }
             else{ 
                 log_debug("[Range]: ret %d, sockfd %d closed ", rv, range_sockfd);
                 printf("[Range]: ret %d, sockfd %d closed\n", rv, range_sockfd);
-                close(range_sockfd);
+                // close(range_sockfd);
+                range_sockfd_old = range_sockfd;
                 range_sockfd = -1;
                 printf("closed range_sockfd %d\n", range_sockfd);
             }
@@ -2445,13 +2469,16 @@ int Optimack::get_lost_range(Interval* intvl)
 
 int Optimack::establish_tcp_connection()
 {
-    int sockfd;
+    int sockfd = 0;
     struct sockaddr_in server_addr;
 
     // Open socket
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Can't open stream socket.");
-        return -1;
+    while(sockfd == 0){
+        if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            perror("Can't open stream socket.");
+            return -1;
+        }
+        printf("establish_tcp_connection: create sockfd %d\n", sockfd);
     }
 
     // Set server_addr
@@ -2466,6 +2493,7 @@ int Optimack::establish_tcp_connection()
         close(sockfd);
         return -1;
     }
+    printf("establish_tcp_connection: connect sockfd %d\n", sockfd);
 
     return sockfd;
 }
@@ -3012,10 +3040,10 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // pthread_mutex_lock(&mutex_seq_next_global);
                 int order_flag;
                 bool is_new_segment = false;
-                pthread_mutex_lock(&mutex_recv_buffer);
                 IntervalList temp_range;
                 temp_range.clear();
                 temp_range.insertNewInterval(seq_rel, seq_rel+payload_len);
+                pthread_mutex_lock(recved_seq.getMutex());
                 temp_range.substract(&recved_seq);
                 auto temp_range_list = temp_range.getIntervalList();
                 if(temp_range.size()){
@@ -3034,11 +3062,11 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             else if(order_flag == IN_ORDER_FILL){
                                 log_info("process_tcp_packet: resend in order fill, seq %u", it->start);
                                 send_data_to_squid(it->start, intvl_data, intvl_data_len);
-                                send_out_of_order_recv_buffer(it->end);
+                                send_out_of_order_recv_buffer_withLock(it->end);
                                 log_info("%s - inorder fill, sent to squid\n", log); 
                             }
                             else{
-                                insert_to_recv_buffer(it->start, intvl_data, intvl_data_len);
+                                insert_to_recv_buffer_withLock(it->start, intvl_data, intvl_data_len);
                                 log_info("%s - out of orders, sent to squid\n", log); 
                             }
                         }
@@ -3047,9 +3075,9 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     }
                     // if(recved_seq.getFirstEnd()-cur_ack_rel > 20*squid_MSS)
                     //     send_out_of_order_recv_buffer(cur_ack_rel, recved_seq.getFirstEnd());
-
                 }
-                pthread_mutex_unlock(&mutex_recv_buffer);
+                pthread_mutex_unlock(recved_seq.getMutex());
+
 
                 pthread_mutex_lock(&subconn->mutex_opa);
                 if (subconn->next_seq_rem < seq_rel + payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
