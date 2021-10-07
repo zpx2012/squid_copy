@@ -96,7 +96,8 @@ def parse_loss_file(dir, filename, df):
 # print(parse_seq_file(sys.argv[1]))
 if __name__ == '__main__':
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
-            df = pd.read_csv(root+'/info_files_result_%s_%s.csv' % (socket.gethostname(), sys.argv[2]), sep=',')
+            input_file = 'info_files_result_%s_%s.csv' % (socket.gethostname(), sys.argv[2])
+            df = pd.read_csv(root+'/'+input_file, sep=',')
             df['preindex'] = df['timestamp'] + df['hostname']
             df = df.set_index('preindex')
             print df
@@ -119,11 +120,11 @@ if __name__ == '__main__':
                     parse_loss_file(root, f, df)
             print df
             df['ackspeed'] = 10000000.0/df['ack_pace(us)']
-            df.to_csv(root+'/info_files_result_%s_validated_raw.csv' % sys.argv[2], encoding='utf-8', index=False)
+            df.to_csv(root+'/'+input_file.replace('.csv','_validated_raw.csv'), encoding='utf-8', index=False)
             df = df[df.in_slowdown == True]
             df = df[df.duration_curl.notnull()]
             print df
-            df.to_csv(root+'/info_files_result_%s_validated.csv' % sys.argv[2], encoding='utf-8', index=False)
+            df.to_csv(root+'/'+input_file.replace('.csv','_validated.csv'), encoding='utf-8', index=False)
             df_mean = df.groupby(['hostname','conn_num','ack_pace(us)','mode']).mean().reset_index()
             df_std = df.groupby(['hostname','conn_num','ack_pace(us)','mode']).std().reset_index()
             df_min = df.groupby(['hostname','conn_num','ack_pace(us)','mode']).min().reset_index()
@@ -133,5 +134,5 @@ if __name__ == '__main__':
             # df_mean['overall_lost_byte_std'] = df_std['overall_lost_byte']
             df_mean['duration_min'] = df_min['duration(s)']
             print df_mean['duration(s)'], df_std['duration(s)']
-            df_mean.to_csv(root+'/info_files_result_%s_validated_mean.csv' % sys.argv[2], encoding='utf-8', index=False)
+            df_mean.to_csv(root+'/'+input_file.replace('.csv','_validated_mean.csv'), encoding='utf-8', index=False)
             break
