@@ -43,6 +43,8 @@ def parse_curl_normal_file(dir, filename, df):
     dict_ = {}
     with open(dir+'/'+filename, 'r') as inf:
         lines = inf.read().splitlines()
+        if len(lines) == 0:
+            return
         if lines[0].startswith("Start: "):
                 time_str = lines[0][7:23]
         else:
