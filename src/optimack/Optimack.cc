@@ -62,7 +62,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1250
+#define ACKPACING 1750
 #endif
 
 #define MAX_STALL_TIME 240
