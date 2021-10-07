@@ -1,4 +1,4 @@
-import csv, os, pandas as pd, sys, numpy as np
+import csv, os, pandas as pd, sys, numpy as np, socket
 from datetime import datetime
 
 def duration_str_to_sec(str):
@@ -96,7 +96,7 @@ def parse_loss_file(dir, filename, df):
 # print(parse_seq_file(sys.argv[1]))
 if __name__ == '__main__':
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
-            df = pd.read_csv(root+'/info_files_result_%s.csv' % sys.argv[2], sep=',')
+            df = pd.read_csv(root+'/info_files_result_%s_%s.csv' % (socket.gethostname(), sys.argv[2]), sep=',')
             df['preindex'] = df['timestamp'] + df['hostname']
             df = df.set_index('preindex')
             print df
