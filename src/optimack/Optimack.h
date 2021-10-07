@@ -38,7 +38,7 @@ struct subconn_info
     unsigned int opa_ack_start;  // local ack number for optim ack to start
     unsigned int opa_seq_max_restart;
     unsigned int opa_retrx_counter;
-    std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log;
+    std::chrono::time_point<std::chrono::system_clock> last_restart_time, last_data_received, timer_print_log, last_inorder_data_time;
     int rwnd;
     int win_scale;
     int ack_pacing;
@@ -51,6 +51,7 @@ struct subconn_info
     // pthread_mutex_t mutex_seq_gaps;
 
     bool is_backup;
+    bool is_rsted;
 #ifdef OPENSSL
     SSL *ssl;
     unsigned char *salt, *session_key;
