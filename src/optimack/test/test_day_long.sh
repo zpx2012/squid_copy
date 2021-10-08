@@ -2,7 +2,9 @@
 
 # site='142.93.117.107'
 # site='138.68.49.206' #SF-HTTP-SV
-site='67.205.159.15' #NY-HTTP-SV
+# site='67.205.159.15' #NY-HTTP-SV
+site='143.198.65.98' #SF1-4G
+# site='161.35.100.102' #NY2-4G
 # url="http://$site/ubuntu-16.04.6-server-i386.template"
 url="http://$site/ubuntu-16.04.6-server-i386.iso"
 # url="http://$site/md5sums.gz"
