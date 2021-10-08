@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1750
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 1
+#define RANGE_MODE 0
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 0
+#define BACKUP_MODE 1
 #endif
 
 #ifndef MSS
@@ -751,7 +751,7 @@ full_optimistic_ack_altogether(void* arg)
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
          last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 1;
+    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0;
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
@@ -783,8 +783,16 @@ full_optimistic_ack_altogether(void* arg)
                 //     // printf("zero window restart at %u, zero_window_start %u\n", opa_ack_start, zero_window_start);
                 // }
             }
-            else 
-                opa_ack_start += obj->squid_MSS;
+            else {
+                if(opa_ack_start == obj->ack_end){
+                    //send FIN/ACK
+                    // send_FIN_ACK(obj->g_local_ip, obj->g_remote_ip, conn->local_port, obj->g_remote_port, "", opa_ack_start+1, conn->next_seq_loc+1);
+                    break;
+                }
+                    opa_ack_start += obj->squid_MSS;
+                    if (opa_ack_start > obj->ack_end)
+                        opa_ack_start = obj->ack_end;
+            }
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
 
@@ -856,15 +864,15 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if(stall_seq >= last_stall_seq && elapsed(last_restart) <= 1)
+                if(stall_seq == last_stall_seq && elapsed(last_restart) <= 1)
                     continue;
 
                 if(!SPEEDUP_CONFIG && opa_ack_start <= min_next_seq_rem+10*obj->squid_MSS)
                     continue;
                 uint restart_seq = min_next_seq_rem > 5*obj->squid_MSS? min_next_seq_rem - 5*obj->squid_MSS : 1;
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
-                // if(restart_seq == last_restart_seq)
-                    // continue;
+                // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
+                //     continue;
                 // if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
                 //     continue;
                 // if(elapsed(last_restart) <= 0)
@@ -2978,7 +2986,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // return process_incoming_SYNACK();
                 //break;
             //}
-
+            case TH_ACK | TH_FIN:
+            case TH_ACK | TH_FIN | TH_PUSH:
             case TH_ACK:
             case TH_ACK | TH_PUSH:
             case TH_ACK | TH_URG:
@@ -3072,9 +3081,17 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     headerBuf.assign((char*)payload, payload_len);
                     rp.parse(headerBuf);
                     response_header_len = rp.messageHeaderSize();
-                    printf("[Range]: Server response - headBlockSize %d StatusCode %d\n", response_header_len, rp.parseStatusCode);
                     // response_header_len = 398;
                     memcpy(response, payload, response_header_len);
+
+                    const char* content_len_field = "Content-Length: ";
+                    int content_len_field_len = strlen(content_len_field);
+                    char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
+                    p_content_len += content_len_field_len;
+                    file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
+                    ack_end = file_size + response_header_len+1;
+                    printf("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
+                    log_info("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
                     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
                     // src/http/StatusCode.h
                 }
@@ -3293,18 +3310,24 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // }
                 // log_debug("%s - forwarded to squid\n", log); 
                 // return 0;
+                if(TH_FIN & tcphdr->th_flags){
+                    printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq-subconn->ini_seq_rem);
+                    log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
+                    // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
+                    subconn->fin_ack_recved = true;
+                }
                 strcat(log,"\n");
                 log_info(log);
                 return -1;
                 break;
             }
-            case TH_ACK | TH_FIN:
-            case TH_ACK | TH_FIN | TH_PUSH:
-            {
-                printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq-subconn->ini_seq_rem);
-                log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
-                // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
-                subconn->fin_ack_recved = true;
+            // case TH_ACK | TH_FIN:
+            // case TH_ACK | TH_FIN | TH_PUSH:
+            // {
+            //     printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq-subconn->ini_seq_rem);
+            //     log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
+            //     // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
+            //     subconn->fin_ack_recved = true;
 
                 // log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
                 // pthread_mutex_lock(&mutex_subconn_infos);    
@@ -3340,16 +3363,16 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // pthread_mutex_unlock(&mutex_subconn_infos);                               
                 // log_debugv("P%d-S%d: process_tcp_packet:1386: mutex_subconn_infos - trying lock", thr_data->pkt_id, subconn_i); 
 
-                if(payload_len){
-                    log_debug("%s - sent to squid\n", log); 
-                    tcphdr->th_flags = TH_ACK | TH_PUSH;
-                    modify_to_main_conn_packet(subconn, tcphdr, thr_data->buf, thr_data->len, seq-subconn->ini_seq_rem);
-                    compute_checksums(thr_data->buf, 20, thr_data->len);
-                    return 0;
-                }
-                return -1;
-                break;
-            }
+            //     if(payload_len){
+            //         log_debug("%s - sent to squid\n", log); 
+            //         tcphdr->th_flags = TH_ACK | TH_PUSH;
+            //         modify_to_main_conn_packet(subconn, tcphdr, thr_data->buf, thr_data->len, seq-subconn->ini_seq_rem);
+            //         compute_checksums(thr_data->buf, 20, thr_data->len);
+            //         return 0;
+            //     }
+            //     return -1;
+            //     break;
+            // }
             case TH_RST:
             case TH_RST | TH_ACK:
             {
