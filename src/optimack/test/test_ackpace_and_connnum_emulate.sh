@@ -24,6 +24,10 @@ ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
 # ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
 
 i=0
+
+sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
+
 while true; do
     # echo $(date -Iseconds): Slowdown test
     # curl_singlerun=curl_proxy_singlerun_$(date +%s)

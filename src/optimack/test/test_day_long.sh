@@ -18,7 +18,8 @@ url="http://$site/ubuntu-16.04.6-server-i386.iso"
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
 # site='mirror.math.princeton.edu'
-
+sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
 sed -i "s/define CONN_NUM .*/define CONN_NUM $1/g" ~/squid_copy/src/optimack/Optimack.cc
 sed -i "s/define ACKPACING .*/define ACKPACING $2/g" ~/squid_copy/src/optimack/Optimack.cc
 cd ~/squid_copy/

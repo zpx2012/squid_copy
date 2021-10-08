@@ -31,6 +31,10 @@ fix_num=$1
 fix_ackpace=$2
 
 i=0
+
+sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
+sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
+
 while true; do
     echo $(date -Iseconds): Slowdown test
     curl_singlerun=curl_proxy_singlerun_$(date +%s)
