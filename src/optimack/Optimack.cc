@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 4
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 3000
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -836,7 +836,7 @@ full_optimistic_ack_altogether(void* arg)
                 is_stall = true;
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
-                printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
+                // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
                 log_debug("[Optimack]: S%d stalls at %u", stall_port, stall_seq);
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
