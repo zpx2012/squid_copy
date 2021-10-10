@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 250
 #endif
 
 #define MAX_STALL_TIME 240
@@ -770,8 +770,10 @@ full_optimistic_ack_altogether(void* arg)
                         continue;
                         // break;
                     }
-                    else
+                    else if (it->second->next_seq_rem < 5*obj->squid_MSS || opa_ack_start >= it->second->next_seq_rem-5*obj->squid_MSS){
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                        log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
+                    }
                 }
             }
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
@@ -890,7 +892,10 @@ full_optimistic_ack_altogether(void* arg)
                 // if(elapsed(last_restart) <= 0)
                 //     continue;
                     obj->overrun_cnt++;
-                    obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
+                    if(stall_seq != last_stall_seq)
+                        obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
+                    else
+                        obj->overrun_penalty += elapsed(last_restart);
                     sprintf(log, "O: S%d overrun,", stall_port);
                     sprintf(log, "%s current ack %u,", log, opa_ack_start);
                     opa_ack_start = restart_seq;
