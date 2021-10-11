@@ -873,13 +873,13 @@ full_optimistic_ack_altogether(void* arg)
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
                 if(stall_seq == last_stall_seq && elapsed(last_restart) <= 1.5){
-                    log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
+                    // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
                     continue;
                 }
 
-                if(!SPEEDUP_CONFIG && opa_ack_start <= min_next_seq_rem+10*obj->squid_MSS){
-                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, min_next_seq_rem);
+                if(!SPEEDUP_CONFIG && opa_ack_start <= min_next_seq_rem){ //+10*obj->squid_MSS
+                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)", opa_ack_start, min_next_seq_rem);
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
@@ -2066,7 +2066,7 @@ void Optimack::try_for_gaps_and_request(){
         // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);// ;getIntervalList().at(1).start
         if(first_out_of_order){
-            Interval lost_all_range(recved_seq.getFirstEnd(), first_out_of_order-1);
+            Interval lost_all_range(recved_seq.getFirstEnd(), first_out_of_order);
             if(get_lost_range(&lost_all_range) >= 0){
                 ranges_sent.insert(lost_all_range);
                 log_info("lost on all: request range[%u, %u]",lost_all_range.start+ response_header_len + 1, lost_all_range.end + response_header_len + 1);
