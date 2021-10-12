@@ -878,8 +878,8 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 }
 
-                if(!SPEEDUP_CONFIG && opa_ack_start <= min_next_seq_rem){ //+10*obj->squid_MSS
-                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)", opa_ack_start, min_next_seq_rem);
+                if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= min_next_seq_rem+10*obj->squid_MSS){ //
+                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, min_next_seq_rem);
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
