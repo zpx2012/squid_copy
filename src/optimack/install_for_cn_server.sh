@@ -1,6 +1,6 @@
 sudo apt-get update
 sudo apt-get install -y libnetfilter-queue-dev
-sudo apt-get install -y autotools-dev autogen autoconf libtool
+sudo apt-get install -y autotools-dev autogen autoconf libtool libssl
 # sudo apt-get -y install wireshark tshark
 sudo apt-get -y install python-pip python-setuptools python-dev screen
 curl http://47.116.141.4/get-pip.py --output ~/get-pip.py

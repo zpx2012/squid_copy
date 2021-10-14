@@ -2,24 +2,24 @@
 
 # site='142.93.117.107'
 #site='138.68.49.206' #SF-HTTP-SV
-site='67.205.159.15' #NY-HTTP-SV
+# site='67.205.159.15' #NY-HTTP-SV
 # url="http://$site/ubuntu-16.04.6-server-i386.template"
-url="http://$site/md5sums.gz"
+# url="http://$site/md5sums.gz"
 
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
-# url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-# site='mirrors.mit.edu'
+url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
+site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
 # site='mirror.math.princeton.edu'
 
 
-nums=(1 2 3 4 5 6 7 8) #9 10 11 12 13 14 15 16
+nums=(1 2 3 4 5 6 7 8 9 10) #9 10 11 12 13 14 15 16
 # ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
 ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
 i=0

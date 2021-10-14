@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 250
 #endif
 
 #define MAX_STALL_TIME 240
@@ -417,7 +417,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 char empty_payload[] = "";
 
 int Optimack::get_ajusted_rwnd(int cur_ack){
-    int cur_rwnd = rwnd/2 + cur_ack_rel - cur_ack;
+    int cur_rwnd = rwnd + cur_ack_rel - cur_ack;
     int diff = (int)(cur_rwnd - squid_MSS);
     uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
     if (diff <= 0)
@@ -426,19 +426,23 @@ int Optimack::get_ajusted_rwnd(int cur_ack){
 }
 
 void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd){
+    if(adjusted_rwnd < 0)
+        return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
-    // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", conn->local_port, cur_ack, conn->next_seq_loc, cur_win_scaled);
+    log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", conn->local_port, cur_ack, conn->next_seq_loc, cur_win_scaled);
     return;
 }
 
 void Optimack::send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq){
+    if(adjusted_rwnd < 0)
+        return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     unsigned char sack_str[33] = {0};
-    int len = generate_sack_blocks(sack_str, 32, recved_seq);
+    // int len = generate_sack_blocks(sack_str, 32, recved_seq);//TODO:bug
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
     // send_ACK_with_SACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, sack_str, len, "", conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
-    // log_info("[send_optimistic_ack_with_SACK] S%u: sent ack %u, seq %u, tcp_win %u", conn->local_port, cur_ack, conn->next_seq_loc, cur_win_scaled);
+    log_info("[send_optimistic_ack_with_SACK] S%u: sent ack %u, seq %u, tcp_win %u", conn->local_port, cur_ack, conn->next_seq_loc, cur_win_scaled);
     return;
 }
 
@@ -519,16 +523,21 @@ void* selective_optimistic_ack(void* arg){
     while(!conn->optim_ack_stop){
 
         // Add optimack ranges
-        if(elapsed(obj->last_ack_time) <= 0.2){
+        if(elapsed(obj->last_ack_time) <= 1){
             if(acks_to_be_sent.empty() || (!acks_to_be_sent.empty() && *acks_to_be_sent.rbegin() < obj->cur_ack_rel)){
-                last_recved_seq = conn->next_seq_rem;
-                if(last_recved_seq && obj->cur_ack_rel >= last_recved_seq+5*payload_len){
-                    uint insert_start = last_recved_seq-2*payload_len;
+                last_recved_seq = conn->recved_seq.getFirstEnd();
+                if(last_recved_seq && obj->cur_ack_rel >= last_recved_seq+payload_len){
+                    uint insert_start = last_recved_seq;//-2*payload_len
+                    if(conn->next_seq_rem < obj->cur_ack_rel)
+                        insert_start = conn->next_seq_rem - 2*payload_len;
                     uint sent_range_end = sent_ranges.getLastEnd();
+                    log_debug("[Backup]: insert_start %u, sent_range_end %u", insert_start, sent_range_end);
                     if (sent_range_end && last_recved_seq < sent_range_end)
                         insert_start = sent_range_end;
-                    for(uint i = insert_start; i < obj->cur_ack_rel; i += payload_len)
-                        acks_to_be_sent.insert(i);
+                    for(uint i = insert_start; i < obj->cur_ack_rel; i += payload_len){
+                        if(i > sent_range_end)
+                            acks_to_be_sent.insert(i);
+                    }
                     conn->recved_seq.insertNewInterval_withLock(1, obj->cur_ack_rel);
                     log_debug("[Backup]: add optim range [%u,%u], conn->recved_seq after %s\n", insert_start, obj->cur_ack_rel, conn->recved_seq.Intervals2str().c_str());
                 }
@@ -562,7 +571,7 @@ void* selective_optimistic_ack(void* arg){
             int adjusted_rwnd = obj->get_ajusted_rwnd(cur_ack);
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0, last_send_ack, last_zero_window);
             if(adjusted_rwnd > conn->win_scale){
-                obj->send_optimistic_ack(conn, cur_ack, adjusted_rwnd);
+                obj->send_optimistic_ack(conn, cur_ack, 65535);
                 log_info("[Backup]: sent optack %u\n", cur_ack);
                 // printf("[Backup]: sent optack %u\n", cur_ack);
                 acks_to_be_sent.erase(acks_to_be_sent.begin());
@@ -606,14 +615,12 @@ void* selective_optimistic_ack(void* arg){
             } 
         }
 
-        if(elapsed(conn->last_inorder_data_time) > 2){
+        if(elapsed(conn->last_inorder_data_time) > 1){
             uint inorder_seq_end = conn->recved_seq.getFirstEnd();
-            if(inorder_seq_end > conn->next_seq_rem)
-                inorder_seq_end = conn->next_seq_rem;
-            if(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 2){
-
-            }
-            else{
+            if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 2)){//optack, don't need retranx
+                int backup_rwnd_tmp = obj->backup_dup_ack_rwnd;
+                if(inorder_seq_end != obj->backup_dup_ack)
+                    backup_rwnd_tmp = obj->backup_dup_ack + obj->backup_dup_ack_rwnd - inorder_seq_end;
                 for (int j = 0; j < 3; j++){
                     obj->send_optimistic_ack(conn, inorder_seq_end, 65535);
                     // obj->send_optimistic_ack_with_SACK(conn, inorder_seq_end, obj->rwnd, &conn->recved_seq);
@@ -631,9 +638,11 @@ void* selective_optimistic_ack(void* arg){
             uint ack_restart_start, ack_restart_end;
             if(!sent_ranges.getIntervalList().empty()){
                 uint min_ack_sent = sent_ranges.getIntervalList().at(0).start;
+                if(min_ack_sent == 0)
+                    min_ack_sent = 1;
                 ack_restart_start = std::min(min_ack_sent, last_recved_seq); 
                 ack_restart_end = *acks_to_be_sent.begin();
-            
+                sent_ranges.removeInterval(ack_restart_start, ack_restart_end);
             // else {//Can't use it because it can add normal range to optimistic acks
                 // ack_restart_start = conn->next_seq_rem - 2*payload_len;
                 // ack_restart_end = obj->cur_ack_rel;
@@ -772,7 +781,7 @@ full_optimistic_ack_altogether(void* arg)
                     }
                     else if (it->second->next_seq_rem < 5*obj->squid_MSS || opa_ack_start >= it->second->next_seq_rem-5*obj->squid_MSS){
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
-                        log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
+                        // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
                     }
                 }
@@ -868,7 +877,7 @@ full_optimistic_ack_altogether(void* arg)
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
                 if(abs(zero_window_start-min_next_seq_rem) <= 3*obj->squid_MSS && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
-                    log_debug("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
+                    // log_debug("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
                     // printf("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue\n", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
                     continue;
                 }
@@ -3217,8 +3226,9 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 if (BACKUP_MODE && subconn->is_backup){
                     //Normal Mode
-                    subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
-                    // log_info("[Backup]: insert [%u, %u], after %s\n", seq_rel, seq_rel+payload_len, subconn->recved_seq.Intervals2str().c_str());
+                    int order_flag_backup;
+                    bool is_new_segment_backup = subconn->recved_seq.checkAndinsertNewInterval(seq_rel, seq_rel+payload_len, order_flag_backup);
+                    log_info("[Backup]: insert [%u, %u], after %s\n", seq_rel, seq_rel+payload_len, subconn->recved_seq.Intervals2str().c_str());
                     
                     char empty_payload[] = "";
                     pthread_mutex_lock(&subconn->mutex_opa);
@@ -3232,10 +3242,16 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         sprintf(log, "%s - Sent ack %u", log, 1 + payload_len);
                     }
                     else {
-                        // if(order_flag == IN_ORDER_NEWEST){
-                            send_optimistic_ack_with_SACK(subconn, inorder_seq_end, 65535, &subconn->recved_seq);
-                            log_info("[Backup]: send normal ack %u when recved data %u\n", inorder_seq_end, seq_rel);
-                        // }
+                        if(order_flag_backup == IN_ORDER_NEWEST || order_flag_backup == IN_ORDER_FILL){
+                            backup_dup_ack = inorder_seq_end;
+                            backup_dup_ack_rwnd = 65535;
+                            // backup_dup_ack_rwnd = get_ajusted_rwnd(inorder_seq_end);
+                            send_optimistic_ack_with_SACK(subconn, inorder_seq_end, backup_dup_ack_rwnd, &subconn->recved_seq);
+                            log_info("[Backup]: send normal ack %u when recved data %u, win %u\n", inorder_seq_end, seq_rel, backup_dup_ack_rwnd);
+                        }
+                        else {
+                            // send_optimistic_ack_with_SACK(subconn, inorder_seq_end, backup_dup_ack_rwnd, &subconn->recved_seq);
+                        }
                         // if(get_min_next_seq_rem() > cur_ack_rel){ //&& inorder_seq_end < cur_ack_rel
                         //     for (int j = 0; j < 2; j++){
                         //         send_optimistic_ack_with_SACK(subconn, inorder_seq_end, rwnd, &subconn->recved_seq);
