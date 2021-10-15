@@ -16,6 +16,7 @@ site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
+# url='http://mirror.math.princeton.edu/pub/ubuntu/indices/md5sums.gz' #28.5M
 # site='mirror.math.princeton.edu'
 
 

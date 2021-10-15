@@ -13,13 +13,13 @@ site='mirrors.mit.edu'
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
 # site='mirror.math.princeton.edu'
 
-# url='http://mirrors.cat.pdx.edu/ubuntu-releases/16.04.6/ubuntu-16.04.6-server-i386.template'
+# url='http://mirrors.cat.pdx.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template'
 # site='mirrors.cat.pdx.edu'
 
-# url='http://mirror.internet.asn.au/pub/ubuntu/releases/16.04.6/ubuntu-16.04.6-server-i386.template'
+# url='http://mirror.internet.asn.au/pub/ubuntu/releases/16.04/ubuntu-16.04.6-server-i386.template'
 # site='mirror.internet.asn.au'
 
-# url='http://mirror.easyname.at/ubuntu-releases/16.04.6/ubuntu-16.04.6-server-i386.template'
+# url='http://mirror.easyname.at/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template'
 # site='mirror.easyname.at'
 
 # url='http://167.172.22.132/ubuntu-16.04.6-server-i386.template'

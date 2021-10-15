@@ -418,8 +418,9 @@ char empty_payload[] = "";
 
 int Optimack::get_ajusted_rwnd(int cur_ack){
     int cur_rwnd = rwnd + cur_ack_rel - cur_ack;
+    cur_rwnd = cur_rwnd / squid_MSS * squid_MSS;
     int diff = (int)(cur_rwnd - squid_MSS);
-    uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
+    // uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
     if (diff <= 0)
         return 0;
     return cur_rwnd;
