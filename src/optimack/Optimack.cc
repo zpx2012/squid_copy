@@ -62,7 +62,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 250
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 1
+#define BACKUP_MODE 0
 #endif
 
 #ifndef MSS
@@ -753,6 +753,7 @@ full_optimistic_ack_altogether(void* arg)
     struct int_thread* ack_thr = (struct int_thread*)arg;
     // uint id = ack_thr->thread_id;
     Optimack* obj = ack_thr->obj;
+    uint mss = obj->squid_MSS;
     // struct subconn_info* conn = (obj->subconn_infos[id]);
     free(ack_thr);
     ack_thr = NULL;
@@ -803,7 +804,7 @@ full_optimistic_ack_altogether(void* arg)
                     // send_FIN_ACK(obj->g_local_ip, obj->g_remote_ip, conn->local_port, obj->g_remote_port, "", opa_ack_start+1, conn->next_seq_loc+1);
                     break;
                 }
-                    opa_ack_start += obj->squid_MSS;
+                    opa_ack_start += mss;
                     if (opa_ack_start > obj->ack_end)
                         opa_ack_start = obj->ack_end;
                     
@@ -851,7 +852,8 @@ full_optimistic_ack_altogether(void* arg)
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
-                log_debug("[Optimack]: S%d stalls at %u", stall_port, stall_seq);
+                if(last_stall_seq != stall_seq)
+                    log_debug("[Optimack]: S%d stalls at %u", stall_port, stall_seq);
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
             //     if(!it->second->is_backup){
@@ -876,7 +878,7 @@ full_optimistic_ack_altogether(void* arg)
 
             if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-                if(abs(zero_window_start-min_next_seq_rem) <= 3*obj->squid_MSS && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
+                if(abs(zero_window_start-min_next_seq_rem) <= 3*mss && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
                     // log_debug("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
                     // printf("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue\n", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
@@ -890,12 +892,13 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 }
 
-                if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= min_next_seq_rem+10*obj->squid_MSS){ //
+                if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= min_next_seq_rem+10*mss){ //
                     log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, min_next_seq_rem);
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
-                uint restart_seq = min_next_seq_rem > 5*obj->squid_MSS? min_next_seq_rem - 5*obj->squid_MSS : 1;
+                uint optack_min_next_seq_rem = min_next_seq_rem / mss * mss;//Find the closest optimack we have sent
+                uint restart_seq = optack_min_next_seq_rem > 5*mss? optack_min_next_seq_rem - 5*mss : 1;
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
                 //     continue;

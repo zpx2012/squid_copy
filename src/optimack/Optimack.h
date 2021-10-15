@@ -136,7 +136,7 @@ public:
     char request[1000], response[400];
     unsigned short request_len;
     struct sockaddr_in dstAddr;
-    int squid_MSS;
+    uint squid_MSS;
     
     std::map<uint, struct subconn_info*> subconn_infos;
     uint subconn_count;
