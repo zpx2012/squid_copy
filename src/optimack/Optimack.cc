@@ -886,11 +886,12 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if(stall_seq == last_stall_seq && elapsed(last_restart) <= 1.5){
+                if((stall_seq == last_stall_seq && elapsed(last_restart) <= 1.5) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
                     // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
                     continue;
                 }
+
 
                 if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= min_next_seq_rem+10*mss){ //
                     log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, min_next_seq_rem);
@@ -3287,12 +3288,12 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn->mutex_opa);
                 }
 
-                // if(payload_len != subconn_infos.begin()->second->payload_len){
-                    // sprintf(log, "%s - unusal payload_len!%d-%d", log, payload_len, subconn_infos.begin()->second->payload_len);
-                    // send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len));
+                if(payload_len != subconn_infos[squid_port]->payload_len && elapsed(subconn->last_data_received) > 1.5 && seq_rel == subconn->next_seq_rem && seq_rel == get_min_next_seq_rem()){
+                    sprintf(log, "%s - window end!%d-%d, send ack to prevent desyncranize", log, payload_len, subconn_infos.begin()->second->payload_len);
+                    send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len));
                     // send_ACK_adjusted_rwnd(subconn, seq_rel + payload_len);
                     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
-                // }
+                }
 
                 // Too many packets forwarded to squid will cause squid to discard right most packets
                 if(!is_new_segment && !subconn->is_backup){
