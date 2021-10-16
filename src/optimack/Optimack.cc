@@ -418,7 +418,7 @@ char empty_payload[] = "";
 
 int Optimack::get_ajusted_rwnd(int cur_ack){
     int cur_rwnd = rwnd + cur_ack_rel - cur_ack;
-    cur_rwnd = cur_rwnd / squid_MSS * squid_MSS;
+    // cur_rwnd = cur_rwnd / squid_MSS * squid_MSS;
     int diff = (int)(cur_rwnd - squid_MSS);
     // uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
     if (diff <= 0)
@@ -427,7 +427,7 @@ int Optimack::get_ajusted_rwnd(int cur_ack){
 }
 
 void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd){
-    if(adjusted_rwnd < 0)
+    if(adjusted_rwnd < conn->win_scale)
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
@@ -436,7 +436,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
 }
 
 void Optimack::send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq){
-    if(adjusted_rwnd < 0)
+    if(adjusted_rwnd < conn->win_scale)
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     unsigned char sack_str[33] = {0};
@@ -768,6 +768,9 @@ full_optimistic_ack_altogether(void* arg)
     double send_ack_pace = ACKPACING / 1000000.0;
     int adjusted_rwnd = 0;
     char log[200] = {0};
+    uint min_next_seq_rem = -1;
+    bool is_in_overrun = false;
+
     while (!obj->optim_ack_stop) {
         if (elapsed(last_send_ack) >= send_ack_pace){
             //calculate adjusted window size
@@ -775,7 +778,7 @@ full_optimistic_ack_altogether(void* arg)
             obj->adjusted_rwnd = adjusted_rwnd;
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
                 if(!it->second->is_backup){
-                    if (adjusted_rwnd < it->second->win_scale){
+                    if (adjusted_rwnd <= it->second->win_scale){
                         adjusted_rwnd = 0;
                         // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
                         continue;
@@ -827,7 +830,6 @@ full_optimistic_ack_altogether(void* arg)
         //Overrun detection
         if (elapsed(last_overrun_check) >= 0.1){
             
-            uint min_next_seq_rem = -1;
             struct subconn_info* slowest_subconn;
             // uint min_next_seq_rem = obj->get_min_next_seq_rem();
             uint stall_seq = 0, stall_port = 0;
@@ -898,8 +900,17 @@ full_optimistic_ack_altogether(void* arg)
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
-                uint optack_min_next_seq_rem = min_next_seq_rem / mss * mss + 1;//Find the closest optimack we have sent
-                uint restart_seq = optack_min_next_seq_rem > 5*mss? optack_min_next_seq_rem - 5*mss : 1;
+
+                is_in_overrun = true;
+                for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                    if(it->second->next_seq_rem == stall_seq){
+                        obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(min_next_seq_rem));
+                        sprintf(log, "O: S%d overrun, send ack %u, ", stall_port, stall_seq);
+                    }
+                }
+                sprintf(log, "%s current ack %u,", log, opa_ack_start);
+                uint restart_seq = stall_seq / mss * mss + 1 + mss;//Find the closest optimack we have sent
+                opa_ack_start = restart_seq;
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
                 //     continue;
@@ -912,9 +923,7 @@ full_optimistic_ack_altogether(void* arg)
                         obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
                     else
                         obj->overrun_penalty += elapsed(last_restart);
-                    sprintf(log, "O: S%d overrun,", stall_port);
-                    sprintf(log, "%s current ack %u,", log, opa_ack_start);
-                    opa_ack_start = restart_seq;
+
                 // }
                 // else{
                     // sprintf(log, "O: recover from zero window, ");
@@ -3288,21 +3297,22 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn->mutex_opa);
                 }
 
-                if(payload_len != subconn_infos[squid_port]->payload_len){
-                    sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
-                    // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
-                    if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
-                        sprintf(log, "%s - window full, send ack", log);
-                        printf("%s - window full, send ack", log);
-                        send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len));
+                // if(payload_len != subconn_infos[squid_port]->payload_len){
+                //     sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+                //     // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+                //     if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
+                //         sprintf(log, "%s - window full, send ack", log);
+                //         printf("%s - window full, send ack", log);
+                //         int rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
+                //         // if(rwnd_tmp > 0)
+                        //     send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
                     // send_ACK_adjusted_rwnd(subconn, seq_rel + payload_len);
                     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
-                    }
-                    else{
-                        sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
-                    }
-
-                }
+                    // }
+                    // else{
+                    //     sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
+                    // }
+                // }
 
                 // Too many packets forwarded to squid will cause squid to discard right most packets
                 if(!is_new_segment && !subconn->is_backup){
