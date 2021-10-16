@@ -768,7 +768,6 @@ full_optimistic_ack_altogether(void* arg)
     double send_ack_pace = ACKPACING / 1000000.0;
     int adjusted_rwnd = 0;
     char log[200] = {0};
-    uint min_next_seq_rem = -1;
     bool is_in_overrun = false;
 
     while (!obj->optim_ack_stop) {
@@ -831,6 +830,7 @@ full_optimistic_ack_altogether(void* arg)
         if (elapsed(last_overrun_check) >= 0.1){
             
             struct subconn_info* slowest_subconn;
+            uint min_next_seq_rem = -1;
             // uint min_next_seq_rem = obj->get_min_next_seq_rem();
             uint stall_seq = 0, stall_port = 0;
             bool is_stall = false;
@@ -855,7 +855,7 @@ full_optimistic_ack_altogether(void* arg)
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
                 if(last_stall_seq != stall_seq)
-                    log_debug("[Optimack]: S%d stalls at %u", stall_port, stall_seq);
+                    log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem", stall_port, stall_seq, min_next_seq_rem);
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
             //     if(!it->second->is_backup){
@@ -880,7 +880,7 @@ full_optimistic_ack_altogether(void* arg)
 
             if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-                if(abs(zero_window_start-min_next_seq_rem) <= 3*mss && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
+                if(abs(zero_window_start-stall_seq) <= 3*mss && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
                     // log_debug("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
                     // printf("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue\n", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
@@ -895,17 +895,24 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
 
-                if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= min_next_seq_rem+10*mss){ //
-                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, min_next_seq_rem);
+                if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
+                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
+                }
+                else{
+                    if(SPEEDUP_CONFIG)
+                        log_debug("in SPEEDUP mode");
+                    else if(opa_ack_start == obj->ack_end)
+                        log_debug("opa_ack_start(%u) == obj->ack_end(%u)", opa_ack_start, obj->ack_end);
+                    else if(opa_ack_start <= m)
                 }
 
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
                     if(it->second->next_seq_rem == stall_seq){
                         obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(min_next_seq_rem));
-                        sprintf(log, "O: S%d overrun, send ack %u, ", stall_port, stall_seq);
+                        sprintf(log, "O: S%d overrun, send ack %u,", stall_port, stall_seq);
                     }
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
@@ -2996,9 +3003,10 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     return -1;
                     break;
                 }
-            default:
-                log_debug("[default passed] P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
-                return 0;
+            
+            default://Could be FIN
+                log_debug("[default drop] P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn_i, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
+                return -1;
         }
     }
     // Incoming Packets
