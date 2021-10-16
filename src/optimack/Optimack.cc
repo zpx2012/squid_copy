@@ -62,12 +62,12 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 3000
 #endif
 
 #define MAX_STALL_TIME 240
 
-#define LOGSIZE 1024
+#define LOGSIZE 10240
 #define IPTABLESLEN 128
 
 // nfq
@@ -898,7 +898,7 @@ full_optimistic_ack_altogether(void* arg)
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
-                uint optack_min_next_seq_rem = min_next_seq_rem / mss * mss;//Find the closest optimack we have sent
+                uint optack_min_next_seq_rem = min_next_seq_rem / mss * mss + 1;//Find the closest optimack we have sent
                 uint restart_seq = optack_min_next_seq_rem > 5*mss? optack_min_next_seq_rem - 5*mss : 1;
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
@@ -3288,11 +3288,20 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn->mutex_opa);
                 }
 
-                if(payload_len != subconn_infos[squid_port]->payload_len && elapsed(subconn->last_data_received) > 1.5 && seq_rel == subconn->next_seq_rem && seq_rel == get_min_next_seq_rem()){
-                    sprintf(log, "%s - window end!%d-%d, send ack to prevent desyncranize", log, payload_len, subconn_infos.begin()->second->payload_len);
-                    send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len));
+                if(payload_len != subconn_infos[squid_port]->payload_len){
+                    sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+                    // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+                    if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
+                        sprintf(log, "%s - window full, send ack", log);
+                        printf("%s - window full, send ack", log);
+                        send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len));
                     // send_ACK_adjusted_rwnd(subconn, seq_rel + payload_len);
                     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
+                    }
+                    else{
+                        sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
+                    }
+
                 }
 
                 // Too many packets forwarded to squid will cause squid to discard right most packets
