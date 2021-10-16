@@ -855,7 +855,7 @@ full_optimistic_ack_altogether(void* arg)
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
                 if(last_stall_seq != stall_seq)
-                    log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem", stall_port, stall_seq, min_next_seq_rem);
+                    log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem %u", stall_port, stall_seq, min_next_seq_rem);
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
             //     if(!it->second->is_backup){
@@ -900,13 +900,13 @@ full_optimistic_ack_altogether(void* arg)
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
-                else{
-                    if(SPEEDUP_CONFIG)
-                        log_debug("in SPEEDUP mode");
-                    else if(opa_ack_start == obj->ack_end)
-                        log_debug("opa_ack_start(%u) == obj->ack_end(%u)", opa_ack_start, obj->ack_end);
-                    else if(opa_ack_start <= m)
-                }
+                // else{
+                //     if(SPEEDUP_CONFIG)
+                //         log_debug("in SPEEDUP mode");
+                //     else if(opa_ack_start == obj->ack_end)
+                //         log_debug("opa_ack_start(%u) == obj->ack_end(%u)", opa_ack_start, obj->ack_end);
+                //     else if(opa_ack_start <= m)
+                // }
 
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
