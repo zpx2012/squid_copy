@@ -81,12 +81,12 @@ then
 elif grep -q "curl: (28) Operation too slow" $squid_out; 
 then
     cat ${squid_log} >> ${squid_log}_e28
-    mv /var/optack.log $outdir/optack_e28_${tag}.log
+#    mv /var/optack.log $outdir/optack_e28_${tag}.log
     mv ${tcpdump_out} ${tcpdump_out}_e28
 elif grep -q "curl: (18)" $squid_out ;
 then
     cat ${squid_log} >> ${squid_log}_e18
-    mv /var/optack.log $outdir/optack_e18_${tag}.log
+#    mv /var/optack.log $outdir/optack_e18_${tag}.log
     mv ${tcpdump_out} ${tcpdump_out}_e18
     mv /usr/local/squid/var/cache/squid/core $outdir/core_e18_${tag}
 fi
