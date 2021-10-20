@@ -783,7 +783,7 @@ full_optimistic_ack_altogether(void* arg)
                         continue;
                         // break;
                     }
-                    else if (it->second->next_seq_rem < 5*obj->squid_MSS || opa_ack_start >= it->second->next_seq_rem-5*obj->squid_MSS){
+                    else {//if (it->second->next_seq_rem < 5*obj->squid_MSS || opa_ack_start >= it->second->next_seq_rem-5*obj->squid_MSS){ -> this will cause normal optimistic acks are not sent and server missing lots of acks
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -888,7 +888,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if((stall_seq == last_stall_seq && (opa_ack_start-last_restart_seq)/1460 < 3000) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
+                if((stall_seq == last_stall_seq && stall_port == last_stall_port && (opa_ack_start-last_restart_seq)/1460 < 3000) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
                     // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
                     continue;
@@ -917,7 +917,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
                 uint restart_seq = stall_seq / mss * mss + 1 + mss;//Find the closest optimack we have sent
-                opa_ack_start = restart_seq;
+                opa_ack_start = restart_seq > 5*mss? restart_seq - 5*mss : 1; // - 5*mss to give the server time to send the following packets
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
                 //     continue;
@@ -3088,14 +3088,14 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                     pthread_mutex_lock(&mutex_subconn_infos);
                     if(optim_ack_stop){
-                        // std::map<uint, struct subconn_info*>::iterator it;
-                        // for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
-                        //     if (it->second->next_seq_rem <= 1) {
-                        //         send_optimistic_ack(it->second, 1, get_ajusted_rwnd(1));
-                        //         break;
-                        //     }
-                        // if (it == subconn_infos.end()){
-                        if(recved_seq.getFirstEnd() > 1){
+                        std::map<uint, struct subconn_info*>::iterator it;
+                        for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
+                            if (!it->second->is_backup && it->second->next_seq_rem <= 1) {
+                                send_optimistic_ack(it->second, 1, get_ajusted_rwnd(1));
+                                break;
+                            }
+                        if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
+                        // if(recved_seq.getFirstEnd() > 1){
                             // if(optim_ack_stop){
                                 start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                                 printf("P%d-S%d: Start optimistic_ack_altogether\n", thr_data->pkt_id, subconn_i);
