@@ -166,7 +166,8 @@ public:
                  cur_ack_rel = 1,
                  last_ack_rel = 0,
                  last_speedup_ack_rel = 1,
-                 last_slowdown_ack_rel = 0; 
+                 last_slowdown_ack_rel = 0,
+                 max_opt_ack = 0; 
     unsigned int backup_dup_ack = 0;
     int win_scale = 1 << 7, 
         rwnd = 1, adjusted_rwnd = 0, win_end = 1, backup_dup_ack_rwnd = 1,

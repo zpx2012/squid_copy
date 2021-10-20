@@ -783,7 +783,7 @@ full_optimistic_ack_altogether(void* arg)
                         continue;
                         // break;
                     }
-                    else {//if (it->second->next_seq_rem < 5*obj->squid_MSS || opa_ack_start >= it->second->next_seq_rem-5*obj->squid_MSS){ -> this will cause normal optimistic acks are not sent and server missing lots of acks
+                    else if (opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -809,7 +809,8 @@ full_optimistic_ack_altogether(void* arg)
                     opa_ack_start += mss;
                     if (opa_ack_start > obj->ack_end)
                         opa_ack_start = obj->ack_end;
-                    
+                    if(opa_ack_start > obj->max_opt_ack)
+                        obj->max_opt_ack = opa_ack_start;
             }
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
@@ -888,7 +889,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if((stall_seq == last_stall_seq && stall_port == last_stall_port && (opa_ack_start-last_restart_seq)/1460 < 3000) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
+                if((stall_seq == last_stall_seq && stall_port == last_stall_port && (opa_ack_start-last_restart_seq)/1460 < 3000 && elapsed(last_zero_window) > 1) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
                     // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
                     continue;
@@ -911,7 +912,8 @@ full_optimistic_ack_altogether(void* arg)
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
                     if(it->second->next_seq_rem == stall_seq){
-                        obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(min_next_seq_rem));
+                        obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
+                        obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
                         sprintf(log, "O: S%d overrun, send ack %u,", stall_port, stall_seq);
                     }
                 }
@@ -1964,7 +1966,7 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 5){//timeout, send it again
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
                 obj->range_timeout_cnt++;
                 obj->range_timeout_penalty += delay;
@@ -3305,22 +3307,23 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     pthread_mutex_unlock(&subconn->mutex_opa);
                 }
 
-                // if(payload_len != subconn_infos[squid_port]->payload_len){
-                //     sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
-                //     // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
-                //     if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
-                //         sprintf(log, "%s - window full, send ack", log);
-                //         printf("%s - window full, send ack", log);
-                //         int rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
-                //         // if(rwnd_tmp > 0)
-                        //     send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
+                if(payload_len != squid_MSS){
+                    sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+                    // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+                    // if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
+                    if(seq_rel+payload_len <= max_opt_ack ){
+                        sprintf(log, "%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
+                        printf("%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
+                        int rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
+                        if(rwnd_tmp > 0)
+                            send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
                     // send_ACK_adjusted_rwnd(subconn, seq_rel + payload_len);
                     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
-                    // }
-                    // else{
-                    //     sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
-                    // }
-                // }
+                    }
+                    else{
+                        sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
+                    }
+                }
 
                 // Too many packets forwarded to squid will cause squid to discard right most packets
                 if(!is_new_segment && !subconn->is_backup){
