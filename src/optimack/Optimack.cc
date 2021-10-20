@@ -3051,9 +3051,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // Keep alive
                     if(!subconn->is_backup)
                         send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
-                    else
-                        send_optimistic_ack(subconn, subconn->recved_seq.getFirstEnd(), get_ajusted_rwnd(subconn->recved_seq.getFirstEnd())); // Reply to Keep-Alive
-
+                    else{
+                        if(seq_rel+payload_len <= max_opt_ack){
+                            send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                            if(seq_rel+payload_len+1 <= max_opt_ack)
+                                send_optimistic_ack(subconn, seq_rel+payload_len+1, get_ajusted_rwnd(seq_rel+payload_len+1)); // Reply to Keep-Alive
+                        }
+                    }
                     log_info("P%d-S%d-in: server or our ack %u", thr_data->pkt_id, subconn_i, ack - subconn->ini_seq_loc);
                     return -1;
                 }
