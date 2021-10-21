@@ -917,7 +917,7 @@ full_optimistic_ack_altogether(void* arg)
                         
                         for(int i = 0; i < 2; i++)
                             obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
-                        sprintf(log, "O: S%d overrun, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, 2 acks %u to last received in case of ack being lost", stall_port, stall_seq);
+                        sprintf(log, "O: S%d overrun, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, 2 acks %u to last received in case of ack being lost", stall_port, obj->max_opt_ack, stall_seq);
                     }
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
@@ -3332,6 +3332,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     }
                 }
 
+                if(TH_FIN & tcphdr->th_flags){
+                    printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq_rel);
+                    log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
+                    // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
+                    subconn->fin_ack_recved = true;
+                }
+
                 // Too many packets forwarded to squid will cause squid to discard right most packets
                 if(!is_new_segment && !subconn->is_backup){
                 // if (seq_rel + payload_len <= cur_ack_rel) {
@@ -3388,12 +3395,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 // }
                 // log_debug("%s - forwarded to squid\n", log); 
                 // return 0;
-                if(TH_FIN & tcphdr->th_flags){
-                    printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq-subconn->ini_seq_rem);
-                    log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
-                    // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
-                    subconn->fin_ack_recved = true;
-                }
                 strcat(log,"\n");
                 log_info(log);
                 return -1;
