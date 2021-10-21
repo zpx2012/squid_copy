@@ -790,6 +790,10 @@ full_optimistic_ack_altogether(void* arg)
                     }
                 }
             }
+            if(adjusted_rwnd <= 0){
+                if(opa_ack_start > obj->max_opt_ack)
+                    obj->max_opt_ack = opa_ack_start;
+            }
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
             if(adjusted_rwnd <= 0){
                 zero_window_start = opa_ack_start;
@@ -809,8 +813,6 @@ full_optimistic_ack_altogether(void* arg)
                     opa_ack_start += mss;
                     if (opa_ack_start > obj->ack_end)
                         opa_ack_start = obj->ack_end;
-                    if(opa_ack_start > obj->max_opt_ack)
-                        obj->max_opt_ack = opa_ack_start;
             }
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
