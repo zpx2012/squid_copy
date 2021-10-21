@@ -912,9 +912,12 @@ full_optimistic_ack_altogether(void* arg)
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
                     if(it->second->next_seq_rem == stall_seq){
-                        obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
-                        obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
-                        sprintf(log, "O: S%d overrun, send ack %u,", stall_port, stall_seq);
+                        for(int i = 0; i < 5; i++)
+                            obj->send_optimistic_ack(it->second, obj->max_opt_ack, obj->get_ajusted_rwnd(obj->max_opt_ack));
+                        
+                        for(int i = 0; i < 2; i++)
+                            obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
+                        sprintf(log, "O: S%d overrun, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, 2 acks %u to last received in case of ack being lost", stall_port, stall_seq);
                     }
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
@@ -3317,7 +3320,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
                     if(seq_rel+payload_len <= max_opt_ack ){
                         sprintf(log, "%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
-                        printf("%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
+                        // printf("%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
                         int rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
                         if(rwnd_tmp > 0)
                             send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
