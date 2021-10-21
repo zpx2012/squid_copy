@@ -790,7 +790,7 @@ full_optimistic_ack_altogether(void* arg)
                     }
                 }
             }
-            if(adjusted_rwnd <= 0){
+            if(adjusted_rwnd > 0){
                 if(opa_ack_start > obj->max_opt_ack)
                     obj->max_opt_ack = opa_ack_start;
             }
