@@ -883,7 +883,7 @@ full_optimistic_ack_altogether(void* arg)
 
             if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
-                if(abs(zero_window_start-stall_seq) <= 3*mss && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
+                if(abs(int(zero_window_start-stall_seq)) <= 3*mss && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack
                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
                     // log_debug("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
                     // printf("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue\n", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
@@ -913,7 +913,7 @@ full_optimistic_ack_altogether(void* arg)
 
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
-                    if(elapsed(it->second->last_data_received) >= 1.5 && abs(it->second->next_seq_rem-stall_seq) < 5*mss){
+                    if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
                         if(same_restart_cnt < 3){
                             for(int i = 0; i < 2; i++)
                                 obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
@@ -925,7 +925,6 @@ full_optimistic_ack_altogether(void* arg)
                             sprintf(log, "O: S%d stalls, restart No.%u, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, ", stall_port, same_restart_cnt, obj->max_opt_ack);
                             usleep(10000);
                         }
-
                     }
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
