@@ -762,7 +762,7 @@ full_optimistic_ack_altogether(void* arg)
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
          last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0;
+    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0;
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
@@ -913,17 +913,23 @@ full_optimistic_ack_altogether(void* arg)
 
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
-                    if(it->second->next_seq_rem == stall_seq){
-                        for(int i = 0; i < 5; i++)
-                            obj->send_optimistic_ack(it->second, obj->max_opt_ack, obj->get_ajusted_rwnd(obj->max_opt_ack));
-                        
-                        for(int i = 0; i < 2; i++)
-                            obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
-                        sprintf(log, "O: S%d overrun, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, 2 acks %u to last received in case of ack being lost", stall_port, obj->max_opt_ack, stall_seq);
+                    if(elapsed(it->second->last_data_received) >= 1.5 && abs(it->second->next_seq_rem-stall_seq) < 5*mss){
+                        if(same_restart_cnt < 3){
+                            for(int i = 0; i < 2; i++)
+                                obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
+                            sprintf(log, "O: S%d stalls, restart No.%u, send 2 acks %u to last received in case of ack being lost,", stall_port, same_restart_cnt, stall_seq);
+                        }
+                        else{
+                            for(int i = 0; i < 10; i++)
+                                obj->send_optimistic_ack(it->second, obj->max_opt_ack, obj->get_ajusted_rwnd(obj->max_opt_ack));
+                            sprintf(log, "O: S%d stalls, restart No.%u, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, ", stall_port, same_restart_cnt, obj->max_opt_ack);
+                            usleep(10000);
+                        }
+
                     }
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
-                uint restart_seq = stall_seq / mss * mss + 1 + mss;//Find the closest optimack we have sent
+                uint restart_seq = same_restart_cnt < 3? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
                 opa_ack_start = restart_seq > 5*mss? restart_seq - 5*mss : 1; // - 5*mss to give the server time to send the following packets
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
@@ -933,10 +939,17 @@ full_optimistic_ack_altogether(void* arg)
                 // if(elapsed(last_restart) <= 0)
                 //     continue;
                     obj->overrun_cnt++;
-                    if(stall_seq != last_stall_seq)
+                    if(stall_seq != last_stall_seq){
                         obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
-                    else
+                        same_restart_cnt = 0;
+                    }
+                    else{
                         obj->overrun_penalty += elapsed(last_restart);
+                        if(stall_port == last_stall_port)
+                            same_restart_cnt++;
+                        else
+                            same_restart_cnt = 0;
+                    }
 
                 // }
                 // else{
