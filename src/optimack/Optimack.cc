@@ -891,7 +891,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if((stall_seq == last_stall_seq && stall_port == last_stall_port && (opa_ack_start-last_restart_seq)/1460 < 3000 && elapsed(last_zero_window) > 1) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
+                if((stall_seq == last_stall_seq && stall_port == last_stall_port && elapsed(last_restart) > 1) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
                     // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
                     continue;
