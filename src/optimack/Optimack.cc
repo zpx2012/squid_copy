@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -426,6 +426,14 @@ int Optimack::get_ajusted_rwnd(int cur_ack){
     return cur_rwnd;
 }
 
+int Optimack::get_ajusted_rwnd_backup(int cur_ack){
+    int cur_rwnd = 65535 + cur_ack_rel - cur_ack;
+    int diff = (int)(cur_rwnd - squid_MSS);
+    if (diff <= 0)
+        return 0;
+    return cur_rwnd;
+}
+
 void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd){
     if(adjusted_rwnd < conn->win_scale)
         return;
@@ -569,10 +577,10 @@ void* selective_optimistic_ack(void* arg){
 
         if (!acks_to_be_sent.empty() && elapsed(last_send_ack) >= send_ack_pace){
             uint cur_ack = *acks_to_be_sent.begin();
-            int adjusted_rwnd = obj->get_ajusted_rwnd(cur_ack);
+            int adjusted_rwnd = obj->get_ajusted_rwnd_backup(cur_ack);
             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0, last_send_ack, last_zero_window);
             if(adjusted_rwnd > conn->win_scale){
-                obj->send_optimistic_ack(conn, cur_ack, 65535);
+                obj->send_optimistic_ack(conn, cur_ack, adjusted_rwnd);
                 log_info("[Backup]: sent optack %u\n", cur_ack);
                 // printf("[Backup]: sent optack %u\n", cur_ack);
                 acks_to_be_sent.erase(acks_to_be_sent.begin());
@@ -616,19 +624,19 @@ void* selective_optimistic_ack(void* arg){
             } 
         }
 
-        if(elapsed(conn->last_inorder_data_time) > 1){
+        if(elapsed(conn->last_inorder_data_time) > 1.5){
             uint inorder_seq_end = conn->recved_seq.getFirstEnd();
             if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 2)){//optack, don't need retranx
                 int backup_rwnd_tmp = obj->backup_dup_ack_rwnd;
                 if(inorder_seq_end != obj->backup_dup_ack)
                     backup_rwnd_tmp = obj->backup_dup_ack + obj->backup_dup_ack_rwnd - inorder_seq_end;
-                for (int j = 0; j < 3; j++){
-                    obj->send_optimistic_ack(conn, inorder_seq_end, 65535);
+                for (int j = 0; j < 10; j++){
+                    obj->send_optimistic_ack(conn, inorder_seq_end, backup_rwnd_tmp);
                     // obj->send_optimistic_ack_with_SACK(conn, inorder_seq_end, obj->rwnd, &conn->recved_seq);
                     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + inorder_seq_end, ack, cur_win_scale);
-                    printf("[Backup]: O-bu: retrx - Sent ack %u\n", inorder_seq_end);
-                    // log_info("[Backup]: O-bu: retrx - Sent ack %u\n", inorder_seq_end);
                 }
+                printf("[Backup]: O-bu: retrx - Sent ack %u * 10\n\n", inorder_seq_end);
+                log_info("[Backup]: O-bu: retrx - Sent ack %u * 10\n", inorder_seq_end);
                 last_dup_ack = inorder_seq_end;
                 last_dup_ack_time = std::chrono::system_clock::now();
             }
@@ -891,7 +899,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 char time_str[20];
                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
-                if((stall_seq == last_stall_seq && stall_port == last_stall_port && elapsed(last_restart) > 1) || (stall_seq > last_stall_seq &&  elapsed(last_restart) <= 1)){
+                if((stall_seq == last_stall_seq && stall_port == last_stall_port && elapsed(last_restart) <= 1) || (stall_seq > last_stall_seq && elapsed(last_restart) <= 1)){
                     // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
                     continue;
@@ -944,8 +952,11 @@ full_optimistic_ack_altogether(void* arg)
                     }
                     else{
                         obj->overrun_penalty += elapsed(last_restart);
-                        if(stall_port == last_stall_port)
+                        if(stall_port == last_stall_port){
                             same_restart_cnt++;
+                            if(same_restart_cnt == 6)
+                                same_restart_cnt = 0;
+                        }
                         else
                             same_restart_cnt = 0;
                     }
@@ -1894,7 +1905,7 @@ range_watch(void* arg)
 {
     printf("[Range]: range_watch thread starts\n");
 
-    int rv, range_sockfd, range_sockfd_old;
+    int rv, range_sockfd, range_sockfd_old, erase_count = 0;
     char response[MAX_RANGE_SIZE+1];
 
     Optimack* obj = ((Optimack*)arg);
@@ -1942,7 +1953,7 @@ range_watch(void* arg)
             continue;
         }
 
-        if(range_sockfd <= 0 || obj->range_request_count >= 95){
+        if(range_sockfd <= 0 || obj->range_request_count >= 95 || erase_count >= 5){
             //clear all sent timestamp, to resend it
             // pthread_mutex_lock(p_mutex_range_job_vector);
 restart:
@@ -1951,11 +1962,12 @@ restart:
             }
             // pthread_mutex_unlock(p_mutex_range_job_vector);
 
-            range_sockfd = obj->establish_tcp_connection();
+            range_sockfd = obj->establish_tcp_connection(range_sockfd_old);
             close(range_sockfd_old);
             printf("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
             log_info("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
             obj->range_request_count = 0;
+            erase_count = 0;
         }
         if(range_sockfd <= 0){ //TODO: remove ranges_sent?{
             perror("Can't create range_sockfd, range thread break\n");
@@ -1969,8 +1981,9 @@ restart:
         // for(auto it : range_job->getIntervalList()) {
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
             if (obj->cur_ack_rel >= it->end+obj->response_header_len+1){
+                erase_count++;
                 log_info("[Range]: cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, it->end+obj->response_header_len+1);
-                printf("[Range]: cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, it->end+obj->response_header_len+1);
+                printf("[Range]: cur_ack_rel %u >= it->end %u, delete, erase count %d\n", obj->cur_ack_rel, it->end+obj->response_header_len+1, erase_count);
                 // printf("before erase it: [%u, %u]\n", it->start, it->end);
                 range_job_vector.erase(it++);
                 if(!range_job_vector.size())
@@ -1983,7 +1996,7 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 4){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
                 obj->range_timeout_cnt++;
                 obj->range_timeout_penalty += delay;
@@ -2270,7 +2283,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
         // else
         //     printf(">, continue\n");
     }
-    usleep(300000);
+    usleep(800000);
     char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
@@ -2590,13 +2603,14 @@ int Optimack::get_lost_range(Interval* intvl)
 // }
 
 
-int Optimack::establish_tcp_connection()
+int Optimack::establish_tcp_connection(int old_sockfd)
 {
     int sockfd = 0;
     struct sockaddr_in server_addr;
 
     // Open socket
-    while(sockfd == 0){
+restart:
+    while(sockfd == 0 || sockfd == old_sockfd){
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
             return -1;
@@ -2617,6 +2631,11 @@ int Optimack::establish_tcp_connection()
         return -1;
     }
     printf("establish_tcp_connection: connect sockfd %d\n", sockfd);
+
+    if(get_localport(sockfd) < 0){
+        sockfd = 0;
+        goto restart;
+    }
 
     return sockfd;
 }
@@ -3289,10 +3308,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     else {
                         if(order_flag_backup == IN_ORDER_NEWEST || order_flag_backup == IN_ORDER_FILL){
                             backup_dup_ack = inorder_seq_end;
-                            backup_dup_ack_rwnd = 65535;
-                            // backup_dup_ack_rwnd = get_ajusted_rwnd(inorder_seq_end);
-                            send_optimistic_ack_with_SACK(subconn, inorder_seq_end, backup_dup_ack_rwnd, &subconn->recved_seq);
-                            log_info("[Backup]: send normal ack %u when recved data %u, win %u\n", inorder_seq_end, seq_rel, backup_dup_ack_rwnd);
+                            int adjusted_rwnd = get_ajusted_rwnd_backup(inorder_seq_end);
+                            if(adjusted_rwnd > 0){
+                                backup_dup_ack_rwnd =  adjusted_rwnd;
+                                // backup_dup_ack_rwnd = get_ajusted_rwnd(inorder_seq_end);
+                                send_optimistic_ack_with_SACK(subconn, inorder_seq_end, backup_dup_ack_rwnd, &subconn->recved_seq);
+                                log_info("[Backup]: send normal ack %u when recved data %u, win %u\n", inorder_seq_end, seq_rel, backup_dup_ack_rwnd);
+                            }
                         }
                         else {
                             // send_optimistic_ack_with_SACK(subconn, inorder_seq_end, backup_dup_ack_rwnd, &subconn->recved_seq);
