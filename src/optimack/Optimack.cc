@@ -905,6 +905,8 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 }
 
+                if(same_restart_cnt >=3)
+                    continue;
 
                 if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
                     log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
@@ -927,12 +929,12 @@ full_optimistic_ack_altogether(void* arg)
                                 obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
                             sprintf(log, "O: S%d stalls, restart No.%u, send 2 acks %u to last received in case of ack being lost,", stall_port, same_restart_cnt, stall_seq);
                         }
-                        else{
-                            for(int i = 0; i < 10; i++)
-                                obj->send_optimistic_ack(it->second, obj->max_opt_ack, obj->get_ajusted_rwnd(obj->max_opt_ack));
-                            sprintf(log, "O: S%d stalls, restart No.%u, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, ", stall_port, same_restart_cnt, obj->max_opt_ack);
-                            usleep(10000);
-                        }
+                        // else{
+                        //     for(int i = 0; i < 10; i++)
+                        //         obj->send_optimistic_ack(it->second, obj->max_opt_ack, obj->get_ajusted_rwnd(obj->max_opt_ack));
+                        //     sprintf(log, "O: S%d stalls, restart No.%u, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, ", stall_port, same_restart_cnt, obj->max_opt_ack);
+                        //     usleep(10000);
+                        // }
                     }
                 }
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
@@ -954,8 +956,8 @@ full_optimistic_ack_altogether(void* arg)
                         obj->overrun_penalty += elapsed(last_restart);
                         if(stall_port == last_stall_port){
                             same_restart_cnt++;
-                            if(same_restart_cnt == 6)
-                                same_restart_cnt = 0;
+                            // if(same_restart_cnt == 6)
+                            //     same_restart_cnt = 0;
                         }
                         else
                             same_restart_cnt = 0;
