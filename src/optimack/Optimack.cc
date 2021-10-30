@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 1
+#define BACKUP_MODE 0
 #endif
 
 #ifndef MSS
@@ -948,9 +948,14 @@ full_optimistic_ack_altogether(void* arg)
                         // }
                     }
                 }
+                usleep(10000);//One RTT, wait for server to send out packets
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
                 uint restart_seq = same_restart_cnt < 3? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
-                opa_ack_start = restart_seq > 5*mss? restart_seq - 5*mss : 1; // - 5*mss to give the server time to send the following packets
+                opa_ack_start = restart_seq > mss? restart_seq - mss : 1; // - 5*mss to give the server time to send the following packets
+                if(same_restart_cnt >= 3){
+                    slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                    slowest_subconn->last_data_received = std::chrono::system_clock::now();
+                }
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
                 //     continue;
