@@ -941,8 +941,8 @@ full_optimistic_ack_altogether(void* arg)
                     if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
                         if(same_restart_cnt < 3){
                             for(int i = 0; i < 2; i++)
-                                obj->send_optimistic_ack(it->second, stall_seq, obj->get_ajusted_rwnd(stall_seq));
-                            sprintf(log, "O: S%d stalls, restart No.%u, send 2 acks %u to last received in case of ack being lost,", stall_port, same_restart_cnt, stall_seq);
+                                obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
+                            sprintf(log, "O: S%d stalls, restart No.%u, send 2 acks %u to last received in case of ack being lost,", stall_port, same_restart_cnt, it->second->next_seq_rem);
                         }
                         // else{
                         //     for(int i = 0; i < 10; i++)
