@@ -916,8 +916,12 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 }
 
-                if(stall_seq == last_stall_seq && stall_port == last_stall_port && same_restart_cnt >=3)
+                if(stall_seq == last_stall_seq && stall_port == last_stall_port && same_restart_cnt >= 3){
+                    slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                    slowest_subconn->last_data_received = std::chrono::system_clock::now();
+                    // opa_ack_start = obj->max_opt_ack;
                     continue;
+                }
 
                 if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
                     log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
@@ -952,10 +956,6 @@ full_optimistic_ack_altogether(void* arg)
                 sprintf(log, "%s current ack %u,", log, opa_ack_start);
                 uint restart_seq = same_restart_cnt < 3? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
                 opa_ack_start = restart_seq > mss? restart_seq - mss : 1; // - 5*mss to give the server time to send the following packets
-                if(same_restart_cnt >= 3){
-                    slowest_subconn->next_seq_rem = obj->max_opt_ack;
-                    slowest_subconn->last_data_received = std::chrono::system_clock::now();
-                }
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
                 //     continue;
