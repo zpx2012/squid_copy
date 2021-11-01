@@ -876,6 +876,7 @@ full_optimistic_ack_altogether(void* arg)
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
+                sprintf(log, "O: S%d stalls at %u\n", stall_port, stall_seq);
                 if(last_stall_seq != stall_seq)
                     log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem %u", stall_port, stall_seq, min_next_seq_rem);
             }
@@ -942,7 +943,7 @@ full_optimistic_ack_altogether(void* arg)
                         if(same_restart_cnt < 3){
                             for(int i = 0; i < 2; i++)
                                 obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
-                            sprintf(log, "O: S%d stalls, restart No.%u, send 2 acks %u to last received in case of ack being lost,", stall_port, same_restart_cnt, it->second->next_seq_rem);
+                            sprintf(log, "%s, restart No.%u, send 2 acks %u to S%d, last received in case of ack being lost", log, same_restart_cnt, it->second->next_seq_rem, it->second->local_port);
                         }
                         // else{
                         //     for(int i = 0; i < 10; i++)
@@ -953,7 +954,7 @@ full_optimistic_ack_altogether(void* arg)
                     }
                 }
                 usleep(10000);//One RTT, wait for server to send out packets
-                sprintf(log, "%s current ack %u,", log, opa_ack_start);
+                sprintf(log, "%s, current ack %u", log, opa_ack_start);
                 uint restart_seq = same_restart_cnt < 3? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
                 opa_ack_start = restart_seq > mss? restart_seq - mss : 1; // - 5*mss to give the server time to send the following packets
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
@@ -992,7 +993,7 @@ full_optimistic_ack_altogether(void* arg)
                 last_stall_seq = stall_seq;
                 last_restart_seq = restart_seq;
                 last_restart = std::chrono::system_clock::now();
-                sprintf(log, "%srestart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
+                sprintf(log, "%s, restart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
                 log_info(log);
                 printf(log);
             }
