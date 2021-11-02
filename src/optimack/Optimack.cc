@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 1
+#define RANGE_MODE 0
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 0
+#define BACKUP_MODE 1
 #endif
 
 #ifndef MSS
@@ -628,7 +628,7 @@ void* selective_optimistic_ack(void* arg){
 
         if(elapsed(conn->last_inorder_data_time) > 1.5){
             uint inorder_seq_end = conn->recved_seq.getFirstEnd();
-            if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 2)){//optack, don't need retranx
+            if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 0.002)){//optack, don't need retranx
                 int backup_rwnd_tmp = obj->backup_dup_ack_rwnd;
                 if(inorder_seq_end != obj->backup_dup_ack)
                     backup_rwnd_tmp = obj->backup_dup_ack + obj->backup_dup_ack_rwnd - inorder_seq_end;
@@ -639,14 +639,14 @@ void* selective_optimistic_ack(void* arg){
                 else{
                     if(inorder_seq_end > obj->backup_max_opt_ack)
                         obj->backup_max_opt_ack = inorder_seq_end;
-                    for (int j = 0; j < 10; j++){
+                    for (int j = 0; j < 1; j++){
                         obj->send_optimistic_ack(conn, inorder_seq_end, backup_rwnd_tmp);
-                        usleep(1000);
+                        // usleep(1000);
                         // obj->send_optimistic_ack_with_SACK(conn, inorder_seq_end, obj->rwnd, &conn->recved_seq);
                         // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + inorder_seq_end, ack, cur_win_scale);
                     }
-                    printf("[Backup]: O-bu: retrx - Sent ack %u * 10\n\n", inorder_seq_end);
-                    log_info("[Backup]: O-bu: retrx - Sent ack %u * 10\n", inorder_seq_end);
+                    printf("[Backup]: O-bu: retrx - Sent ack %u\n\n", inorder_seq_end);
+                    log_info("[Backup]: O-bu: retrx - Sent ack %u\n", inorder_seq_end);
                     last_dup_ack = inorder_seq_end;
                     last_dup_ack_time = std::chrono::system_clock::now();
                 }
@@ -3104,8 +3104,9 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     if (subconn_i)
                         return 0;
                     // Keep alive
-                    if(!subconn->is_backup)
-                        send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                    if(!subconn->is_backup){
+                        // send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                    }
                     else{
                         if(seq_rel+payload_len <= max_opt_ack){
                             send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive

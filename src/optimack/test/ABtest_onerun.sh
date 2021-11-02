@@ -35,7 +35,8 @@ tcpdump_out=$outdir/tcpdump_${tag}.pcap
 
 inf=$(ip route | grep default | sed -e "s/^.*dev.//" -e "s/.proto.*//")
 sudo ethtool -K $inf tso off gso off gro off
-sysctl -w net.ipv4.tcp_timestamps=0
+sudo sysctl -w net.ipv4.tcp_timestamps=0
+sudo ulimit unlimited
 rm /var/optack.log
 
 function cleanup()
