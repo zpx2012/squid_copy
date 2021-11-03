@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 1
+#define BACKUP_MODE 0
 #endif
 
 #ifndef MSS
@@ -876,9 +876,10 @@ full_optimistic_ack_altogether(void* arg)
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
-                sprintf(log, "O: S%d stalls at %u\n", stall_port, stall_seq);
+                sprintf(log, "O: S%d stalls at %u,", stall_port, stall_seq);
                 if(last_stall_seq != stall_seq)
                     log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem %u", stall_port, stall_seq, min_next_seq_rem);
+                last_stall_seq = stall_seq;
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
             //     if(!it->second->is_backup){
@@ -1825,7 +1826,8 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 // keep receiving and parse in next response
                 memmove(response, response+consumed, unread);
                 recv_offset += unread;
-                printf("[Range]: incomplete http header, len %d\n", unread);
+                log_error("[Range] incomplete http header, len %d\n", unread);
+                printf("[Range] incomplete http header, len %d\n", unread);
                 break;
             }
             else {
@@ -1845,7 +1847,8 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
             if (header->remain <= unread) {
                 // we have all the data
                 // printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->end, header->remain, unread);
-                log_debug("[Range] data retrieved %d - %d", header->start, header->end);
+                log_error("[Range] data retrieved %d - %d", header->start, header->end);
+                printf("[Range] data retrieved %d - %d\n", header->start, header->end);
 
                 memcpy(data, response+consumed, header->remain);
                 header->parsed = 0;
@@ -1859,12 +1862,16 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 * remove interval gaps (header->start, header->end) here
                 */
                 // range_job->removeInterval(header->start, header->end);
+                log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
+                printf("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
                 obj->ranges_sent.removeInterval(header->start, header->end);
+                log_error("After removing [%u, %u], %s", header->start, header->end, obj->ranges_sent.Intervals2str().c_str());
+                printf("After removing [%u, %u], %s\n", header->start, header->end, obj->ranges_sent.Intervals2str().c_str());
             }
             else {
                 // still need more data
                 // we can consume and send all unread data
-                // printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->start+unread, header->remain, unread);
+                printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->start+unread, header->remain, unread);
                 log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start, header->start+unread, header->remain, unread);
                 memcpy(data, response+consumed, unread);
                 header->remain -= unread;
@@ -1876,7 +1883,11 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 * remove interval gaps (header->start, header->start+unread-1) here
                 */
                 // range_job->removeInterval(header->start, header->start+unsent);
+                log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
+                printf("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
                 obj->ranges_sent.removeInterval(header->start, header->start+unsent);
+                log_error("After removing [%u, %u], %s", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
+                printf("After removing [%u, %u], %s\n", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
             }
 
             int sent, packet_len;
@@ -1891,16 +1902,16 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 // send_ACK_payload(obj->g_local_ip, obj->g_remote_ip, obj->squid_port, obj->g_remote_port, (u_char*)(data + sent), packet_len, ack, seq);
                 // log_error("range_recv:2132: recved_seq - lock"); 
                 obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
-                log_debug("[Range]: insert [%u,%u] to recved_seq, after %s", seq_rel, seq_rel+packet_len, obj->recved_seq.Intervals2str().substr(0,490).c_str());
+                log_debug("[Range] insert [%u,%u] to recved_seq, after %s", seq_rel, seq_rel+packet_len, obj->recved_seq.Intervals2str().substr(0,490).c_str());
                 // log_error("range_recv:2132: recved_seq - unlock"); 
                 // log_error("range_recv:2132: all_lost_seq - lock"); 
                 obj->all_lost_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
                 // log_error("range_recv:2132: all_lost_seq - unlock"); 
                 obj->send_data_to_squid(seq_rel, (u_char*)(data + sent), packet_len);
-                log_debug("[Range]: insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+packet_len);
+                log_debug("[Range] insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+packet_len);
                 // obj->insert_to_recv_buffer_withLock(seq_rel, (u_char*)data+sent, packet_len);
                 log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u)", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc);
-                // printf ("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), header->start+obj->response_header_len+sent, ntohl(ack), subconn->next_seq_loc, packet_len);
+                printf("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, packet_len);
             }
             obj->send_out_of_order_recv_buffer_withLock(seq_rel + packet_len);
             recv_offset = 0;
@@ -1983,8 +1994,8 @@ restart:
 
             range_sockfd = obj->establish_tcp_connection(range_sockfd_old);
             close(range_sockfd_old);
-            printf("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
-            log_info("[Range]: New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
+            printf("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
+            log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
             obj->range_request_count = 0;
             erase_count = 0;
         }
@@ -2001,8 +2012,8 @@ restart:
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
             if (obj->cur_ack_rel >= it->end+obj->response_header_len+1){
                 erase_count++;
-                log_info("[Range]: cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, it->end+obj->response_header_len+1);
-                printf("[Range]: cur_ack_rel %u >= it->end %u, delete, erase count %d\n", obj->cur_ack_rel, it->end+obj->response_header_len+1, erase_count);
+                log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, it->end+obj->response_header_len+1);
+                printf("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d\n", obj->cur_ack_rel, it->end+obj->response_header_len+1, erase_count);
                 // printf("before erase it: [%u, %u]\n", it->start, it->end);
                 range_job_vector.erase(it++);
                 if(!range_job_vector.size())
@@ -2015,12 +2026,12 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 4){//timeout, send it again
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
                 obj->range_timeout_cnt++;
                 obj->range_timeout_penalty += delay;
-                log_info("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
-                printf("[Range]: [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
+                log_info("[Range] [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
+                printf("[Range] [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
                 // close(range_sockfd);
                 range_sockfd_old = range_sockfd;
                 range_sockfd = -1;
@@ -2037,24 +2048,24 @@ restart:
         rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
 
         if (rv > 0) {
+            log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
+            printf("[Range] recved %d bytes, hand over to process_range_rv\n", rv);
             process_range_rv(response, rv, obj, subconn, range_job_vector, header, consumed, unread, parsed, recv_offset, unsent);
         }
+        else if (rv == 0){
+            log_debug("[Range] ret %d, sockfd %d closed ", rv, range_sockfd);
+            printf("[Range] ret %d, sockfd %d closed\n", rv, range_sockfd);
+            // close(range_sockfd);
+            range_sockfd_old = range_sockfd;
+            range_sockfd = -1;
+            printf("closed range_sockfd %d\n", range_sockfd);
+        }
         else if (!(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)){
-            if (rv < 0){
-                log_debug("[Range] error: ret %d errno %d", rv, errno);
-                printf("[Range] error: ret %d errno %d\n", rv, errno);
-                // close(range_sockfd);
-                range_sockfd_old = range_sockfd;
-                range_sockfd = -1;
-            }
-            else{ 
-                log_debug("[Range]: ret %d, sockfd %d closed ", rv, range_sockfd);
-                printf("[Range]: ret %d, sockfd %d closed\n", rv, range_sockfd);
-                // close(range_sockfd);
-                range_sockfd_old = range_sockfd;
-                range_sockfd = -1;
-                printf("closed range_sockfd %d\n", range_sockfd);
-            }
+            log_debug("[Range] error: ret %d errno %d", rv, errno);
+            printf("[Range] error: ret %d errno %d\n", rv, errno);
+            // close(range_sockfd);
+            range_sockfd_old = range_sockfd;
+            range_sockfd = -1;
         }
         usleep(100);
     }
