@@ -802,7 +802,7 @@ full_optimistic_ack_altogether(void* arg)
                         continue;
                         // break;
                     }
-                    else if (opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
+                    else if (opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -921,8 +921,8 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
                 if(stall_seq == last_stall_seq && stall_port == last_stall_port && same_restart_cnt >= 3){
-                    slowest_subconn->next_seq_rem = obj->max_opt_ack;
-                    slowest_subconn->last_data_received = std::chrono::system_clock::now();
+                    // slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                    // slowest_subconn->last_data_received = std::chrono::system_clock::now();
                     // opa_ack_start = obj->max_opt_ack;
                     continue;
                 }
