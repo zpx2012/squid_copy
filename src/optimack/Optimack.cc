@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
@@ -877,8 +877,10 @@ full_optimistic_ack_altogether(void* arg)
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
                 sprintf(log, "O: S%d stalls at %u,", stall_port, stall_seq);
-                if(last_stall_seq != stall_seq)
+                if(last_stall_seq != stall_seq){
+                    same_restart_cnt = 0;
                     log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem %u", stall_port, stall_seq, min_next_seq_rem);
+                }
                 last_stall_seq = stall_seq;
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
@@ -926,7 +928,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
                 if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
-                    log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
+                    // log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
                 }
