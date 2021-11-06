@@ -781,7 +781,7 @@ full_optimistic_ack_altogether(void* arg)
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
          last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0;
+    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
@@ -829,9 +829,10 @@ full_optimistic_ack_altogether(void* arg)
                     // send_FIN_ACK(obj->g_local_ip, obj->g_remote_ip, conn->local_port, obj->g_remote_port, "", opa_ack_start+1, conn->next_seq_loc+1);
                     break;
                 }
+                if(same_restart_cnt < 3)
                     opa_ack_start += mss;
-                    if (opa_ack_start > obj->ack_end)
-                        opa_ack_start = obj->ack_end;
+                if (opa_ack_start > obj->ack_end)
+                    opa_ack_start = obj->ack_end;
             }
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
@@ -921,6 +922,18 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
                 if(stall_seq == last_stall_seq && stall_port == last_stall_port && same_restart_cnt >= 3){
+                    for(int i = 0; i < 10; i++){
+                        int adjust_rwnd_tmp = obj->get_ajusted_rwnd(opa_ack_dup_countdown);
+                        if(adjust_rwnd_tmp > 0){
+                            opa_ack_dup_countdown -= mss;
+                            for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                                if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
+                                    for(int j = 0; j < 5; j++)
+                                        obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+                                }
+                            }
+                        }
+                    }
                     // slowest_subconn->next_seq_rem = obj->max_opt_ack;
                     // slowest_subconn->last_data_received = std::chrono::system_clock::now();
                     // opa_ack_start = obj->max_opt_ack;
@@ -996,6 +1009,7 @@ full_optimistic_ack_altogether(void* arg)
                 last_stall_seq = stall_seq;
                 last_restart_seq = restart_seq;
                 last_restart = std::chrono::system_clock::now();
+                opa_ack_dup_countdown = obj->max_opt_ack;
                 sprintf(log, "%s, restart at %u, zero_window_start %u, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
                 log_info(log);
                 printf(log);
@@ -3112,21 +3126,25 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_PUSH:
             case TH_ACK | TH_URG:
             {
+                if(!payload_len || payload_len == 1){
+                    // Keep alive
+                    if(!subconn->is_backup){
+                        send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                    }
+                    else{
+                        if(seq_rel+payload_len <= max_opt_ack){
+                            send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                            // if(seq_rel+payload_len+1 <= max_opt_ack)
+                                // send_optimistic_ack(subconn, seq_rel+payload_len+1, get_ajusted_rwnd(seq_rel+payload_len+1)); // Reply to Keep-Alive
+                        }
+                    }
+                }
+
                 if (!payload_len) {
                     // TODO: let our reply through...for now
                     if (subconn_i)
                         return 0;
-                    // Keep alive
-                    if(!subconn->is_backup){
-                        // send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
-                    }
-                    else{
-                        // if(seq_rel+payload_len <= max_opt_ack){
-                            send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
-                            // if(seq_rel+payload_len+1 <= max_opt_ack)
-                                // send_optimistic_ack(subconn, seq_rel+payload_len+1, get_ajusted_rwnd(seq_rel+payload_len+1)); // Reply to Keep-Alive
-                        // }
-                    }
+
                     log_info("P%d-S%d-in: server or our ack %u", thr_data->pkt_id, subconn_i, ack - subconn->ini_seq_loc);
                     return -1;
                 }
