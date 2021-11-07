@@ -3133,7 +3133,11 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if(!payload_len || payload_len == 1){
                     // Keep alive
                     if(!subconn->is_backup){
-                        send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                        int adjust_rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
+                        if(adjust_rwnd_tmp > subconn->win_scale)
+                            send_optimistic_ack(subconn, seq_rel+payload_len, adjust_rwnd_tmp); // Reply to Keep-Alive
+                        else 
+                            send_optimistic_ack(subconn, seq_rel+payload_len, squid_MSS);
                     }
                     else{
                         if(seq_rel+payload_len <= max_opt_ack){
