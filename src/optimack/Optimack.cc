@@ -2659,7 +2659,7 @@ int Optimack::establish_tcp_connection(int old_sockfd)
     struct sockaddr_in server_addr;
 
     // Open socket
-restart:
+opensocket:
     while(sockfd == 0 || sockfd == old_sockfd){
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
@@ -2682,7 +2682,8 @@ restart:
     // Connect to server
     if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connect server error");
-        goto restart;
+        sockfd = 0;
+        goto opensocket;
         close(sockfd);
         return -1;
     }
@@ -2690,7 +2691,7 @@ restart:
 
     if(get_localport(sockfd) < 0){
         sockfd = 0;
-        goto restart;
+        goto opensocket;
     }
 
     return sockfd;
