@@ -2674,6 +2674,11 @@ restart:
     server_addr.sin_addr.s_addr = inet_addr(g_remote_ip);
     server_addr.sin_port = htons(g_remote_port);
 
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
     // Connect to server
     if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connect server error");
