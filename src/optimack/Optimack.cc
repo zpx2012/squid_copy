@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 5
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -802,7 +802,7 @@ full_optimistic_ack_altogether(void* arg)
                         continue;
                         // break;
                     }
-                    else if (opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
+                    else if (opa_ack_start >= obj->max_opt_ack || opa_ack_start == obj->ack_end || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -922,21 +922,25 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
                 if(stall_seq == last_stall_seq && stall_port == last_stall_port && same_restart_cnt >= 3){
-                    for(int i = 0; i < 10; i++){
-                        int adjust_rwnd_tmp = obj->get_ajusted_rwnd(opa_ack_dup_countdown);
-                        if(adjust_rwnd_tmp > 0){
-                            opa_ack_dup_countdown -= mss;
-                            for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
-                                if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
-                                    for(int j = 0; j < 5; j++)
-                                        obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+                    if(obj->max_opt_ack != obj->ack_end){
+                        for(int i = 0; i < 10; i++){
+                            int adjust_rwnd_tmp = obj->get_ajusted_rwnd(opa_ack_dup_countdown);
+                            if(adjust_rwnd_tmp > 0){
+                                opa_ack_dup_countdown -= mss;
+                                for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                                    if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
+                                        for(int j = 0; j < 5; j++)
+                                            obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+                                    }
                                 }
                             }
                         }
                     }
-                    // slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                    else{
+                    slowest_subconn->next_seq_rem = obj->max_opt_ack;
                     // slowest_subconn->last_data_received = std::chrono::system_clock::now();
                     // opa_ack_start = obj->max_opt_ack;
+                    }
                     continue;
                 }
 
@@ -2357,7 +2361,7 @@ int Optimack::get_lost_range(Interval* intvl)
     // if(min_next_seq_rem == -1)
     //     return Interval(0,0);
     uint start = intvl->start, end = intvl->end;
-    if(start == 0 || end == 0 || start < response_header_len+1 || end < response_header_len+1)
+    if(start == 0 || end == 0 || start <= response_header_len+1 || end <= response_header_len+1 || !response_header_len)
         return -1;
 
     // check if the range has already been sent
