@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -1999,10 +1999,11 @@ range_watch(void* arg)
 
         // printf("enter range loop\n");
         if(range_job_vector.size() == 0){
-            // printf("enter range loop\n");
+            // printf("range_job_vector.size() == 0\n");
             continue;
         }
 
+        // printf("enter range_sockfd <= 0");
         if(range_sockfd <= 0 || obj->range_request_count >= 95 || erase_count >= 5){
             //clear all sent timestamp, to resend it
             // pthread_mutex_lock(p_mutex_range_job_vector);
@@ -3137,14 +3138,14 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_ACK | TH_PUSH:
             case TH_ACK | TH_URG:
             {
-                if(!payload_len || payload_len == 1){
+                if((!payload_len || payload_len == 1) && seq_rel != 1){
                     // Keep alive
                     if(!subconn->is_backup){
                         int adjust_rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
-                        if(adjust_rwnd_tmp > subconn->win_scale)
-                            send_optimistic_ack(subconn, seq_rel+payload_len, adjust_rwnd_tmp); // Reply to Keep-Alive
-                        else 
-                            send_optimistic_ack(subconn, seq_rel+payload_len, squid_MSS);
+                        if(adjust_rwnd_tmp <= squid_MSS)
+                            adjust_rwnd_tmp = squid_MSS;
+                        send_optimistic_ack(subconn, seq_rel+payload_len, adjust_rwnd_tmp); // Reply to Keep-Alive
+                        printf("S%d: received Keep-Alive(%u), len %d, send Keep-Alive ACK with win_size %d\n", subconn_i, seq_rel, payload_len, adjust_rwnd_tmp);
                     }
                     else{
                         if(seq_rel+payload_len <= max_opt_ack){
@@ -3234,7 +3235,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     // log_info("P%d-S%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", thr_data->pkt_id, subconn_i); 
                 }
 
-                if(seq_rel == 1 && local_port == squid_port){
+                if(seq_rel == 1){
                     Http1::ResponseParser rp;
                     SBuf headerBuf;
                     headerBuf.assign((char*)payload, payload_len);
@@ -3249,8 +3250,8 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     p_content_len += content_len_field_len;
                     file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
                     ack_end = file_size + response_header_len+1;
-                    printf("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
-                    log_info("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
+                    printf("S%d: Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", subconn_i, response_header_len, rp.parseStatusCode, file_size, ack_end);
+                    log_info("S%d: Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", subconn_i, response_header_len, rp.parseStatusCode, file_size, ack_end);
                     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
                     // src/http/StatusCode.h
                 }
