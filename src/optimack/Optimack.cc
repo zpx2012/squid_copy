@@ -3141,10 +3141,10 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if((!payload_len || payload_len == 1) && seq_rel != 1){
                     // Keep alive
                     if(!subconn->is_backup){
-                        int adjust_rwnd_tmp = get_ajusted_rwnd(seq_rel+payload_len);
+                        int adjust_rwnd_tmp = get_ajusted_rwnd(seq_rel+1);
                         if(adjust_rwnd_tmp <= squid_MSS)
                             adjust_rwnd_tmp = squid_MSS;
-                        send_optimistic_ack(subconn, seq_rel+payload_len, adjust_rwnd_tmp); // Reply to Keep-Alive
+                        send_optimistic_ack(subconn, seq_rel+1, adjust_rwnd_tmp); // Reply to Keep-Alive
                         printf("S%d: received Keep-Alive(%u), len %d, send Keep-Alive ACK with win_size %d\n", subconn_i, seq_rel, payload_len, adjust_rwnd_tmp);
                     }
                     else{
