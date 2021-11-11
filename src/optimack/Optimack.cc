@@ -926,20 +926,23 @@ full_optimistic_ack_altogether(void* arg)
                         for(int i = 0; i < 10; i++){
                             int adjust_rwnd_tmp = obj->get_ajusted_rwnd(opa_ack_dup_countdown);
                             if(adjust_rwnd_tmp > 0){
-                                opa_ack_dup_countdown -= mss;
-                                for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
-                                    if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
-                                        for(int j = 0; j < 5; j++)
-                                            obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+                                if(opa_ack_dup_countdown > mss){
+                                    opa_ack_dup_countdown -= mss;
+                                    for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                                        if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
+                                            for(int j = 0; j < 5; j++)
+                                                obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+                                            usleep(10000);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                     else{
-                    slowest_subconn->next_seq_rem = obj->max_opt_ack;
-                    // slowest_subconn->last_data_received = std::chrono::system_clock::now();
-                    // opa_ack_start = obj->max_opt_ack;
+                        slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                        // slowest_subconn->last_data_received = std::chrono::system_clock::now();
+                        // opa_ack_start = obj->max_opt_ack;
                     }
                     continue;
                 }
@@ -2047,7 +2050,7 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 20){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
                 obj->range_timeout_cnt++;
                 obj->range_timeout_penalty += delay;
@@ -2676,7 +2679,7 @@ opensocket:
     server_addr.sin_port = htons(g_remote_port);
 
     struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = 10;
     tv.tv_usec = 0;
     setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
@@ -3144,8 +3147,11 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         int adjust_rwnd_tmp = get_ajusted_rwnd(seq_rel+1);
                         if(adjust_rwnd_tmp <= squid_MSS)
                             adjust_rwnd_tmp = squid_MSS;
+                        send_optimistic_ack(subconn, seq_rel, adjust_rwnd_tmp+1); // Reply to Keep-Alive
                         send_optimistic_ack(subconn, seq_rel+1, adjust_rwnd_tmp); // Reply to Keep-Alive
                         printf("S%d: received Keep-Alive(%u), len %d, send Keep-Alive ACK with win_size %d\n", subconn_i, seq_rel, payload_len, adjust_rwnd_tmp);
+                        if(seq_rel+1 < max_opt_ack)
+                            max_opt_ack = seq_rel + 1;
                     }
                     else{
                         if(seq_rel+payload_len <= max_opt_ack){
