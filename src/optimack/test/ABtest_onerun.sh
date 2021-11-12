@@ -36,7 +36,7 @@ tcpdump_out=$outdir/tcpdump_${tag}.pcap
 inf=$(ip route | grep default | sed -e "s/^.*dev.//" -e "s/.proto.*//")
 sudo ethtool -K $inf tso off gso off gro off
 sudo sysctl -w net.ipv4.tcp_timestamps=0
-ulimit unlimited
+ulimit -c unlimited
 rm /var/optack.log
 
 function cleanup()
@@ -66,14 +66,14 @@ function INT_handler()
 trap INT_handler SIGINT
 
 
-screen -dmS td tcpdump -w $tcpdump_out -s 100 host $site and tcp port 80
+screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 80
 screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 >$squid_log"
 sleep 2
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
 screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}"
-curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 --speed-time 120 2>&1 | tee -a ${squid_out}
+curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 --speed-time 360 2>&1 | tee -a ${squid_out}
 cleanup
 
 if grep -q "left intact" $squid_out;
