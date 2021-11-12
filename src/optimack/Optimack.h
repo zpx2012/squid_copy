@@ -125,6 +125,7 @@ public:
     int generate_sack_blocks(unsigned char * buf,int len, IntervalList* sack_list);
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
+    void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num);
 
     // variables
     int main_fd;
