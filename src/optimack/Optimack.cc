@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -1833,6 +1833,14 @@ parse_response(http_header *head, char *response, int unread)
     return 0;
 }
 
+void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
+    range_sockfd_old = range_sockfd;
+    range_sockfd = -1;
+    memset(header, 0, sizeof(http_header));
+    consumed = unread = parsed = recv_offset = unsent = 0;
+}
+
+
 int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
     if (rv > MAX_RANGE_SIZE)
         printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
@@ -2057,8 +2065,9 @@ restart:
                 log_info("[Range] [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
                 printf("[Range] [%u, %u] timeout %.2f, close and restart\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1, delay);
                 // close(range_sockfd);
-                range_sockfd_old = range_sockfd;
-                range_sockfd = -1;
+                cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+                // range_sockfd_old = range_sockfd;
+                // range_sockfd = -1;
                 break;
             }
             it++;
@@ -2080,16 +2089,18 @@ restart:
             log_debug("[Range] ret %d, sockfd %d closed ", rv, range_sockfd);
             printf("[Range] ret %d, sockfd %d closed\n", rv, range_sockfd);
             // close(range_sockfd);
-            range_sockfd_old = range_sockfd;
-            range_sockfd = -1;
+            cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+            // range_sockfd_old = range_sockfd;
+            // range_sockfd = -1;
             printf("closed range_sockfd %d\n", range_sockfd);
         }
         else if (!(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)){
             log_debug("[Range] error: ret %d errno %d", rv, errno);
             printf("[Range] error: ret %d errno %d\n", rv, errno);
             // close(range_sockfd);
-            range_sockfd_old = range_sockfd;
-            range_sockfd = -1;
+            cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+            // range_sockfd_old = range_sockfd;
+            // range_sockfd = -1;
         }
         usleep(100);
     }
