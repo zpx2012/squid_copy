@@ -216,7 +216,7 @@ void IntervalList::insert(Interval newInterval)
     std::vector<Interval> ans;
     int n = Intervals.size();
 
-    if(start >= end)
+    if(start > end)
         return;
  
     // If set is empty then simply insert
@@ -302,7 +302,7 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
     std::vector<Interval> ans;
     int n = Intervals.size();
 
-    if(start >= end)
+    if(start > end)
         return;
  
     // If set is empty then simply insert

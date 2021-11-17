@@ -3180,7 +3180,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
 
                 if (!payload_len) {
-                    recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+1);
+                    recved_seq.insertNewInterval_withLock(seq_rel, seq_rel);
                     update_subconn_next_seq_rem(subconn, seq_rel+payload_len);
                     // TODO: let our reply through...for now
                     if (subconn_i)
