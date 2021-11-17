@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 4
 #endif
 
 #ifndef ACKPACING
@@ -427,7 +427,7 @@ int Optimack::get_ajusted_rwnd(int cur_ack){
 }
 
 int Optimack::get_ajusted_rwnd_backup(int cur_ack){
-    int cur_rwnd = 65535*2 + cur_ack_rel - cur_ack;
+    int cur_rwnd = 65535*4 + cur_ack_rel - cur_ack;
     int diff = (int)(cur_rwnd - squid_MSS);
     if (diff <= 0)
         return 0;
@@ -626,22 +626,24 @@ void* selective_optimistic_ack(void* arg){
             } 
         }
 
-        if(elapsed(conn->last_inorder_data_time) > 1.5){
+        if(elapsed(conn->last_inorder_data_time) > 2){
             uint inorder_seq_end = conn->recved_seq.getFirstEnd();
-            if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 0.002)){//optack, don't need retranx
+            if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 5)){//optack, don't need retranx
                 int backup_rwnd_tmp = obj->backup_dup_ack_rwnd;
-                if(inorder_seq_end != obj->backup_dup_ack)
+                if(inorder_seq_end != obj->backup_dup_ack || backup_rwnd_tmp <= conn->win_scale)
                     backup_rwnd_tmp = obj->backup_dup_ack + obj->backup_dup_ack_rwnd - inorder_seq_end;
+                if(backup_rwnd_tmp <= conn->win_scale)
+                    backup_rwnd_tmp = conn->win_scale*2;
                 if(inorder_seq_end < obj->backup_max_opt_ack){
                     printf("[Backup]: Error! Duplicate ACK(%u) < backup_max_opt_ack(%u)\n\n", inorder_seq_end, obj->backup_max_opt_ack);
                     log_error("[Backup]: Error! Duplicate ACK(%u) < backup_max_opt_ack(%u)\n", inorder_seq_end, obj->backup_max_opt_ack);
                 }
-                else{
+                else if(backup_rwnd_tmp > conn->win_scale){ //&& inorder_seq_end != last_dup_ack
                     if(inorder_seq_end > obj->backup_max_opt_ack)
                         obj->backup_max_opt_ack = inorder_seq_end;
-                    for (int j = 0; j < 1; j++){
+                    for (int j = 0; j < 10; j++){
                         obj->send_optimistic_ack(conn, inorder_seq_end, backup_rwnd_tmp);
-                        // usleep(1000);
+                        usleep(1000);
                         // obj->send_optimistic_ack_with_SACK(conn, inorder_seq_end, obj->rwnd, &conn->recved_seq);
                         // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + inorder_seq_end, ack, cur_win_scale);
                     }
@@ -649,6 +651,10 @@ void* selective_optimistic_ack(void* arg){
                     log_info("[Backup]: O-bu: retrx - Sent ack %u\n", inorder_seq_end);
                     last_dup_ack = inorder_seq_end;
                     last_dup_ack_time = std::chrono::system_clock::now();
+                }
+                else if (backup_rwnd_tmp <= conn->win_scale){
+                    printf("[Backup]: O-bu: retrx - Didn't send ack %u, window < 0\n\n", inorder_seq_end);
+                    log_info("[Backup]: O-bu: retrx - Didn't send ack %u, window < 0\n", inorder_seq_end);
                 }
             }
         }
@@ -795,7 +801,7 @@ full_optimistic_ack_altogether(void* arg)
             adjusted_rwnd = obj->get_ajusted_rwnd(opa_ack_start);
             obj->adjusted_rwnd = adjusted_rwnd;
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-                if(!it->second->is_backup){
+                if(!it->second->is_backup && !it->second->fin_or_rst_recved){
                     if (adjusted_rwnd <= it->second->win_scale){
                         adjusted_rwnd = 0;
                         // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
@@ -862,7 +868,7 @@ full_optimistic_ack_altogether(void* arg)
             char tmp_log[1000];
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
                 sprintf(tmp_log, "S%d: is_backup-%d, it->second->next_seq_rem-%u, min-%u", it->second->is_backup, it->second->next_seq_rem, min_next_seq_rem);
-                if(!it->second->is_backup && it->second->next_seq_rem < min_next_seq_rem){
+                if(!it->second->is_backup && !it->second->fin_or_rst_recved &&  it->second->next_seq_rem < min_next_seq_rem){
                     strcat(tmp_log, "<, update min to next_seq_rem\n");
                     slowest_subconn = it->second;
                     min_next_seq_rem = it->second->next_seq_rem;
@@ -2155,10 +2161,10 @@ void Optimack::try_for_gaps_and_request(){
         // }
 
         if(elapsed(last_ack_time) > MAX_STALL_TIME){
-            char time_str[20] = "";
-            printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            exit(-1);
+            // char time_str[20] = "";
+            // printf("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
+            // log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
+            
         }
         // if(cur_ack_rel < recved_seq.getFirstEnd() && cur_ack_rel < get_min_next_seq_rem()){
             // remove_recved_recv_buffer(cur_ack_rel);
@@ -2325,7 +2331,7 @@ void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end, Interval
 uint Optimack::get_min_next_seq_rem(){
     uint min_next_seq_rem = -1;
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        if(!it->second->is_backup){
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved){
             min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
         }
     }
@@ -2341,7 +2347,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // log_info("first: recved_seq.lastend %u, last_recv_inorder %u", it->second->recved_seq.getLastEnd(), last_recv_inorder);
-        if(!it->second->is_backup && it->second->next_seq_rem <= last_recv_inorder){
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->next_seq_rem <= last_recv_inorder){
             // log_info("<=, return false\n");
             return false;
         }
@@ -2352,7 +2358,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
-        if(!it->second->is_backup && it->second->next_seq_rem <= last_recv_inorder){
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->next_seq_rem <= last_recv_inorder){
             log_info("second: %s, <=, return false", tmp);
             return false;
         }
@@ -3165,16 +3171,16 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             max_opt_ack = seq_rel + 1;
                     }
                     else{
-                        if(seq_rel+payload_len <= max_opt_ack){
-                            send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
+                        // if(seq_rel+payload_len <= max_opt_ack){
+                            // send_optimistic_ack(subconn, seq_rel+payload_len, get_ajusted_rwnd(seq_rel+payload_len)); // Reply to Keep-Alive
                             // if(seq_rel+payload_len+1 <= max_opt_ack)
                                 // send_optimistic_ack(subconn, seq_rel+payload_len+1, get_ajusted_rwnd(seq_rel+payload_len+1)); // Reply to Keep-Alive
-                        }
+                        // }
                     }
                 }
 
                 if (!payload_len) {
-                    
+                    recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+1);
                     update_subconn_next_seq_rem(subconn, seq_rel+payload_len);
                     // TODO: let our reply through...for now
                     if (subconn_i)
@@ -3364,7 +3370,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 if (BACKUP_MODE && subconn->is_backup){
                     //Normal Mode
                     int order_flag_backup;
-                    bool is_new_segment_backup = subconn->recved_seq.checkAndinsertNewInterval(seq_rel, seq_rel+payload_len, order_flag_backup);
+                    bool is_new_segment_backup = subconn->recved_seq.checkAndinsertNewInterval_withLock(seq_rel, seq_rel+payload_len, order_flag_backup);
                     log_info("[Backup]: insert [%u, %u], after %s\n", seq_rel, seq_rel+payload_len, subconn->recved_seq.Intervals2str().c_str());
                     
                     char empty_payload[] = "";
@@ -3447,7 +3453,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                     printf("S%d: Received FIN/ACK. Sent FIN/ACK. %u\n", subconn_i, seq_rel);
                     log_info("S%d: Received FIN/ACK. Sent FIN/ACK.", subconn_i);
                     // send_FIN_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", seq+1, ack+1);
-                    subconn->fin_ack_recved = true;
+                    subconn->fin_or_rst_recved = true;
                 }
 
                 // Too many packets forwarded to squid will cause squid to discard right most packets
@@ -3566,9 +3572,9 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
             case TH_RST:
             case TH_RST | TH_ACK:
             {
-                if(!subconn->is_rsted){
+                if(!subconn->fin_or_rst_recved){
                     printf("S%d: Received RST. Do nothing.\n",subconn_i);
-                    subconn->is_rsted = true;
+                    subconn->fin_or_rst_recved = true;
                 }
                 // printf("S%d: Received RST. Make it backup.\n",subconn_i);
                 // subconn->is_backup = true;
@@ -3642,9 +3648,8 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
     new_subconn->optim_ack_stop = 1;
     new_subconn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
     new_subconn->seq_init = false;
-    new_subconn->fin_ack_recved = false;
     new_subconn->is_backup = is_backup;
-    new_subconn->is_rsted = false;
+    new_subconn->fin_or_rst_recved = false;
     new_subconn->last_data_received = new_subconn->timer_print_log = std::chrono::system_clock::now();
     new_subconn->id = subconn_count++;
     // pthread_mutex_unlock(&mutex_subconn_infos);
@@ -3846,11 +3851,10 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     squid_conn->ack_sent = 1; //Assume squid will send ACK
     squid_conn->optim_ack_stop = 1;
     squid_conn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-    squid_conn->fin_ack_recved = false;
     squid_conn->payload_len = squid_MSS = tcp_info.tcpi_advmss;
     squid_conn->last_data_received = squid_conn->timer_print_log = std::chrono::system_clock::now();
     squid_conn->is_backup = false;
-    squid_conn->is_rsted = false;
+    squid_conn->fin_or_rst_recved = false;
     // if(BACKUP_MODE){
     //     squid_conn->is_backup = true;
     //     backup_port = local_port;

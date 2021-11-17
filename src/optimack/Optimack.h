@@ -29,7 +29,7 @@ struct subconn_info
     unsigned int last_next_seq_rem;
     unsigned int next_seq_loc;  //TODO: rel
     short ack_sent;
-    bool seq_init, fin_ack_recved;
+    bool seq_init;
 
     pthread_t thread;
     pthread_mutex_t mutex_opa;
@@ -51,7 +51,7 @@ struct subconn_info
     // pthread_mutex_t mutex_seq_gaps;
 
     bool is_backup;
-    bool is_rsted;
+    bool fin_or_rst_recved;
 #ifdef OPENSSL
     SSL *ssl;
     unsigned char *salt, *session_key;
