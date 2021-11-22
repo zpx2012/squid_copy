@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 1
+#define RANGE_MODE 0
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 0
+#define BACKUP_MODE 1
 #endif
 
 #ifndef MSS
@@ -517,7 +517,7 @@ void* selective_optimistic_ack(void* arg){
     free(ack_thr);
     ack_thr = NULL;
 
-    double send_ack_pace = 750 / 1000000.0;
+    double send_ack_pace = 1500 / 1000000.0;
 
     std::chrono::time_point<std::chrono::system_clock> last_send_ack, last_data_update, last_log_adjust_rwnd, last_zero_window, last_dup_ack_time;
     last_send_ack = last_data_update = last_log_adjust_rwnd = last_zero_window = last_dup_ack_time = std::chrono::system_clock::now();
@@ -626,7 +626,7 @@ void* selective_optimistic_ack(void* arg){
             } 
         }
 
-        if(elapsed(conn->last_inorder_data_time) > 2){
+        if(elapsed(conn->last_data_received) > 2){
             uint inorder_seq_end = conn->recved_seq.getFirstEnd();
             if(inorder_seq_end <= conn->next_seq_rem && !(inorder_seq_end == last_dup_ack && elapsed(last_dup_ack_time) < 5)){//optack, don't need retranx
                 int backup_rwnd_tmp = obj->backup_dup_ack_rwnd;
@@ -875,8 +875,8 @@ full_optimistic_ack_altogether(void* arg)
                 }
             }
             strcat(tmp_log, "\n");
-            if(min_next_seq_rem == -1)
-                printf(tmp_log);
+            // if(min_next_seq_rem == -1)
+            //     printf(tmp_log);
                 
             if(elapsed(slowest_subconn->last_data_received) >= 1.5){
                 is_stall = true;
@@ -3385,7 +3385,19 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         sprintf(log, "%s - Sent ack %u", log, 1 + payload_len);
                     }
                     else {
-                        if(order_flag_backup == IN_ORDER_NEWEST || order_flag_backup == IN_ORDER_FILL){
+                        if(seq_rel+payload_len <= cur_ack_rel){
+                            backup_dup_ack = seq_rel+payload_len;
+                            int adjusted_rwnd = get_ajusted_rwnd_backup(backup_dup_ack);
+                            if(adjusted_rwnd > 0){
+                                backup_dup_ack_rwnd =  adjusted_rwnd;
+                                // backup_dup_ack_rwnd = get_ajusted_rwnd(inorder_seq_end);
+                                send_optimistic_ack_with_SACK(subconn, backup_dup_ack, backup_dup_ack_rwnd, &subconn->recved_seq);
+                                log_info("[Backup]: send optim ack %u when recved data %u, win %u\n", inorder_seq_end, seq_rel, backup_dup_ack_rwnd);
+                                if(backup_dup_ack > this->backup_max_opt_ack)
+                                    this->backup_max_opt_ack = backup_dup_ack;
+                            }
+                        }
+                        else if(order_flag_backup == IN_ORDER_NEWEST || order_flag_backup == IN_ORDER_FILL){
                             backup_dup_ack = inorder_seq_end;
                             int adjusted_rwnd = get_ajusted_rwnd_backup(inorder_seq_end);
                             if(adjusted_rwnd > 0){
@@ -3395,6 +3407,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                                 log_info("[Backup]: send normal ack %u when recved data %u, win %u\n", inorder_seq_end, seq_rel, backup_dup_ack_rwnd);
                                 if(backup_dup_ack > this->backup_max_opt_ack)
                                     this->backup_max_opt_ack = backup_dup_ack;
+                            }
+                            if(order_flag_backup == IN_ORDER_FILL){
+                                uint send_end = subconn->recved_seq.getFirstEnd();
+                                if(send_end < cur_ack_rel)
+                                    send_end = cur_ack_rel;
+                                for(uint m = backup_dup_ack; m <= send_end; m += squid_MSS)
+                                    send_optimistic_ack_with_SACK(subconn, m, get_ajusted_rwnd_backup(m), &subconn->recved_seq);
                             }
                         }
                         else {
