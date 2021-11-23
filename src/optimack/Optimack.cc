@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 1
+#define BACKUP_MODE 0
 #endif
 
 #ifndef MSS
@@ -835,8 +835,7 @@ full_optimistic_ack_altogether(void* arg)
                     // send_FIN_ACK(obj->g_local_ip, obj->g_remote_ip, conn->local_port, obj->g_remote_port, "", opa_ack_start+1, conn->next_seq_loc+1);
                     break;
                 }
-                if(same_restart_cnt < 3)
-                    opa_ack_start += mss;
+                opa_ack_start += mss;
                 if (opa_ack_start > obj->ack_end)
                     opa_ack_start = obj->ack_end;
             }
@@ -884,11 +883,12 @@ full_optimistic_ack_altogether(void* arg)
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
                 sprintf(log, "O: S%d stalls at %u,", stall_port, stall_seq);
-                if(last_stall_seq != stall_seq){
-                    same_restart_cnt = 0;
+                if(slowest_subconn->stall_seq != stall_seq){
+                    slowest_subconn->restart_counter = 0;
+                    slowest_subconn->stall_seq = stall_seq;
                     log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem %u", stall_port, stall_seq, min_next_seq_rem);
                 }
-                last_stall_seq = stall_seq;
+                // last_stall_seq = stall_seq;
             }
             // for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();){
             //     if(!it->second->is_backup){
@@ -927,30 +927,33 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 }
 
-                if(stall_seq == last_stall_seq && stall_port == last_stall_port && same_restart_cnt >= 3){
-                    if(obj->max_opt_ack != obj->ack_end){
-                        for(int i = 0; i < 10; i++){
-                            int adjust_rwnd_tmp = obj->get_ajusted_rwnd(opa_ack_dup_countdown);
-                            if(adjust_rwnd_tmp > 0){
-                                if(opa_ack_dup_countdown > mss){
-                                    for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
-                                        if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
-                                            for(int j = 0; j < 5; j++)
-                                                obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
-                                            usleep(10000);
-                                        }
-                                    }
-                                    opa_ack_dup_countdown -= mss;
-                                }
-                            }
-                        }
-                    }
-                    else{
-                        slowest_subconn->next_seq_rem = obj->max_opt_ack;
-                        // slowest_subconn->last_data_received = std::chrono::system_clock::now();
-                        // opa_ack_start = obj->max_opt_ack;
-                    }
+                if(slowest_subconn->restart_counter >= 3){
+                    if(slowest_subconn->restart_counter == 3) //Giving up, retreat it as no overrun
+                        opa_ack_start = obj->max_opt_ack;
                     continue;
+                    
+                    // if(obj->max_opt_ack != obj->ack_end){
+                    //     for(int i = 0; i < 10; i++){
+                    //         int adjust_rwnd_tmp = obj->get_ajusted_rwnd(opa_ack_dup_countdown);
+                    //         if(adjust_rwnd_tmp > 0){
+                    //             if(opa_ack_dup_countdown > mss){
+                    //                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                    //                     if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
+                    //                         for(int j = 0; j < 5; j++)
+                    //                             obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+                    //                         usleep(10000);
+                    //                     }
+                    //                 }
+                    //                 opa_ack_dup_countdown -= mss;
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    // else{
+                    //     slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                    //     // slowest_subconn->last_data_received = std::chrono::system_clock::now();
+                    //     // opa_ack_start = obj->max_opt_ack;
+                    // }
                 }
 
                 if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
@@ -969,7 +972,7 @@ full_optimistic_ack_altogether(void* arg)
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
                     if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
-                        if(same_restart_cnt < 3){
+                        if(it->second->restart_counter < 3){
                             for(int i = 0; i < 2; i++)
                                 obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
                             sprintf(log, "%s, restart No.%u, send 2 acks %u to S%d, last received in case of ack being lost", log, same_restart_cnt, it->second->next_seq_rem, it->second->local_port);
@@ -984,7 +987,7 @@ full_optimistic_ack_altogether(void* arg)
                 }
                 usleep(10000);//One RTT, wait for server to send out packets
                 sprintf(log, "%s, current ack %u", log, opa_ack_start);
-                uint restart_seq = same_restart_cnt < 3? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
+                uint restart_seq = slowest_subconn->restart_counter < 3? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
                 opa_ack_start = restart_seq > mss? restart_seq - mss : 1; // - 5*mss to give the server time to send the following packets
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
@@ -1000,13 +1003,13 @@ full_optimistic_ack_altogether(void* arg)
                     }
                     else{
                         obj->overrun_penalty += elapsed(last_restart);
-                        if(stall_port == last_stall_port){
-                            same_restart_cnt++;
+                        if(stall_port == last_stall_port && stall_seq == last_stall_seq){
+                            slowest_subconn->restart_counter++;
                             // if(same_restart_cnt == 6)
                             //     same_restart_cnt = 0;
                         }
-                        else
-                            same_restart_cnt = 0;
+                        // else
+                        //     same_restart_cnt = 0;
                     }
 
                 // }
@@ -2681,7 +2684,7 @@ int Optimack::establish_tcp_connection(int old_sockfd)
 
     // Open socket
 opensocket:
-    while(sockfd == 0 || sockfd == old_sockfd){
+    while(sockfd == 0){ //|| sockfd == old_sockfd
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
             return -1;

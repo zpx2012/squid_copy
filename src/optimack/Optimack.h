@@ -44,6 +44,8 @@ struct subconn_info
     int ack_pacing;
     unsigned int payload_len;
     float off_pkt_num;
+    unsigned int stall_seq;
+    int restart_counter;
 
     std::map<uint, uint> dup_seqs;
     IntervalList recved_seq;
