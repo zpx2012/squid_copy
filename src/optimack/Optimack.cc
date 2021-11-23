@@ -975,7 +975,7 @@ full_optimistic_ack_altogether(void* arg)
                         if(it->second->restart_counter < 3){
                             for(int i = 0; i < 2; i++)
                                 obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
-                            sprintf(log, "%s, restart No.%u, send 2 acks %u to S%d, last received in case of ack being lost", log, same_restart_cnt, it->second->next_seq_rem, it->second->local_port);
+                            sprintf(log, "%s, restart No.%u, send 2 acks %u to S%d, last received in case of ack being lost", log, it->second->restart_counter, it->second->next_seq_rem, it->second->local_port);
                         }
                         // else{
                         //     for(int i = 0; i < 10; i++)
