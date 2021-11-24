@@ -803,12 +803,18 @@ full_optimistic_ack_altogether(void* arg)
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
                 if(!it->second->is_backup && !it->second->fin_or_rst_recved){
                     if (adjusted_rwnd <= it->second->win_scale){
-                        adjusted_rwnd = 0;
-                        // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
-                        continue;
-                        // break;
+                        if(elapsed(last_zero_window) < 2){
+                            adjusted_rwnd = 0;
+                            // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
+                            continue;
+                            // break;
+                        }
+                        else{
+                            adjust_rwnd = mss;
+                        }
                     }
-                    else if (opa_ack_start >= obj->max_opt_ack || opa_ack_start == obj->ack_end || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
+                    
+                    if (opa_ack_start >= obj->max_opt_ack || opa_ack_start == obj->ack_end || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -930,6 +936,7 @@ full_optimistic_ack_altogether(void* arg)
                 if(slowest_subconn->restart_counter >= 3){
                     if(slowest_subconn->restart_counter == 3) //Giving up, retreat it as no overrun
                         opa_ack_start = obj->max_opt_ack;
+                    slowest_subconn->restart_counter++;
                     continue;
                     
                     // if(obj->max_opt_ack != obj->ack_end){
