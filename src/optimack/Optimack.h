@@ -227,6 +227,7 @@ public:
     int send_out_of_order_recv_buffer(uint start, uint end, int max_count);
     int send_out_of_order_recv_buffer_withLock(uint seq);
     int send_out_of_order_recv_buffer_withLock(uint start, uint end, int max_count);
+    int send_out_of_order_recv_buffer_withLock(uint start, uint end);
     int resend_cnt = 0;
 
     //TLS

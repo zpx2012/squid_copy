@@ -810,7 +810,7 @@ full_optimistic_ack_altogether(void* arg)
                             // break;
                         }
                         else{
-                            adjust_rwnd = mss;
+                            adjusted_rwnd = mss;
                         }
                     }
                     
@@ -4005,6 +4005,12 @@ int Optimack::send_out_of_order_recv_buffer_withLock(uint start, uint end, int m
     return 0;
 }
 
+int Optimack::send_out_of_order_recv_buffer_withLock(uint start, uint end){
+    pthread_mutex_lock(&mutex_recv_buffer);
+    send_out_of_order_recv_buffer(start, end);
+    pthread_mutex_unlock(&mutex_recv_buffer);
+    return 0;
+}
 
 int Optimack::send_out_of_order_recv_buffer(uint start, uint end, int max_count)
 {
