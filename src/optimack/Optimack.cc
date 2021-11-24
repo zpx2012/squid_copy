@@ -934,8 +934,11 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
                 if(slowest_subconn->restart_counter >= 3){
-                    if(slowest_subconn->restart_counter == 3) //Giving up, retreat it as no overrun
+                    if(slowest_subconn->restart_counter == 3){ //Giving up, retreat it as no overrun
                         opa_ack_start = obj->max_opt_ack;
+                        slowest_subconn->next_seq_rem = obj->max_opt_ack;
+                        slowest_subconn->last_data_received = std::chrono::system_clock::now();
+                    }
                     slowest_subconn->restart_counter++;
                     continue;
                     
@@ -2691,7 +2694,7 @@ int Optimack::establish_tcp_connection(int old_sockfd)
 
     // Open socket
 opensocket:
-    while(sockfd == 0){ //|| sockfd == old_sockfd
+    while(sockfd == 0 || sockfd == old_sockfd){ //
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
             return -1;
