@@ -888,11 +888,12 @@ full_optimistic_ack_altogether(void* arg)
                 stall_port = slowest_subconn->local_port;
                 stall_seq = slowest_subconn->next_seq_rem;
                 // printf("[Optimack]: S%d stalls at %u\n", stall_port, stall_seq);
-                sprintf(log, "O: S%d stalls at %u,", stall_port, stall_seq);
+                sprintf(log, "O: S%d stalls at %u\n", stall_port, stall_seq);
                 if(slowest_subconn->stall_seq != stall_seq){
                     slowest_subconn->restart_counter = 0;
                     slowest_subconn->stall_seq = stall_seq;
                     log_debug("[Optimack]: S%d stalls at %u, min_next_seq_rem %u", stall_port, stall_seq, min_next_seq_rem);
+                    printf("[Optimack]: S%d stalls at %u, min_next_seq_rem %u\n", stall_port, stall_seq, min_next_seq_rem);
                 }
                 // last_stall_seq = stall_seq;
             }
@@ -985,7 +986,7 @@ full_optimistic_ack_altogether(void* arg)
                         if(it->second->restart_counter < 3){
                             for(int i = 0; i < 2; i++)
                                 obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
-                            sprintf(log, "%s, restart No.%u, send 2 acks %u to S%d, last received in case of ack being lost", log, it->second->restart_counter, it->second->next_seq_rem, it->second->local_port);
+                            sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, it->second->next_seq_rem, it->second->local_port);
                         }
                         // else{
                         //     for(int i = 0; i < 10; i++)
