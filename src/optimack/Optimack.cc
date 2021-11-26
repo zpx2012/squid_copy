@@ -873,7 +873,7 @@ full_optimistic_ack_altogether(void* arg)
             char tmp_log[1000];
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
                 sprintf(tmp_log, "S%d: is_backup-%d, it->second->next_seq_rem-%u, min-%u", it->second->is_backup, it->second->next_seq_rem, min_next_seq_rem);
-                if(!it->second->is_backup && !it->second->fin_or_rst_recved &&  it->second->next_seq_rem < min_next_seq_rem){
+                if(!it->second->is_backup && !it->second->fin_or_rst_recved &&  it->second->next_seq_rem < min_next_seq_rem && it->second->restart_counter < 3){
                     strcat(tmp_log, "<, update min to next_seq_rem\n");
                     slowest_subconn = it->second;
                     min_next_seq_rem = it->second->next_seq_rem;
