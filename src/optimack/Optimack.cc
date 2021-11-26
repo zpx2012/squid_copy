@@ -3318,6 +3318,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         seq_next_global = recved_seq.getLastEnd();
                         // is_new_segment = recved_seq.checkAndinsertNewInterval(intvl.start, intvl.end, order_flag);
                         if(is_new_segment){//change to Interval
+                            subconn->restart_counter = 0;
                             unsigned char* intvl_data = payload+it->start-seq_rel;
                             int intvl_data_len = it->end-it->start;
                             if(order_flag == IN_ORDER_NEWEST){
