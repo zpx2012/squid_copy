@@ -805,6 +805,7 @@ full_optimistic_ack_altogether(void* arg)
                     if (adjusted_rwnd < it->second->win_scale){
                         // if(elapsed(last_zero_window) < 2){
                             adjusted_rwnd = 0;
+                            // if(elapsed(last_zero_window) )
                             // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
                             // continue;
                             // break;
@@ -814,7 +815,7 @@ full_optimistic_ack_altogether(void* arg)
                         // }
                     }
                     
-                    if (opa_ack_start >= obj->max_opt_ack || opa_ack_start == obj->ack_end || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
+                    if (opa_ack_start >= obj->max_opt_ack || opa_ack_start == obj->ack_end || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS)){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -2346,7 +2347,7 @@ void Optimack::we2squid_loss_and_start_range_recv(uint start, uint end, Interval
 uint Optimack::get_min_next_seq_rem(){
     uint min_next_seq_rem = -1;
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        if(!it->second->is_backup && !it->second->fin_or_rst_recved){
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3){
             min_next_seq_rem = std::min(min_next_seq_rem, it->second->next_seq_rem);
         }
     }
@@ -2362,7 +2363,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // log_info("first: recved_seq.lastend %u, last_recv_inorder %u", it->second->recved_seq.getLastEnd(), last_recv_inorder);
-        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->next_seq_rem <= last_recv_inorder){
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3 && it->second->next_seq_rem <= last_recv_inorder){
             // log_info("<=, return false\n");
             return false;
         }
@@ -2373,7 +2374,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
-        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->next_seq_rem <= last_recv_inorder){
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3 && it->second->next_seq_rem <= last_recv_inorder){
             log_info("second: %s, <=, return false", tmp);
             return false;
         }
