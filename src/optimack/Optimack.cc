@@ -417,7 +417,7 @@ bool Optimack::does_packet_lost_on_all_conns(){
 char empty_payload[] = "";
 
 int Optimack::get_ajusted_rwnd(int cur_ack){
-    int cur_rwnd = rwnd + cur_ack_rel - cur_ack;
+    int cur_rwnd = rwnd*3/4 + cur_ack_rel - cur_ack;
     // cur_rwnd = cur_rwnd / squid_MSS * squid_MSS;
     int diff = (int)(cur_rwnd - squid_MSS);
     // uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
