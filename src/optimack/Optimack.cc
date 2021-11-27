@@ -802,16 +802,16 @@ full_optimistic_ack_altogether(void* arg)
             obj->adjusted_rwnd = adjusted_rwnd;
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
                 if(!it->second->is_backup && !it->second->fin_or_rst_recved){
-                    if (adjusted_rwnd <= it->second->win_scale){
-                        if(elapsed(last_zero_window) < 2){
+                    if (adjusted_rwnd < it->second->win_scale){
+                        // if(elapsed(last_zero_window) < 2){
                             adjusted_rwnd = 0;
                             // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
-                            continue;
+                            // continue;
                             // break;
-                        }
-                        else{
-                            adjusted_rwnd = mss;
-                        }
+                        // }
+                        // else{
+                        //     adjusted_rwnd = mss;
+                        // }
                     }
                     
                     if (opa_ack_start >= obj->max_opt_ack || opa_ack_start == obj->ack_end || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS && same_restart_cnt < 3)){ //-> this will cause normal optimistic acks are not sent and server missing lots of acks
