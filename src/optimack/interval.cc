@@ -392,6 +392,62 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
     return;
 }
 
+void IntervalList::removeInterval_updateTimer(unsigned int start, unsigned int end){
+    std::vector<Interval> ans;
+    int n = Intervals.size();
+ 
+    if(start >= end)
+        return;
+
+    // If set is empty then simply return.
+    if (n == 0)
+        return;
+ 
+    // Case 1 and Case 2 (new interval to be at corners), return
+    if (end < Intervals[0].start || start > Intervals[n - 1].end)
+        return;
+ 
+    // Case 3 (New interval covers all existing), empty the list
+    if (start <= Intervals[0].start && end >= Intervals[n - 1].end)
+    {   
+        Intervals.clear();
+        return;
+    }
+ 
+    // Case 4 and Case 5
+    // These two cases need to check whether
+    // intervals overlap or not. For this we
+    // can use a subroutine that will perform
+    // this function.
+    for (int i = 0; i < n; i++)
+    {
+        if(doesOverlap(Intervals[i], Interval(start, end))){
+            if(Intervals[i].start < start){
+                Interval left = Intervals[i];
+                left.end = start;
+                left.sent_epoch_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                // Interval left(Intervals[i].start, start);
+                ans.push_back(left);
+            }
+            if(end < Intervals[i].end){
+                Interval right = Intervals[i];
+                right.start = end;
+                right.sent_epoch_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                // Interval right(end, Intervals[i].end);
+                ans.push_back(right);
+            }
+        }
+        else
+        {
+            ans.push_back(Intervals[i]);
+        }
+        
+    }
+    Intervals = ans;
+    return;
+}
+
+
 // Function to insert new interval and
 // merge overlapping intervals
 void IntervalList::removeInterval(unsigned int start, unsigned int end)

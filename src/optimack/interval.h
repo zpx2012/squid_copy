@@ -78,6 +78,7 @@ public:
     // Function to insert new interval and merge overlapping intervals
     void removeInterval(unsigned int start, unsigned int end);
     void removeInterval_withLock(unsigned int start, unsigned int end);
+    void removeInterval_updateTimer(unsigned int start, unsigned int end);
 
     void substract(IntervalList* other);
     bool contains(unsigned int start, unsigned int end);

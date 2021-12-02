@@ -67,14 +67,26 @@ void create_sack_option(struct tcphdr_opts* tcp_opts, unsigned char* sack_str, i
     if(len > 32)
         len = 32;
 
+	printf("create_sack_option: before");
+    char buf[65] = "0";
+    for (unsigned char *byte = (unsigned char*)sack_str; byte < ((unsigned char*)sack_str)+len; byte++) 
+        printf("%02x",*byte);
+	printf("\n");
+
 	unsigned char* sack_option = tcp_opts->bytes;
 	/* tcp timestamp option */
 	sack_option[0] = sack_option[1] = 1;
 	sack_option[2] = 5;
-    sack_option[3] = len+2; /* NOOP */
+    sack_option[3] = len; /* NOOP */
 	tcp_opts->size = len+4;
 
-	memcpy(sack_option+4, &sack_str, len);
+	memcpy(sack_option+4, sack_str, len);
+	printf("create_sack_option: after  ");
+    for (unsigned char *byte = (unsigned char*)sack_option; byte < ((unsigned char*)sack_option)+len+4; byte++) 
+        printf("%02x", *byte);
+	printf("\n");
+	
+	// log_info("%s", )
 	// printf("tcp_opts size: %d\n", tcp_opts->size);
 }
 
