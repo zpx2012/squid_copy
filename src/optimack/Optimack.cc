@@ -1754,6 +1754,8 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
 }
 
 void Optimack::print_seq_table(){
+    char time_str[30];
+    printf("%s\n", time_in_HH_MM_SS_US(time_str));
 
     printf("%12s%12s","ID","squid");
     for(uint i = 0; i < subconn_count; i++){
