@@ -3339,7 +3339,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         seq_next_global = recved_seq.getLastEnd();
                         // is_new_segment = recved_seq.checkAndinsertNewInterval(intvl.start, intvl.end, order_flag);
                         if(is_new_segment){//change to Interval
-                            subconn->restart_counter = 0;
                             unsigned char* intvl_data = payload+it->start-seq_rel;
                             int intvl_data_len = it->end-it->start;
                             if(order_flag == IN_ORDER_NEWEST){
@@ -3657,6 +3656,7 @@ void Optimack::update_subconn_next_seq_rem(struct subconn_info* subconn, uint nu
     if (subconn->next_seq_rem < num) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
         subconn->next_seq_rem = num;
         subconn->last_data_received = std::chrono::system_clock::now();
+        subconn->restart_counter = 0;
         // log_seq(processed_seq_file, local_port, seq_rel);
     }
     // if(BACKUP_MODE && subconn->is_backup)
