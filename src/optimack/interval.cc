@@ -62,7 +62,6 @@ bool IntervalList::checkAndinsertNewInterval_withLock(unsigned int start, unsign
 bool IntervalList::checkAndinsertNewInterval(unsigned int start, unsigned int end, int& order_flag)
 {
     if(contains(start,end)){
-        pthread_mutex_unlock(&mutex_intervals);
         return false;
     }
     char log[10000]={0};

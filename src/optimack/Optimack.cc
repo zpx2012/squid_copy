@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 1
+#define RANGE_MODE 0
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 0
+#define BACKUP_MODE 1
 #endif
 
 #ifndef MSS
@@ -3217,7 +3217,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
 
                 if (!payload_len) {
                     recved_seq.insertNewInterval_withLock(seq_rel, seq_rel);
-                    update_subconn_next_seq_rem(subconn, seq_rel+payload_len);
+                    update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
                     // TODO: let our reply through...for now
                     if (subconn_i)
                         return 0;
@@ -3366,7 +3366,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
                 pthread_mutex_unlock(recved_seq.getMutex());
 
-                update_subconn_next_seq_rem(subconn, seq_rel+payload_len);
+                update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
 
                 if(recved_seq.getFirstEnd() == 1){
                     send_optimistic_ack(subconn, 1, get_ajusted_rwnd(1));
@@ -3651,12 +3651,13 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
     }
 }
 
-void Optimack::update_subconn_next_seq_rem(struct subconn_info* subconn, uint num){
+void Optimack::update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin){
     pthread_mutex_lock(&subconn->mutex_opa);
     if (subconn->next_seq_rem < num) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
         subconn->next_seq_rem = num;
         subconn->last_data_received = std::chrono::system_clock::now();
-        subconn->restart_counter = 0;
+        if(!is_fin)
+            subconn->restart_counter = 0;
         // log_seq(processed_seq_file, local_port, seq_rel);
     }
     // if(BACKUP_MODE && subconn->is_backup)
