@@ -58,7 +58,7 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -81,11 +81,11 @@ void test_write_key(SSL *s){
 #define PACKET_SIZE 1460
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 #ifndef BACKUP_MODE
-#define BACKUP_MODE 1
+#define BACKUP_MODE 0
 #endif
 
 #ifndef MSS
@@ -1374,18 +1374,21 @@ Optimack::cleanup()
         overrun_stop++;
         // pthread_join(overrun_thread, NULL);
         log_info("ask overrun_thread to exit");    
+        printf("ask overrun_thread to exit\n");    
     }
 
     if(!range_stop){
         range_stop++;
         // pthread_join(range_thread, NULL);
-        log_info("ask range_watch_thread to exit");    
+        log_info("ask overrun_thread to exit");    
+        printf("ask range_watch_thread to exit\n");    
     }
 
     if(!optim_ack_stop){
         optim_ack_stop++;
         // pthread_join(optim_ack_thread, NULL);
         log_info("ask optimack_altogether_thread to exit");    
+        printf("ask optimack_altogether_thread to exit\n");    
     }
 
     if(BACKUP_MODE && backup_port && !subconn_infos[backup_port]->optim_ack_stop){
@@ -1406,6 +1409,8 @@ Optimack::cleanup()
     // }
     // log_info("NFQ %d all optimistic threads exited", nfq_queue_num);
     // pthread_mutex_unlock(&mutex_subconn_infos);
+
+    sleep(2);
 
     pthread_mutex_lock(&mutex_subconn_infos);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
@@ -1995,7 +2000,7 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
         log_debug("[Range] error: unread < 0");
         return -1;
     }
-    if(recv_offset > MAX_RANGE_SIZE){
+    if(recv_offset >= MAX_RANGE_SIZE){
         printf("recv_offset %d > MAX_RANGE_SIZE %u\n", recv_offset, MAX_RANGE_SIZE);
         return -1;
     }
@@ -2119,7 +2124,8 @@ restart:
 
         // Receiving packet
         // printf("Receiving packet\n");
-        memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset);
+        if(recv_offset == 0)
+            memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset+1);
         rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
 
         if (rv > 0) {
@@ -2870,8 +2876,11 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
 #ifdef OPENSSL
-    if(is_ssl){
+    if(is_ssl && payload_len){
         struct TLSHeader *tlshdr = (struct TLSHeader*)payload;
+        if( tlshdr->type == TLS_TYPE_HANDSHAKE || tlshdr->type == TLS_TYPE_CHANGE_CIPHER_SPEC){
+            return 0;
+        }
     }
 #endif
     // printf("right in process_tcp_packet\n");
@@ -3114,10 +3123,6 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             //}
                             return -1;
                         }
-#ifdef OPENSSL
-                        if(tlshdr->type == TLS_TYPE_HANDSHAKE || tlshdr->type == TLS_TYPE_CHANGE_CIPHER_SPEC)
-                            return 0;
-#endif
                         // if payload_len != 0, assume it's request
                         // squid connection with payload -> copy request, our connection -> only update seq/ack 
                         if(request_recved)
@@ -3366,7 +3371,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 }
                 pthread_mutex_unlock(recved_seq.getMutex());
 
-                update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
+                update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags & TH_FIN);
 
                 if(recved_seq.getFirstEnd() == 1){
                     send_optimistic_ack(subconn, 1, get_ajusted_rwnd(1));
