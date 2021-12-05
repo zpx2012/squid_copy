@@ -356,6 +356,10 @@ Comm::ConnOpener::connected()
     unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
     
     server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, conn_->fd);
+#ifdef USE_OPENSSL
+    server->optimack_server.open_duplicate_ssl_conns(fd_table[conn_->fd].ssl.get());
+#endif
+
     /* end */ 
 
 

@@ -9,7 +9,7 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval.h"
-#ifdef OPENSSL
+#ifdef USE_OPENSSL
 #include <openssl/ssl.h>
 #endif
 // #include "comm/Connection.h"
@@ -54,9 +54,9 @@ struct subconn_info
 
     bool is_backup;
     bool fin_or_rst_recved;
-#ifdef OPENSSL
+#ifdef USE_OPENSSL
     SSL *ssl;
-    unsigned char *salt, *session_key;
+    unsigned char *iv_salt, *session_key;
 #endif
 };
 
@@ -231,7 +231,7 @@ public:
     int resend_cnt = 0;
 
     //TLS
-#ifdef OPENSSL
+#ifdef USE_OPENSSL
     typedef enum
     {
         TLS_TYPE_NONE               = 0,

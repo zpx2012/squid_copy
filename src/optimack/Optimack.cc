@@ -41,7 +41,7 @@ using namespace std;
 
 #include "Optimack.h"
 
-#ifdef OPENSSL
+#ifdef USE_OPENSSL
 #include <openssl/ssl.h>
 #include "get_server_key.h"
 void test_write_key(SSL *s){
@@ -2879,6 +2879,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
     if(is_ssl && payload_len){
         struct TLSHeader *tlshdr = (struct TLSHeader*)payload;
         if( tlshdr->type == TLS_TYPE_HANDSHAKE || tlshdr->type == TLS_TYPE_CHANGE_CIPHER_SPEC){
+            printf("TLS Handshake: letting through\n");
             return 0;
         }
     }
@@ -3949,6 +3950,8 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         }
     }
     log_info("[Squid Conn] port: %d, win_scale %d", local_port, squid_conn->win_scale);
+
+
 }
 
 
@@ -4216,7 +4219,7 @@ void Optimack::send_data_to_squid(unsigned int seq, unsigned char* payload, int 
     // log_seq(forward_seq_file, seq);
 }
 
-#ifdef OPENSSL
+#ifdef USE_OPENSSL
 SSL * Optimack::open_ssl_conn(int fd){
     SSL_library_init();
     SSLeay_add_ssl_algorithms();
@@ -4266,7 +4269,7 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     pthread_mutex_lock(&mutex_subconn_infos);
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        SSL* ssl = open_ssl_conn(subconn->sockfd);
+        SSL* ssl = open_ssl_conn(it->second->sockfd);
         set_subconn_ssl_credentials(it->second, ssl);
     }
     pthread_mutex_unlock(&mutex_subconn_infos);
@@ -4274,8 +4277,8 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
 }
 
 int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl){
-    unsigned char iv_salt = (unsigned char*)malloc(5);
-    unsigned char session_key = (unsigned char*)malloc(33);
+    unsigned char* iv_salt = (unsigned char*)malloc(5);
+    unsigned char* session_key = (unsigned char*)malloc(33);
     memset(iv_salt,0, 5);
     memset(session_key, 0, 33);
     get_server_session_key_and_iv_salt(ssl, iv_salt, session_key);

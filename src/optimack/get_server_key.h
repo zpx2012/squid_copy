@@ -3778,7 +3778,7 @@ static void get_server_session_key_and_iv_salt(SSL *s, unsigned char *iv_salt, u
     return;    
 }
 
-static size_t get_server_write_key(SSL *s, unsigned char **buffer) {
+static size_t get_server_write_key(SSL *ssl, unsigned char **buffer) {
     size_t key_block_buffer_length;
     unsigned char *key_block_buffer;
     unsigned char *server_write_key_buffer;
@@ -3820,7 +3820,7 @@ static size_t get_server_write_key(SSL *s, unsigned char **buffer) {
     return key_length;
 }
 
-static size_t get_server_write_iv_salt(SSL *s, unsigned char **buffer) {
+static size_t get_server_write_iv_salt(SSL *ssl, unsigned char **buffer) {
     size_t key_block_buffer_length;
     unsigned char *key_block_buffer;
     unsigned char *server_write_iv_buffer;
@@ -3865,6 +3865,10 @@ static size_t get_server_write_iv_salt(SSL *s, unsigned char **buffer) {
 int test_include() {
     printf("Hello from openssl-bio-fetch!!!\n");
     return 1;
+}
+
+void handleErrors(){
+    return;
 }
 
 int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
