@@ -31,22 +31,24 @@ function one_round_test(){
     mode=$2
     if [ $mode -eq 0 ]; then
         cur_num=${nums[i/4%${#nums[@]}]}
+        tag=${cur_num}optim_ackpace${fix_ackpace}+1${1}
         sed -i "s/define ACKPACING .*/define ACKPACING ${fix_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
         sed -i "s/define CONN_NUM .*/define CONN_NUM ${cur_num}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
         make install
         echo
-        echo ${cur_num}optim+1${1}_ackpace${fix_ackpace}
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 ${cur_num}optim+1${1}_ackpace1000 $site $url
+        echo $tag
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 $tag $site $url
     else
         cur_ackpace=${ackpaces[i/4%${#ackpaces[@]}]}
+        tag=${fix_num}optim_ackpace${cur_ackpace}+1${1}
         sed -i "s/define CONN_NUM .*/define CONN_NUM ${fix_num}/g" ~/squid_copy/src/optimack/Optimack.cc
         sed -i "s/define ACKPACING .*/define ACKPACING ${cur_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
         make install
         echo
-        echo ackpace${cur_ackpace}_${fix_num}optim+1${1}
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_${fix_num}optim_$1 ackpace${cur_ackpace}_${fix_num}optim+1$1 $site $url
+        echo $tag
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_${fix_num}optim_$1 $tag $site $url
     fi
 }
 

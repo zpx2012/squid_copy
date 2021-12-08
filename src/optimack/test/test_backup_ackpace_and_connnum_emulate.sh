@@ -26,22 +26,24 @@ i=0
 
 function one_round_test(){
     cur_num=${nums[i%${#nums[@]}]}
+    tag=${cur_num}optim_ackpace1000+1$1
     sed -i "s/define ACKPACING .*/define ACKPACING 1000/g" ~/squid_copy/src/optimack/Optimack.cc
     sed -i "s/define CONN_NUM .*/define CONN_NUM ${cur_num}/g" ~/squid_copy/src/optimack/Optimack.cc
     cd ~/squid_copy/
     make install
     echo
-    echo ${cur_num}optim_ackpace1000+1$1
-    bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 ${cur_num}optim+1range_ackpace1000_$1 $site $url
+    echo $tag
+    bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 $tag $site $url
         
     cur_ackpace=${ackpaces[i%${#ackpaces[@]}]}
+    tag=5optim_ackpace${cur_ackpace}+1$1
     sed -i "s/define CONN_NUM .*/define CONN_NUM 5/g" ~/squid_copy/src/optimack/Optimack.cc
     sed -i "s/define ACKPACING .*/define ACKPACING ${cur_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
     cd ~/squid_copy/
     make install
     echo
-    echo ackpace${cur_ackpace}_5optim+1$1
-    bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_5optim_$1 ackpace${cur_ackpace}_5optim+1range_$1 $site $url
+    echo $tag
+    bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_5optim_$1 $tag $site $url
 
 }
 
@@ -50,9 +52,9 @@ while true; do
     sed -i "s/define RANGE_MODE .*/define RANGE_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
     one_round_test "backup"
 
-    # sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
-    # sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
-    # one_round_test "range"
+    sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
+    sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
+    one_round_test "range"
 
     i=$((i+1))
 
