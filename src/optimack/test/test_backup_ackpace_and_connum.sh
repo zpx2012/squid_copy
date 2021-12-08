@@ -23,28 +23,30 @@ site='mirrors.mit.edu'
 nums=(1 2 3 4 5 6 7 8 9 10) #9 10 11 12 13 14 15 16
 # ackpaces=(200 222 250 286 333 400 500 667 1000 2000 3333 10000)
 ackpaces=(250 500 750 1000 1250 1500 1750 2000 2250 2500 2750 3000)
+fix_num=$1
+fix_ackpace=$2
 i=0
 
 function one_round_test(){
     mode=$2
     if [ $mode -eq 0 ]; then
         cur_num=${nums[i/4%${#nums[@]}]}
-        sed -i "s/define ACKPACING .*/define ACKPACING 1000/g" ~/squid_copy/src/optimack/Optimack.cc
+        sed -i "s/define ACKPACING .*/define ACKPACING ${fix_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
         sed -i "s/define CONN_NUM .*/define CONN_NUM ${cur_num}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
         make install
         echo
-        echo ${cur_num}optim+1range_ackpace1000_$1
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 ${cur_num}optim+1range_ackpace1000_$1 $site $url
+        echo ${cur_num}optim+1${1}_ackpace${fix_ackpace}
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 ${cur_num}optim+1${1}_ackpace1000 $site $url
     else
         cur_ackpace=${ackpaces[i/4%${#ackpaces[@]}]}
-        sed -i "s/define CONN_NUM .*/define CONN_NUM 5/g" ~/squid_copy/src/optimack/Optimack.cc
+        sed -i "s/define CONN_NUM .*/define CONN_NUM ${fix_num}/g" ~/squid_copy/src/optimack/Optimack.cc
         sed -i "s/define ACKPACING .*/define ACKPACING ${cur_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
         make install
         echo
-        echo ackpace${cur_ackpace}_5optim+1range_$1
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_5optim_$1 ackpace${cur_ackpace}_5optim+1range_$1 $site $url
+        echo ackpace${cur_ackpace}_${fix_num}optim+1${1}
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_${fix_num}optim_$1 ackpace${cur_ackpace}_${fix_num}optim+1$1 $site $url
     fi
 }
 
