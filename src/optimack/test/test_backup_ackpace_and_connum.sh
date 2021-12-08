@@ -1,18 +1,18 @@
 #!/bin/bash
 
-site='142.93.117.107'
+# site='142.93.117.107'
 #site='138.68.49.206' #SF-HTTP-SV
 # site='67.205.159.15' #NY-HTTP-SV
 # url="http://$site/ubuntu-16.04.6-server-i386.template"
-url="http://$site/md5sums.gz"
+# url="http://$site/md5sums.gz"
 
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
-# url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-# site='mirrors.mit.edu'
+url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
+site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
