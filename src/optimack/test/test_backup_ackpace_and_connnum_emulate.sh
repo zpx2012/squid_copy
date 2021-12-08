@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# site='142.93.117.107'
+site='142.93.117.107'
 #site='138.68.49.206' #SF-HTTP-SV
-site='67.205.159.15' #NY-HTTP-SV
+# site='67.205.159.15' #NY-HTTP-SV
 # url="http://$site/ubuntu-16.04.6-server-i386.template"
 url="http://$site/md5sums.gz"
 
@@ -31,7 +31,7 @@ function one_round_test(){
     cd ~/squid_copy/
     make install
     echo
-    echo ${cur_num}optim+1range_ackpace1000_$1
+    echo ${cur_num}optim_ackpace1000+1$1
     bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 ${cur_num}optim+1range_ackpace1000_$1 $site $url
         
     cur_ackpace=${ackpaces[i%${#ackpaces[@]}]}
@@ -40,7 +40,7 @@ function one_round_test(){
     cd ~/squid_copy/
     make install
     echo
-    echo ackpace${cur_ackpace}_5optim+1range_$1
+    echo ackpace${cur_ackpace}_5optim+1$1
     bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_5optim_$1 ackpace${cur_ackpace}_5optim+1range_$1 $site $url
 
 }
@@ -50,9 +50,9 @@ while true; do
     sed -i "s/define RANGE_MODE .*/define RANGE_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
     one_round_test "backup"
 
-    sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
-    sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
-    one_round_test "range"
+    # sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
+    # sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
+    # one_round_test "range"
 
     i=$((i+1))
 

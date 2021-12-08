@@ -357,7 +357,8 @@ Comm::ConnOpener::connected()
     
     server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, conn_->fd);
 #ifdef USE_OPENSSL
-    server->optimack_server.open_duplicate_ssl_conns(fd_table[conn_->fd].ssl.get());
+    // printf("connected: call open_duplicate_ssl_conns\n");
+    // server->optimack_server.open_duplicate_ssl_conns(fd_table[conn_->fd].ssl.get());
 #endif
 
     /* end */ 

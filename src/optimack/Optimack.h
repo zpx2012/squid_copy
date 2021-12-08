@@ -126,9 +126,10 @@ public:
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int generate_sack_blocks(unsigned char * buf,int len, IntervalList* sack_list, uint ini_seq_rem);
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
+    void send_data_to_backup(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
     void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin);
-
+    void backup_try_fill_gap();
     // variables
     int main_fd;
     char g_local_ip[16]; //TODO: different connection from client

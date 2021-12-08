@@ -2193,6 +2193,10 @@ HttpStateData::sendRequest()
         return false;
     }
 
+#ifdef USE_OPENSSL
+    printf("https use sendRequest too\n");
+#endif
+
     typedef CommCbMemFunT<HttpStateData, CommTimeoutCbParams> TimeoutDialer;
     AsyncCall::Pointer timeoutCall =  JobCallback(11, 5,
                                       TimeoutDialer, this, HttpStateData::httpTimeout);
