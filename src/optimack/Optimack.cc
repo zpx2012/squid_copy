@@ -58,11 +58,11 @@ void test_write_key(SSL *s){
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 5
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 250
 #endif
 
 #define MAX_STALL_TIME 240
@@ -2977,10 +2977,11 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                 {
                     // init seq and ack if haven't
                     // printf("S%d: receive ACK %x, payload_len %d\n", subconn_i, ack - subconn->ini_seq_rem, payload_len);
-                    if (!subconn->seq_init && payload_len) {
+                    if (payload_len) {
+                        bool pass = false;
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - trying lock", thr_data->pkt_id, subconn_i); 
                         pthread_mutex_lock(&subconn->mutex_opa);
-                        if (!subconn->seq_init && payload_len) {
+                        if (!subconn->seq_init) {
                             if(subconn_i == 0){
                                 memset(request, 0, 1000);
                                 memcpy(request, payload, payload_len);
@@ -3013,16 +3014,23 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                             subconn->next_seq_loc = 1 + payload_len;
                             subconn->seq_init = true;
                             log_info("Subconn %d seq_init done, seq ini 0x%x(%u)", subconn_i, subconn->ini_seq_rem, subconn->ini_seq_rem);
+                            pass = true;
                             // reply to our send()
                             // if (subconn_i) {
                             //     char empty_payload[] = "";
                             //     send_ACK(sip, dip, sport, dport, empty_payload, seq+payload_len, ack);
                             // }
                         }
+                        else if(seq_rel == 1){//Request retranx
+                            printf("S%d: Resend request\n", subconn_i);
+                            pass = true;
+                        }
                         pthread_mutex_unlock(&subconn->mutex_opa);
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - unlock", thr_data->pkt_id, subconn_i); 
-                        // TODO: should we drop if subconn_i==0 ?
-                        return 0;
+                        if(pass)
+                            return 0;
+                        else
+                            return -1;
                     }
 
                     if(BACKUP_MODE && !payload_len && subconn->is_backup){ //let backup ACK to pass through

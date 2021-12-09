@@ -31,7 +31,7 @@ function one_round_test(){
     mode=$2
     if [ $mode -eq 0 ]; then
         cur_num=${nums[i/4%${#nums[@]}]}
-        tag=${cur_num}optim_ackpace${fix_ackpace}+1${1}
+        tag=${cur_num}optim+ackpace${fix_ackpace}+1${1}
         sed -i "s/define ACKPACING .*/define ACKPACING ${fix_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
         sed -i "s/define CONN_NUM .*/define CONN_NUM ${cur_num}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
@@ -41,7 +41,7 @@ function one_round_test(){
         bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace1000_$1 $tag $site $url
     else
         cur_ackpace=${ackpaces[i/4%${#ackpaces[@]}]}
-        tag=${fix_num}optim_ackpace${cur_ackpace}+1${1}
+        tag=${fix_num}optim+ackpace${cur_ackpace}+1${1}
         sed -i "s/define CONN_NUM .*/define CONN_NUM ${fix_num}/g" ~/squid_copy/src/optimack/Optimack.cc
         sed -i "s/define ACKPACING .*/define ACKPACING ${cur_ackpace}/g" ~/squid_copy/src/optimack/Optimack.cc
         cd ~/squid_copy/
