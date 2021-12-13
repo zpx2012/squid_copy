@@ -253,7 +253,7 @@ def parse_tshark(root, f):
         # print('Removed: '+f)
         # continue
     df = tshark2df(root+'/'+f)
-    ip, ports = info_dict['IP'], map(int, filter(None,info_dict['Ports']))
+    ip, ports = info_dict['IP'], map(int, filter(None,info_dict['Ports'].split(', ')))
     print(ip, ports)
     if ip and ports:
         df = df[df.ip_src == ip]
