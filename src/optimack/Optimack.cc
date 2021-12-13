@@ -1303,7 +1303,7 @@ void Optimack::log_seq_gaps(){
         for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
             fprintf(info_file, "%d, ", it->second->local_port);
         fprintf(info_file, "\n");
-        fprintf(info_file, "Num of Conn: %d\n", CONN_NUM);
+        fprintf(info_file, "Num of Conn: %0.1f\n", CONN_NUM);
         fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
         if(RANGE_MODE)
             fprintf(info_file, "Mode: range\n");
@@ -3324,10 +3324,10 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data)
                         pthread_mutex_lock(&subconn->mutex_opa);
                         if(subconn->is_backup && subconn->optim_ack_stop){
                             //Start backup listening thread
-                        start_optim_ack_backup(local_port, subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
-                        printf("S%d-%d: Backup connection, not optim ack\n", subconn_i, local_port);
-                        pthread_mutex_unlock(&subconn->mutex_opa);
+                            start_optim_ack_backup(local_port, subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
+                            printf("S%d-%d: Backup connection, not optim ack\n", subconn_i, local_port);
                         }
+                        pthread_mutex_unlock(&subconn->mutex_opa);
                     }
                 }
 

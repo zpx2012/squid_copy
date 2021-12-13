@@ -225,7 +225,7 @@ def parse_tshark(root, f):
     info_file = ''
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
         for finfo in sorted(files):
-            if finfo.startswith("info_"):
+            if finfo.startswith("info_") and finfo.endswith(".txt"):
                 time_str_info = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S').strftime("%Y%m%d%H%M")
                 # print(time_str_info)
                 if time_str_info == time_str:
