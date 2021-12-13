@@ -1,9 +1,9 @@
 import os, sys, random, pandas as pd, time, json, multiprocessing, traceback, subprocess as sp, pipes
-from datetime import datetime
+from datetime import datetime, timedelta
 from interval import remove_interval, intersect_intervals, total_bytes
 from loss_rate_optimack_end2end import pcap2df
 from loss_rate_optimack_client import loss_rate_optimack_client
-
+from parse_info_files import parse_info_file
 
 def remove_received_intervals(intervals, df_port):
     # print(df_port['tcp_seq_rel'].max())
@@ -220,18 +220,24 @@ def parse_tshark(root, f):
         return
 
     print('Parse: '+f)
-    time_str = f.split(extension)[0].split('_')[-1]
+    fname_fields = f.split(extension)[0].split('_')
+    tshark_time = datetime.strptime(fname_fields[-1], '%Y%m%d%H%M%S')
+    con_num = fname_fields[4].split('+')[0].strip('optim')
+    ackpace = fname_fields[4].split('+')[1].strip('ackpace')
+
     # print("time_str: %s" % time_str)
     info_file = ''
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
         for finfo in sorted(files):
             if finfo.startswith("info_") and finfo.endswith(".txt"):
-                time_str_info = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S').strftime("%Y%m%d%H%M")
+                info_file_time = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S')#.strftime("%Y%m%d%H%M")
                 # print(time_str_info)
-                if time_str_info == time_str:
+                if info_file_time - tshark_time < timedelta(0,10):
                     info_file = root+'/'+finfo
-                    print("found %s" % info_file)
-                    break
+                    info_dict = parse_info_files(info_file)
+                    if info_dict['Num of Conn'] == con_num and info_dict['ACK Pacing'] == ackpace:
+                        print("found %s" % info_file)
+                        break
     if not info_file:
         print("No info file found for %s" % f)
         return
