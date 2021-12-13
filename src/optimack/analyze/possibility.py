@@ -232,12 +232,15 @@ def parse_tshark(root, f):
             if finfo.startswith("info_") and finfo.endswith(".txt"):
                 info_file_time = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S')#.strftime("%Y%m%d%H%M")
                 # print(time_str_info)
-                if info_file_time - tshark_time < timedelta(0,10):
+                if info_file_time >= tshark_time and info_file_time - tshark_time < timedelta(0,10):
                     info_file = root+'/'+finfo
                     info_dict = parse_info_file(info_file)
                     if info_dict['Num of Conn'] == con_num and info_dict['ACK Pacing'] == ackpace:
                         print("found %s" % info_file)
                         break
+                    else:
+                        info_file, info_dict = '',{}
+
     if not info_file:
         print("No info file found for %s" % f)
         return
