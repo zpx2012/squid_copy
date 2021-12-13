@@ -190,18 +190,18 @@ def get_possibility(info_per_conn, out_file):
 
     return loss_rates
 
-def parse_info_file(info_file):
-    ip, ports = '',[]
-    if not os.path.exists(info_file):
-        print(info_file+' Not exists!')
-    else:
-        with open(info_file, 'r') as inf:
-            for line in inf.read().splitlines():
-                if line.startswith('IP:'):
-                    ip = line.split('IP: ')[1]
-                elif line.startswith('Ports:'):
-                    ports = map(int, filter(None, line.split('Ports: ')[1].split(', ')))
-    return ip, ports
+# def parse_info_file(info_file):
+#     ip, ports = '',[]
+#     if not os.path.exists(info_file):
+#         print(info_file+' Not exists!')
+#     else:
+#         with open(info_file, 'r') as inf:
+#             for line in inf.read().splitlines():
+#                 if line.startswith('IP:'):
+#                     ip = line.split('IP: ')[1]
+#                 elif line.startswith('Ports:'):
+#                     ports = map(int, filter(None, line.split('Ports: ')[1].split(', ')))
+#     return ip, ports
 
 def parse_pcap(root, f):
     global extension
@@ -226,7 +226,7 @@ def parse_tshark(root, f):
     ackpace = fname_fields[4].split('+')[1].strip('ackpace')
 
     # print("time_str: %s" % time_str)
-    info_file = ''
+    info_file, info_dict = '', {}
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
         for finfo in sorted(files):
             if finfo.startswith("info_") and finfo.endswith(".txt"):
@@ -234,7 +234,7 @@ def parse_tshark(root, f):
                 # print(time_str_info)
                 if info_file_time - tshark_time < timedelta(0,10):
                     info_file = root+'/'+finfo
-                    info_dict = parse_info_files(info_file)
+                    info_dict = parse_info_file(info_file)
                     if info_dict['Num of Conn'] == con_num and info_dict['ACK Pacing'] == ackpace:
                         print("found %s" % info_file)
                         break
@@ -253,7 +253,7 @@ def parse_tshark(root, f):
         # print('Removed: '+f)
         # continue
     df = tshark2df(root+'/'+f)
-    ip, ports = parse_info_file(info_file)
+    ip, ports = info_dict['IP'], info_dict['Ports']
     print(ip, ports)
     if ip and ports:
         df = df[df.ip_src == ip]
