@@ -80,7 +80,7 @@ def parse_loss_file(dir, filename, df):
     fcells = filename.split('_avg.csv')[0].split('_')
     hostname = fcells[1]
     time_str = fcells[-1]
-    time_str = datetime.strptime(time_str, "%Y%m%d%H%M").strftime('%Y-%m-%dT%H:%M')
+    time_str = datetime.strptime(time_str, "%Y%m%d%H%M%S").strftime('%Y-%m-%dT%H:%M:%S')
     index=time_str+hostname
     if index not in df.index:
         print("Error: %s not in index" % index)

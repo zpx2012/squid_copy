@@ -996,7 +996,10 @@ full_optimistic_ack_altogether(void* arg)
                 }
 
                 if(slowest_subconn->restart_counter >= 3){
-                    if(slowest_subconn->restart_counter == 3){ //Giving up, retreat it as no overrun
+                    if(CONN_NUM == 1 && slowest_subconn->restart_counter == 6){
+                        slowest_subconn->restart_counter = 0;//Give one connection more chance
+                    }
+                    else if(slowest_subconn->restart_counter == 3){ //Giving up, retreat it as no overrun
                         opa_ack_start = obj->max_opt_ack;
                         slowest_subconn->stall_seq = obj->max_opt_ack;
                         slowest_subconn->next_seq_rem = obj->max_opt_ack;
