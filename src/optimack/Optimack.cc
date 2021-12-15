@@ -2159,7 +2159,7 @@ restart:
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
-            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 20){//timeout, send it again
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
                 obj->range_timeout_cnt++;
                 obj->range_timeout_penalty += delay;
