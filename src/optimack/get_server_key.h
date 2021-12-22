@@ -3402,6 +3402,179 @@ static int get_optional_pkey_id(const char *pkey_name)
 
 #endif
 
+#define SSL_COMP_NULL_IDX       0
+#define SSL_COMP_ZLIB_IDX       1
+#define SSL_COMP_NUM_IDX        2
+
+static STACK_OF(SSL_COMP) *ssl_comp_methods = NULL;
+
+#ifndef OPENSSL_NO_COMP
+static CRYPTO_ONCE ssl_load_builtin_comp_once = CRYPTO_ONCE_STATIC_INIT;
+#endif
+
+#  define DEFINE_RUN_ONCE_STATIC(init)            \
+    static int init(void);                     \
+    static int init##_ossl_ret_ = 0;            \
+    static void init##_ossl_(void)              \
+    {                                           \
+        init##_ossl_ret_ = init();              \
+    }                                           \
+    static int init(void)
+
+
+#  define RUN_ONCE(once, init)                                            \
+    (CRYPTO_THREAD_run_once(once, init##_ossl_) ? init##_ossl_ret_ : 0)
+
+
+/* Utility function for table lookup */
+static int ssl_cipher_info_find(const ssl_cipher_table * table,
+                                size_t table_cnt, uint32_t mask)
+{
+    size_t i;
+    for (i = 0; i < table_cnt; i++, table++) {
+        if (table->mask == mask)
+            return (int)i;
+    }
+    return -1;
+}
+
+#define ssl_cipher_info_lookup(table, x) \
+    ssl_cipher_info_find(table, OSSL_NELEM(table), x)
+
+#ifndef OPENSSL_NO_COMP
+
+static int sk_comp_cmp(const SSL_COMP *const *a, const SSL_COMP *const *b)
+{
+    return ((*a)->id - (*b)->id);
+}
+
+DEFINE_RUN_ONCE_STATIC(do_load_builtin_compressions)
+{
+    SSL_COMP *comp = NULL;
+    COMP_METHOD *method = COMP_zlib();
+
+    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_DISABLE);
+    ssl_comp_methods = sk_SSL_COMP_new(sk_comp_cmp);
+
+    if (COMP_get_type(method) != NID_undef && ssl_comp_methods != NULL) {
+        comp = (SSL_COMP *)OPENSSL_malloc(sizeof(*comp));
+        if (comp != NULL) {
+            comp->method = method;
+            comp->id = SSL_COMP_ZLIB_IDX;
+            comp->name = COMP_get_name(method);
+            sk_SSL_COMP_push(ssl_comp_methods, comp);
+            sk_SSL_COMP_sort(ssl_comp_methods);
+        }
+    }
+    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ENABLE);
+    return 1;
+}
+
+static int load_builtin_compressions(void)
+{
+    return RUN_ONCE(&ssl_load_builtin_comp_once, do_load_builtin_compressions);
+}
+#endif
+
+int ssl_cipher_get_evp(const SSL_SESSION *s, const EVP_CIPHER **enc,
+                       const EVP_MD **md, int *mac_pkey_type,
+                       size_t *mac_secret_size, SSL_COMP **comp, int use_etm)
+{
+    int i;
+    const SSL_CIPHER *c;
+
+    c = s->cipher;
+    if (c == NULL)
+        return 0;
+    if (comp != NULL) {
+        SSL_COMP ctmp;
+#ifndef OPENSSL_NO_COMP
+        if (!load_builtin_compressions()) {
+            /*
+             * Currently don't care, since a failure only means that
+             * ssl_comp_methods is NULL, which is perfectly OK
+             */
+        }
+#endif
+        *comp = NULL;
+        ctmp.id = s->compress_meth;
+        if (ssl_comp_methods != NULL) {
+            i = sk_SSL_COMP_find(ssl_comp_methods, &ctmp);
+            *comp = sk_SSL_COMP_value(ssl_comp_methods, i);
+        }
+        /* If were only interested in comp then return success */
+        if ((enc == NULL) && (md == NULL))
+            return 1;
+    }
+
+    if ((enc == NULL) || (md == NULL))
+        return 0;
+
+    i = ssl_cipher_info_lookup(ssl_cipher_table_cipher, c->algorithm_enc);
+
+    if (i == -1) {
+        *enc = NULL;
+    } else {
+        if (i == SSL_ENC_NULL_IDX)
+            *enc = EVP_enc_null();
+        else
+            *enc = ssl_cipher_methods[i];
+    }
+
+    i = ssl_cipher_info_lookup(ssl_cipher_table_mac, c->algorithm_mac);
+    if (i == -1) {
+        *md = NULL;
+        if (mac_pkey_type != NULL)
+            *mac_pkey_type = NID_undef;
+        if (mac_secret_size != NULL)
+            *mac_secret_size = 0;
+        if (c->algorithm_mac == SSL_AEAD)
+            mac_pkey_type = NULL;
+    } else {
+        *md = ssl_digest_methods[i];
+        if (mac_pkey_type != NULL)
+            *mac_pkey_type = ssl_mac_pkey_id[i];
+        if (mac_secret_size != NULL)
+            *mac_secret_size = ssl_mac_secret_size[i];
+    }
+
+    if ((*enc != NULL) &&
+        (*md != NULL || (EVP_CIPHER_flags(*enc) & EVP_CIPH_FLAG_AEAD_CIPHER))
+        && (!mac_pkey_type || *mac_pkey_type != NID_undef)) {
+        const EVP_CIPHER *evp;
+
+        if (use_etm)
+            return 1;
+
+        if (s->ssl_version >> 8 != TLS1_VERSION_MAJOR ||
+            s->ssl_version < TLS1_VERSION)
+            return 1;
+
+        if (c->algorithm_enc == SSL_RC4 &&
+            c->algorithm_mac == SSL_MD5 &&
+            (evp = EVP_get_cipherbyname("RC4-HMAC-MD5")))
+            *enc = evp, *md = NULL;
+        else if (c->algorithm_enc == SSL_AES128 &&
+                 c->algorithm_mac == SSL_SHA1 &&
+                 (evp = EVP_get_cipherbyname("AES-128-CBC-HMAC-SHA1")))
+            *enc = evp, *md = NULL;
+        else if (c->algorithm_enc == SSL_AES256 &&
+                 c->algorithm_mac == SSL_SHA1 &&
+                 (evp = EVP_get_cipherbyname("AES-256-CBC-HMAC-SHA1")))
+            *enc = evp, *md = NULL;
+        else if (c->algorithm_enc == SSL_AES128 &&
+                 c->algorithm_mac == SSL_SHA256 &&
+                 (evp = EVP_get_cipherbyname("AES-128-CBC-HMAC-SHA256")))
+            *enc = evp, *md = NULL;
+        else if (c->algorithm_enc == SSL_AES256 &&
+                 c->algorithm_mac == SSL_SHA256 &&
+                 (evp = EVP_get_cipherbyname("AES-256-CBC-HMAC-SHA256")))
+            *enc = evp, *md = NULL;
+        return 1;
+    } else {
+        return 0;
+    }
+}
 int ssl_load_ciphers(void)
 {
     size_t i;
@@ -3656,7 +3829,6 @@ long ssl_get_algorithm2(SSL *s)
     return alg2;
 }
 
-/* seed1 through seed5 are concatenated */
 const EVP_MD *ssl_md(int idx)
 {
     idx &= SSL_HANDSHAKE_MAC_MASK;
@@ -3675,6 +3847,7 @@ const EVP_MD *ssl_prf_md(SSL *s)
     return ssl_md(ssl_get_algorithm2(s) >> TLS1_PRF_DGST_SHIFT);
 }
 
+/* seed1 through seed5 are concatenated */
 static int tls1_PRF(SSL *s,
                     const void *seed1, size_t seed1_len,
                     const void *seed2, size_t seed2_len,
@@ -3698,8 +3871,6 @@ static int tls1_PRF(SSL *s,
         return 0;
     }
     pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_TLS1_PRF, NULL);
-    // printf("tls1_PRF: pctx: %d\n", pctx);
-    // printf("tls1_PRF: md: %d\n", md);
     if (pctx == NULL || EVP_PKEY_derive_init(pctx) <= 0
         || EVP_PKEY_CTX_set_tls1_prf_md(pctx, md) <= 0
         || EVP_PKEY_CTX_set1_tls1_prf_secret(pctx, sec, (int)slen) <= 0
@@ -3730,8 +3901,10 @@ static int tls1_generate_key_block(SSL *s, unsigned char *km, size_t num)
 
     // printf("server random %s\n", s->s3->server_random);
     // printf("client random %s\n", s->s3->client_random);
-    // printf("masterkey %s\n", s->session->master_key);
-    // printf("%u\n", s->session->master_key_length);
+    printf("masterkey %s\n", s->session->master_key); // TLS 1.2 only
+    unsigned char out[100];
+    printf("masterkey2 size: %ld\n", SSL_SESSION_get_master_key(s->session, out, 100));  // TLS 1.2 only
+    printf("masterkey2 %s\n", out);
 
     /* Calls SSLfatal() as required */
     ret = tls1_PRF(s,
@@ -3745,6 +3918,7 @@ static int tls1_generate_key_block(SSL *s, unsigned char *km, size_t num)
     for (int i = 0; i < 10; i++)
         printf("%02X", s->s3->client_random[i]);
     printf("\n");
+    printf("tls1_generate_key_block: ret: %d\n", ret);
     // printf("TLS_MD_KEY_EXPANSION_CONST: %s\n", TLS_MD_KEY_EXPANSION_CONST);
     return ret;
 }
@@ -3778,16 +3952,29 @@ static void get_server_session_key_and_iv_salt(SSL *s, unsigned char *iv_salt, u
     return;    
 }
 
-static size_t get_server_write_key(SSL *ssl, unsigned char **buffer) {
+size_t get_server_write_key(SSL *ssl, unsigned char *buffer) {
+    // Currently, for TLS 1.2 only.
     size_t key_block_buffer_length;
     unsigned char *key_block_buffer;
-    unsigned char *server_write_key_buffer;
     const EVP_CIPHER *c;
-    const EVP_MD *hash;
+    const EVP_MD *hash; // message digest (hash) functionality
     SSL_COMP *comp;
     size_t mac_secret_size = 0;
     int mac_type = NID_undef;
     size_t key_length, iv_length;
+    // printf("ssl->session: %p", ssl->session); 
+    // Below TLS 1.3 only.
+    // printf("ssl->exporter_master_secret: ");
+    // for (size_t i = 0; i < strlen(ssl->exporter_master_secret); i++)
+    //     printf("\\x%02X", ssl->exporter_master_secret[i]);
+    // printf("ssl->master_secret: ");
+    // for (size_t i = 0; i < strlen(ssl->master_secret); i++)
+    //     printf("\\x%02X", ssl->master_secret[i]);
+    // printf("ssl->write_iv: ");
+    // for (size_t i = 0; i < strlen(ssl->write_iv); i++)
+    //     printf("\\x%02X", ssl->write_iv[i]);
+    // Above, TLS 1.3 only.
+    
     if (!ssl_cipher_get_evp(ssl->session, &c, &hash, &mac_type, &mac_secret_size, &comp, ssl->ext.use_etm)) {
         return 0;
     }
@@ -3813,17 +4000,14 @@ static size_t get_server_write_key(SSL *ssl, unsigned char **buffer) {
         printf("\\x%02X", key_block_buffer[i]);
     printf("\n");
 
-    server_write_key_buffer = (unsigned char*) malloc(key_length);
-    memcpy(server_write_key_buffer, key_block_buffer + n, key_length);
-    *buffer = server_write_key_buffer;
+    memcpy(buffer, key_block_buffer + n, key_length);
     free(key_block_buffer);
     return key_length;
 }
 
-static size_t get_server_write_iv_salt(SSL *ssl, unsigned char **buffer) {
+size_t get_server_write_iv_salt(SSL *ssl, unsigned char *buffer) {
     size_t key_block_buffer_length;
     unsigned char *key_block_buffer;
-    unsigned char *server_write_iv_buffer;
     const EVP_CIPHER *c;
     const EVP_MD *hash;
     SSL_COMP *comp;
@@ -3833,6 +4017,7 @@ static size_t get_server_write_iv_salt(SSL *ssl, unsigned char **buffer) {
     if (!ssl_cipher_get_evp(ssl->session, &c, &hash, &mac_type, &mac_secret_size, &comp, ssl->ext.use_etm)) {
         return 0;
     }
+    printf("here!\n");
     key_length = EVP_CIPHER_key_length(c);
     iv_length = EVP_CIPHER_iv_length(c);
     printf("mac_secret_size: %ld\n", mac_secret_size);
@@ -3855,9 +4040,7 @@ static size_t get_server_write_iv_salt(SSL *ssl, unsigned char **buffer) {
         printf("\\x%02X", key_block_buffer[i]);
     printf("\n");
 
-    server_write_iv_buffer = (unsigned char*) malloc(iv_length);
-    memcpy(server_write_iv_buffer, key_block_buffer + n, iv_length);
-    *buffer = server_write_iv_buffer;
+    memcpy(buffer, key_block_buffer + n, iv_length);
     free(key_block_buffer);
     return iv_length;
 }
@@ -3922,4 +4105,30 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
         /* Verify failed */
         return -1;
     }
+}
+
+void test_write_key(SSL *s){
+    if(!s)
+        return;
+
+    unsigned char iv_salt[4]; // 4 to be modified
+    unsigned char write_key_buffer[100]; // 100 to be modified
+    size_t iv_len;
+    size_t write_key_buffer_len;
+    // get_server_session_key_and_iv_salt(s, iv_salt, session_key); // This function is obsolete.
+    iv_len = get_server_write_iv_salt(s, iv_salt);
+    printf("iv_len: %ld\n", iv_len);
+    write_key_buffer_len = get_server_write_key(s, write_key_buffer);
+    printf("write_key_buffer_len: %ld\n", write_key_buffer_len);
+    
+    printf("get_server_write_key: ");
+    for (int i = 0; i < write_key_buffer_len; i++)
+        printf("%02x", write_key_buffer[i]);
+    printf("\n");
+
+    printf("get_server_write_iv_salt: ");
+    for(int i = 0; i < 4; i++)
+        printf("%02x", iv_salt[i]);
+    printf("\n");
+    return;
 }

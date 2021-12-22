@@ -4,25 +4,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
-#include "get_server_key.h"
-
-// void test_write_key(SSL *s){
-//     if(!s)
-//         return;
-
-//     unsigned char session_key[20],iv_salt[4];
-//     get_server_session_key_and_iv_salt(s, iv_salt, session_key);
-//     printf("get write salt: ");
-//     for(int i = 0; i < 4; i++)
-//         printf("%02x", iv_salt[i]);
-//     printf("\n");
-
-//     printf("get server key: ");
-//     for(int i = 0; i < 20; i++)
-//         printf("%02x", session_key[i]);
-//     printf("\n");
-//     return;
-// }
+#include "get_server_key_single.h"
 
 int RecvPacket(SSL *ssl)
 {
@@ -77,7 +59,7 @@ int open_ssl_conn(int fd){
     }
     STACK_OF(SSL_CIPHER)* sk = SSL_get1_supported_ciphers(ssl);
     for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
-        printf(SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
+        printf("%s", SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
     }
     printf("\n");
     printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
@@ -105,7 +87,8 @@ int establish_tcp_connection()
     // Set server_addr
     bzero(&server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr("18.7.29.125");
+    // server_addr.sin_addr.s_addr = inet_addr("18.7.29.125");
+    server_addr.sin_addr.s_addr = inet_addr("104.193.88.77");
     server_addr.sin_port = htons(443);
 
     // Connect to server

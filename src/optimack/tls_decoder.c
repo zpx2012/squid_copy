@@ -22,14 +22,20 @@
 // #include "socket.h"
 #include "thr_pool.h"
 
+#include "get_server_key_single.h"
+
 //Original 
 #define LOGSIZE 10240
 int nfq_stop;
 thr_pool_t* pool;
 char local_ip[16];
-unsigned short local_port;
 char remote_ip[16];
+unsigned short local_port;
 unsigned short remote_port = 443;
+
+unsigned char iv_salt[4]; // 4 to be modified
+unsigned char write_key_buffer[100]; // 100 to be modified
+
 
 struct thread_data {
     unsigned int  pkt_id;
@@ -246,12 +252,18 @@ typedef enum
     TLS_TYPE_HEARTBEAT          = 24,
     TLS_TYPE_ACK                = 25  //RFC draft
 } TlsContentType;
-struct TLSHeader{
+
+struct  __attribute__((packed)) TLSHeader{
     unsigned char type;
-    unsigned short version;
-    unsigned short length;
-    unsigned char* ciphertext;
+    u_int16_t version;
+    u_int16_t length;
 };
+
+unsigned char iv[13];
+unsigned char ciphertext_buf[4000];
+bool key_obtained = false;
+int consumed = 0;
+const EVP_CIPHER *evp_cipher;
 
 int process_tcp_packet(struct thread_data* thr_data)
 {
@@ -272,11 +284,69 @@ int process_tcp_packet(struct thread_data* thr_data)
 
     if(payload_len){
         struct TLSHeader *tlshdr = (struct TLSHeader*)payload;
-        printf("TLS Handshake: type %d letting through\n\n", tlshdr->type);
+        // printf("sizeof TLSHeader: %d\n", sizeof(struct TLSHeader));
+        tlshdr->length = htons(tlshdr->length);
+        if(payload_len > 5){
+            unsigned char* ciphertext = (payload) + 5;
+            int ciphertext_len = payload_len - 5;
+            if( tlshdr->type == TLS_TYPE_HANDSHAKE || tlshdr->type == TLS_TYPE_CHANGE_CIPHER_SPEC){
+                printf("TLS Handshake: type %d letting through\n\n", tlshdr->type);
+                return 0;
+            }
+            else{
+                if(sport == 443 && key_obtained){
+                    if(tlshdr->type == TLS_TYPE_APPLICATION_DATA){ //
+                        printf("TLS Handshake: type %d,  len %d(%x)-%d, letting through\n\n", tlshdr->type, tlshdr->length, tlshdr->length, ntohs(tlshdr->length));
+                        if(ciphertext_len > 8){
+                            
+                            memcpy(iv, iv_salt, 4);
+                            memcpy(iv+4, ciphertext, 8);
+                            // strncpy(reinterpret_cast<char *>(iv), reinterpret_cast<char *>(iv_salt), 4);
+                            // strncpy(reinterpret_cast<char *>(iv)+4, reinterpret_cast<char *>(ciphertext), 8);
+                            iv[12] = 0;
+                            printf("IV: ");
+                            for(int i = 0; i < 12; i++)
+                                printf("%02x", iv[i]);
+                            printf("\n");
+                            
+                            consumed = 0;
+                            memcpy(ciphertext_buf+consumed, ciphertext+8, ciphertext_len-8);
+                            consumed += ciphertext_len- 8;
+                            // for(int i = 0; i < ciphertext_len; i++)
+                            //     printf("%02x", plaintext[i]);
+                            // printf("\n");
+                            if(tlshdr->length <= ciphertext_len){
+                                unsigned char plaintext[2000] = {0};
+                                int ret = gcm_decrypt(ciphertext+8, tlshdr->length-8, evp_cipher, write_key_buffer, iv, 12, plaintext);
+                                printf("Plaintext: len %d\n%s\n", ret, plaintext);
+                            }
+                        }
+                        return 0;
+                    }
+                    else {
+                        printf("TLS Handshake: type %d drop\n\n", tlshdr->type);
+
+                        memcpy(ciphertext_buf+consumed, payload, payload_len);
+                        consumed += payload_len;
+                        printf("ciphertext len: %d\n", consumed);
+
+                        // printf("get resembled ciphertext: \n");
+                        // for (int i = 0; i < consumed; i++){
+                        //     printf("%02X ", ciphertext_buf[i]);
+                        //     if((i+1) % 16 == 0)
+                        //         printf("       %d\n", i);
+                        // }
+                        // printf("\n");
+
+                        unsigned char plaintext[3000] = {0};
+                        int ret = gcm_decrypt(ciphertext_buf, consumed, evp_cipher, write_key_buffer, iv, 12, plaintext);
+                        printf("gcm_decrypt returned len is %d\nPlaintext: %s\n", ret, plaintext);
+                        return 0;
+                    }
+                }
+            }
+        }
     }
-    // if( tlshdr->type == TLS_TYPE_HANDSHAKE || tlshdr->type == TLS_TYPE_CHANGE_CIPHER_SPEC){
-    //     return 0;
-    // }
 
     return 0;
 }
@@ -306,11 +376,11 @@ void *nfq_loop(void *arg)
 int RecvPacket(SSL *ssl)
 {
     int len=100;
-    char buf[1000000];
+    char buf[2001];
     do {
-        len=SSL_read(ssl, buf, 100);
+        len=SSL_read(ssl, buf, 2000);
         buf[len]=0;
-        printf("Received: %s, len = %d\n", buf, len);
+        // printf("Received: len = %d, %s\n", len, buf);
 //        fprintf(fp, "%s",buf);
     } while (len > 0);
     if (len < 0) {
@@ -342,6 +412,8 @@ int open_ssl_conn(int fd){
         printf("SSL_CTX_new() failed\n");
         return -1;
     }
+    SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_512);
+    SSL_CTX_set_max_send_fragment(ctx, 1024);
 
     SSL *ssl = SSL_new(ctx);
     if (ssl == NULL)
@@ -349,9 +421,11 @@ int open_ssl_conn(int fd){
         printf("SSL_new() failed\n");
         return -1;
     }
+    SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_512);
     SSL_set_fd(ssl, fd);
     const char* const PREFERRED_CIPHERS = "TLS_AES_128_GCM_SHA256";
     SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
+
     // SSL_set_ciphersuites(ssl, PREFERRED_CIPHERS);
     const int status = SSL_connect(ssl);
     if (status != 1)
@@ -365,11 +439,40 @@ int open_ssl_conn(int fd){
         printf("%s\n",SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
     }
     printf("\n");
-    printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
-    // test_write_key(ssl);
-    const char *chars = "GET / HTTP/1.1\r\nHost: www.google.com\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n";
+    printf("Connected with %s encryption, max_frag_len %d\n", SSL_get_cipher(ssl),SSL_SESSION_get_max_fragment_length(ssl->session));
+    
+    const char *chars = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n";
     SSL_write(ssl, chars, strlen(chars));
-    printf("Write: %s\n", chars);
+    printf("Write: %s\n\n", chars);
+
+    // unsigned char session_key[20],iv_salt[4];
+    // get_server_session_key_and_iv_salt(ssl, session_key, iv_salt);
+    
+    unsigned char master_key[100];
+    unsigned char client_random[100];
+    unsigned char server_random[100];
+    size_t master_key_len = SSL_SESSION_get_master_key(SSL_get_session(ssl), master_key, sizeof(master_key));
+    printf("master_key_len: %ld\n", master_key_len);
+    size_t client_random_len = SSL_get_client_random(ssl, client_random, SSL3_RANDOM_SIZE);
+    printf("client_random_len: %ld\n", client_random_len);
+    size_t server_random_len = SSL_get_server_random(ssl, server_random, SSL3_RANDOM_SIZE);
+    printf("server_random_len: %ld\n", server_random_len);
+    const EVP_MD *digest_algorithm = SSL_CIPHER_get_handshake_digest(SSL_SESSION_get0_cipher(SSL_get_session(ssl)));
+    const SSL_CIPHER *cipher = SSL_SESSION_get0_cipher(SSL_get_session(ssl));
+    printf("current session cipher name: %s\n", SSL_CIPHER_standard_name(cipher));
+    evp_cipher = EVP_get_cipherbyname("AES-128-GCM"); // Temporary Ugly hack here for Baidu.
+    printf("evp_cipher: %ld\n", evp_cipher);
+    ssize_t key_length = EVP_CIPHER_key_length(evp_cipher);
+    printf("key_length: %ld\n", key_length);
+
+    test_write_key(ssl, digest_algorithm, evp_cipher, iv_salt, write_key_buffer);
+    printf("iv_salt: ");
+    for(int i = 0; i < 4; i++)
+        printf("%02x", iv_salt[i]);
+    printf("\n");
+
+    key_obtained = true;
+
     RecvPacket(ssl);
     SSL_free(ssl);
     close(fd);
@@ -466,9 +569,9 @@ int main(int argc, char *argv[])
     }
     printf("created nfq thread\n");
 
-    // int sockfd = establish_tcp_connection();
-    // local_port = get_localport(sockfd);
-    local_port = 36000;
+    int sockfd = establish_tcp_connection();
+    local_port = get_localport(sockfd);
+    // local_port = 36000;
     printf("Local IP: %s\n", local_ip);
     printf("Local Port: %d\n", local_port);
     printf("Remote IP: %s\n", remote_ip);
@@ -482,8 +585,9 @@ int main(int argc, char *argv[])
     system(cmd);
 
     printf("Before calling open_ssl_conn()\n");
-    while(true);
-    // open_ssl_conn(sockfd);
+    // while(true);
+    open_ssl_conn(sockfd);
+    while(1);
     printf("After calling open_ssl_conn()\n");
 
     // cleanup();

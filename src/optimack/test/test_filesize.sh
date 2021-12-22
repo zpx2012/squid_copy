@@ -30,5 +30,3 @@ cat $1 | while IFS=',' read url size; do
     # echo $(date -u --rfc-3339=ns): Wait 5s for squid to stop 2>&1 | tee -a $log
     ps -ef | grep squid 2>&1 | tee -a $log
 done
-
-	

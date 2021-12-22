@@ -43,17 +43,18 @@ using namespace std;
 
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
-// #include "get_server_key.h"
-void test_write_key(SSL *s){
-    if(!s)
-        return;
+#include "get_server_key.h"
+// void test_write_key(SSL *s){
+//     if(!s)
+//         return;
 
-    unsigned char session_key[20],iv_salt[4];
-    // get_server_session_key_and_iv_salt(s, session_key, iv_salt);
-    // printf("get write iv and salt: %s\n", buf);
+//     unsigned char session_key[20],iv_salt[4];
+//     test_write_key
+//     // get_server_session_key_and_iv_salt(s, session_key, iv_salt);
+//     // printf("get write iv and salt: %s\n", buf);
 
-    // printf("get server key: %s\n", buf);
-}
+//     // printf("get server key: %s\n", buf);
+// }
 #endif
 
 /** Our code **/
@@ -62,7 +63,7 @@ void test_write_key(SSL *s){
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 2000
+#define ACKPACING 1500
 #endif
 
 #define MAX_STALL_TIME 240
@@ -4388,6 +4389,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     unsigned char* session_key = (unsigned char*)malloc(33);
     memset(iv_salt,0, 5);
     memset(session_key, 0, 33);
+    test_write_key(ssl);
     // get_server_session_key_and_iv_salt(ssl, iv_salt, session_key);
     iv_salt[4] = session_key[32] = 0;
 

@@ -41,4 +41,4 @@ liboptim_la_SOURCES = \
 	include/openssl/engine.h \
 	get_server_key.h
 
-liboptim_la_LDFLAGS = -Bstatic -lssl -lcrypto
+liboptim_la_LDFLAGS = -L/usr/local/ssl/lib -l:libssl.a -lcrypto
