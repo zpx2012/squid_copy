@@ -509,20 +509,20 @@ int startswith(const char *a, const char *b) {
     return (strncmp(a, b, strlen(b)) == 0);
 }
 
-// timespec diff(timespec end, timespec start)
-// {
-// 	timespec temp;
+timespec diff(timespec end, timespec start)
+{
+	timespec temp;
 
-// 	if ((end.tv_nsec - start.tv_nsec) < 0){
-// 		temp.tv_sec = end.tv_sec - start.tv_sec-1;
-// 		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-// 	}
-// 	else{
-// 		temp.tv_sec = end.tv_sec-start.tv_sec;
-// 		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-// 	}
-// 	return temp;
-// }
+	if ((end.tv_nsec - start.tv_nsec) < 0){
+		temp.tv_sec = end.tv_sec - start.tv_sec-1;
+		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	}
+	else{
+		temp.tv_sec = end.tv_sec-start.tv_sec;
+		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+	return temp;
+}
 
 void traceroute(char *remote_ip, char *output_file)
 {

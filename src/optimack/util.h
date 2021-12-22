@@ -20,7 +20,7 @@ char* tcp_flags_str(u_int8_t flags);
 char* hex_dump_str(const unsigned char *packet, size_t size);
 void hex_dump(const unsigned char *packet, size_t size);
 void human_dump(const unsigned char *packet, size_t size);
-// timespec diff(timespec end, timespec start);
+timespec diff(timespec end, timespec start);
 
 #endif
 
