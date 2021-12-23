@@ -260,7 +260,7 @@ struct  __attribute__((packed)) TLSHeader{
 };
 
 unsigned char iv[13];
-unsigned char ciphertext_buf[4000];
+unsigned char ciphertext_buf[4000] = {0};
 bool key_obtained = false;
 int consumed = 0;
 const EVP_CIPHER *evp_cipher;
@@ -281,6 +281,7 @@ int process_tcp_packet(struct thread_data* thr_data)
     unsigned int ack = htonl(tcphdr->th_ack);
 
     printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, remote_ip, sport, local_ip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq, tcphdr->th_ack, ack, iphdr->ttl, payload_len);
+    // return 0;
 
     if(payload_len){
         struct TLSHeader *tlshdr = (struct TLSHeader*)payload;
@@ -310,15 +311,25 @@ int process_tcp_packet(struct thread_data* thr_data)
                             printf("\n");
                             
                             consumed = 0;
-                            memcpy(ciphertext_buf+consumed, ciphertext+8, ciphertext_len-8);
-                            consumed += ciphertext_len- 8;
+                            memcpy(ciphertext_buf+consumed, ciphertext+8, tlshdr->length-8);
+                            consumed += tlshdr->length - 8;
                             // for(int i = 0; i < ciphertext_len; i++)
                             //     printf("%02x", plaintext[i]);
                             // printf("\n");
                             if(tlshdr->length <= ciphertext_len){
                                 unsigned char plaintext[2000] = {0};
-                                int ret = gcm_decrypt(ciphertext+8, tlshdr->length-8, evp_cipher, write_key_buffer, iv, 12, plaintext);
-                                printf("Plaintext: len %d\n%s\n", ret, plaintext);
+                                int ret = gcm_decrypt(ciphertext+8, tlshdr->length-8-16, evp_cipher, write_key_buffer, iv, 12, plaintext);
+                                plaintext[tlshdr->length-8-16] = 0;
+                                printf("Plaintext: len %d\n%s\n\n", ret, plaintext);
+                            }
+                            else{
+                                // memcpy(ciphertext_buf+consumed, 0, tlshdr->length-ciphertext_len);
+
+                                unsigned char plaintext[20000] = {0};
+                                int ret = gcm_decrypt(ciphertext_buf, tlshdr->length-8-16, evp_cipher, write_key_buffer, iv, 12, plaintext);
+                                plaintext[tlshdr->length-8-16] = 0;
+                                printf("Plaintext(padded): len %d\n%s\n\n", ret, plaintext);
+
                             }
                         }
                         return 0;
@@ -380,7 +391,7 @@ int RecvPacket(SSL *ssl)
     do {
         len=SSL_read(ssl, buf, 2000);
         buf[len]=0;
-        // printf("Received: len = %d, %s\n", len, buf);
+        printf("Received: len = %d\n%s\n\n", len, buf);
 //        fprintf(fp, "%s",buf);
     } while (len > 0);
     if (len < 0) {
@@ -405,7 +416,9 @@ int open_ssl_conn(int fd){
     SSL_library_init();
     SSLeay_add_ssl_algorithms();
     SSL_load_error_strings();
-    const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
+    // const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
+    const SSL_METHOD *method = TLSv1_2_client_method(); /* Create new client-method instance */
+
     SSL_CTX *ctx = SSL_CTX_new(method);
     if (ctx == NULL)
     {
@@ -423,8 +436,11 @@ int open_ssl_conn(int fd){
     }
     SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_512);
     SSL_set_fd(ssl, fd);
-    const char* const PREFERRED_CIPHERS = "TLS_AES_128_GCM_SHA256";
-    SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
+    // const char* const PREFERRED_CIPHERS = "TLS_AES_128_GCM_SHA256";
+    const char* const PREFERRED_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256"; // Use TLS 1.2 GCM hardcoded.
+    
+    // SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
+    SSL_CTX_set_cipher_list(ctx, PREFERRED_CIPHERS);
 
     // SSL_set_ciphersuites(ssl, PREFERRED_CIPHERS);
     const int status = SSL_connect(ssl);

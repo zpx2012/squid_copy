@@ -109,9 +109,9 @@ def get_seq_lost_count(info_per_conn, out_file):
     return max_gap
 
 def get_overall_lossbyte_and_mean_loss_rate(info_per_conn, out_file):
-    if os.path.exists(out_file):
-        print('File exists: '+out_file)
-        return []
+    # if os.path.exists(out_file):
+    #     print('File exists: '+out_file)
+    #     return []
 
     max_lens = info_per_conn['max_lens']
     all_bytes = max(max_lens)
@@ -131,7 +131,7 @@ def get_overall_lossbyte_and_mean_loss_rate(info_per_conn, out_file):
     print("bytes lost %d, avg_lossrate %f" % (total_bytes(gaps_left), avg_lossrate))
 
     print("Write possibility result to: " + out_file)
-    with open(out_file, 'w') as outf:
+    with open(out_file, 'a') as outf:
         outf.writelines("overall lost bytes: %d\navg loss rate: %f" % (total_bytes(gaps_left), avg_lossrate))
 
     return
@@ -224,6 +224,7 @@ def parse_tshark(root, f):
     tshark_time = datetime.strptime(fname_fields[-1], '%Y%m%d%H%M%S')
     con_num = fname_fields[4].split('+')[0].strip('optim')
     ackpace = fname_fields[4].split('+')[1].strip('ackpace')
+    print(con_num, ackpace)
 
     # print("time_str: %s" % time_str)
     info_file, info_dict = '', {}
@@ -231,11 +232,13 @@ def parse_tshark(root, f):
         for finfo in sorted(files):
             if finfo.startswith("info_") and finfo.endswith(".txt"):
                 info_file_time = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S')#.strftime("%Y%m%d%H%M")
-                # print(time_str_info)
+                print(info_file_time, tshark_time, )
                 if info_file_time >= tshark_time and info_file_time - tshark_time < timedelta(0,10):
+                    print("Found: %s, validating", finfo)
                     info_file = root+'/'+finfo
                     info_dict = parse_info_file(info_file)
-                    if info_dict['Num of Conn'] == con_num and info_dict['ACK Pacing'] == ackpace:
+                    print(info_dict['Num of Conn'], info_dict['ACK Pacing'])
+                    if info_dict['ACK Pacing'] == ackpace: #info_dict['Num of Conn'] == con_num and
                         print("found %s" % info_file)
                         break
                     else:
@@ -265,7 +268,7 @@ def parse_tshark(root, f):
         # info_per_conn = get_info_per_conn(pd.DataFrame(), [], gap_info_file)
         # get_seq_lost_count(info_per_conn, gaps_count_file)
         # get_possibility(info_per_conn, prob_file)
-        get_overall_lossbyte_and_mean_loss_rate(info_per_conn, avg_file)
+        get_overall_lossbyte_and_mean_loss_rate(info_per_conn, info_file)
         # loss_rate_optimack_client(df, ports, loss_file)
     else:
         print("Info file not exists.")

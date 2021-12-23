@@ -1307,7 +1307,7 @@ void Optimack::log_seq_gaps(){
         for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
             fprintf(info_file, "%d, ", it->second->local_port);
         fprintf(info_file, "\n");
-        fprintf(info_file, "Num of Conn: %0.1f\n", CONN_NUM);
+        fprintf(info_file, "Num of Conn: %.1f\n", CONN_NUM);
         fprintf(info_file, "ACK Pacing: %d\n", ACKPACING);
         if(RANGE_MODE)
             fprintf(info_file, "Mode: range\n");
