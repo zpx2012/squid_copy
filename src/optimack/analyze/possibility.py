@@ -246,7 +246,7 @@ def parse_tshark(root, f):
                         info_file, info_dict = '',{}
 
     if not info_file:
-        print("No info file found for %s" % f)
+        print("No info file found for %s\n" % f)
         return
 
     prob_file = root+'/'+f.replace(extension,'_prob.csv')
@@ -260,7 +260,7 @@ def parse_tshark(root, f):
         # print('Removed: '+f)
         # continue
     df = tshark2df(root+'/'+f)
-    ip, ports = info_dict['IP'], map(int, filter(None,info_dict['Ports'].split(', ')[:int(con_num)]))
+    ip, ports = info_dict['IP'], map(int, filter(None,info_dict['Ports'].split(', ')[:int(float(con_num))]))
     print(ip, ports)
     if ip and ports:
         df = df[df.ip_src == ip]
