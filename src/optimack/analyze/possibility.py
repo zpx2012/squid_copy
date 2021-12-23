@@ -232,16 +232,17 @@ def parse_tshark(root, f):
         for finfo in sorted(files):
             if finfo.startswith("info_") and finfo.endswith(".txt"):
                 info_file_time = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S')#.strftime("%Y%m%d%H%M")
-                print(info_file_time, tshark_time, )
+                # print(info_file_time, tshark_time, )
                 if info_file_time >= tshark_time and info_file_time - tshark_time < timedelta(0,10):
-                    print("Found: %s, validating", finfo)
+                    print("Found: %s, validating" % finfo)
                     info_file = root+'/'+finfo
                     info_dict = parse_info_file(info_file)
                     print(info_dict['Num of Conn'], info_dict['ACK Pacing'])
-                    if info_dict['ACK Pacing'] == ackpace: #info_dict['Num of Conn'] == con_num and
+                    if info_dict['ACK Pacing'] == ackpace and not info_dict.has_key("avg loss rate"): #info_dict['Num of Conn'] == con_num and
                         print("found %s" % info_file)
                         break
                     else:
+                        print("Validation failed or already written")
                         info_file, info_dict = '',{}
 
     if not info_file:
