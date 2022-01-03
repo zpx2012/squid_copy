@@ -1,6 +1,8 @@
 #! /bin/bash
 # usage: ./test_off_packet.sh [tag]
 
+sudo apt-get install -y aria2
+
 url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
@@ -51,5 +53,7 @@ while true;do
         # echo Start: $(date -Iseconds) >> $squid_out 
         # curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 -m 120 2>&1 | tee -a ${squid_out}
         # cleanup
+    else
+        sleep 300
     fi
 done

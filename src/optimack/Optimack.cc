@@ -1869,6 +1869,7 @@ void Optimack::print_seq_table(){
 
     if(is_all_fin_or_rst){
         printf("All received FIN/ACK. Exit...\n");
+        sleep(10);
         exit(-1);
     }
     // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
