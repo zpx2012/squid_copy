@@ -39,7 +39,8 @@ while true; do
         echo ${1}optim+1range_ackpace${2}
         bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh daylong_${1}optim_ackpace${2} daylong_${1}optim+1range_ackpace${2} $site $url
         echo
+    else
+        sleep 300
     fi
-    sleep 300
     rm $curl_singlerun
 done

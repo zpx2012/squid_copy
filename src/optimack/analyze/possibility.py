@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from interval import remove_interval, intersect_intervals, total_bytes
 from loss_rate_optimack_end2end import pcap2df
 from loss_rate_optimack_client import loss_rate_optimack_client
-from parse_info_files import parse_info_file
+# from parse_info_files import find_info_file
 
 def remove_received_intervals(intervals, df_port):
     # print(df_port['tcp_seq_rel'].max())
@@ -132,7 +132,7 @@ def get_overall_lossbyte_and_mean_loss_rate(info_per_conn, out_file):
 
     print("Write possibility result to: " + out_file)
     with open(out_file, 'a') as outf:
-        outf.writelines("overall lost bytes: %d\navg loss rate: %f" % (total_bytes(gaps_left), avg_lossrate))
+        outf.writelines("overall lost bytes: %d\navg loss rate: %f\n" % (total_bytes(gaps_left), avg_lossrate))
 
     return
 
@@ -213,42 +213,21 @@ def parse_pcap(root, f):
     os.remove(root+'/'+f)
     print('Removed: '+f)
 
-def parse_tshark(root, f):
+
+def parse_tshark(root, f, info_file, info_dict):
     # root, f = packed_list[0], packed_list[1]
     if not os.path.exists(root+'/'+f):
         print(f+' Not exists!')
         return
 
     print('Parse: '+f)
-    fname_fields = f.split(extension)[0].split('_')
-    tshark_time = datetime.strptime(fname_fields[-1], '%Y%m%d%H%M%S')
-    con_num = fname_fields[4].split('+')[0].strip('optim')
-    ackpace = fname_fields[4].split('+')[1].strip('ackpace')
-    print(con_num, ackpace)
 
-    # print("time_str: %s" % time_str)
-    info_file, info_dict = '', {}
-    for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
-        for finfo in sorted(files):
-            if finfo.startswith("info_") and finfo.endswith(".txt"):
-                info_file_time = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S')#.strftime("%Y%m%d%H%M")
-                # print(info_file_time, tshark_time, )
-                if info_file_time >= tshark_time and info_file_time - tshark_time < timedelta(0,10):
-                    print("Found: %s, validating" % finfo)
-                    info_file = root+'/'+finfo
-                    info_dict = parse_info_file(info_file)
-                    print(info_dict['Num of Conn'], info_dict['ACK Pacing'])
-                    if info_dict['ACK Pacing'] == ackpace and not info_dict.has_key("avg loss rate"): #info_dict['Num of Conn'] == con_num and
-                        print("found %s" % info_file)
-                        break
-                    else:
-                        print("Validation failed or already written")
-                        info_file, info_dict = '',{}
+    # info_file, info_dict = find_info_file(sys.argv[1], f, extension, "avg loss rate")
+    # if not info_file:
+    #     print("No info file found for %s\n" % f)
+    #     return
 
-    if not info_file:
-        print("No info file found for %s\n" % f)
-        return
-
+    extension = '.pcap.tshark'
     prob_file = root+'/'+f.replace(extension,'_prob.csv')
     avg_file = root+'/'+f.replace(extension,'_avg.csv')
     gap_info_file = root+'/'+f.replace(extension, '.infos')
@@ -260,7 +239,7 @@ def parse_tshark(root, f):
         # print('Removed: '+f)
         # continue
     df = tshark2df(root+'/'+f)
-    ip, ports = info_dict['IP'], map(int, filter(None,info_dict['Ports'].split(', ')[:int(float(con_num))]))
+    ip, ports = info_dict['IP'], map(int, filter(None,info_dict['Ports'].split(', ')[:int(float(info_dict['Num of Conn']))]))
     print(ip, ports)
     if ip and ports:
         df = df[df.ip_src == ip]
@@ -313,7 +292,7 @@ if __name__ == '__main__':
                 if f.endswith('.pcap.tshark'):
                     # get_total_loss(root, f)
                     extension = '.pcap.tshark'
-                    parse_tshark(root, f)
+                    # parse_tshark(root, f)
                     # args_list.append([root, f])
                 # elif f.endswith('.pcap'):
                 #     extension = '.pcap'

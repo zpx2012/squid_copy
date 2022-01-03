@@ -1845,11 +1845,14 @@ void Optimack::print_seq_table(){
     printf("\n");
 
     printf("%12s%12u", "FIN/RST", 0);
+    bool is_all_fin_or_rst = true;
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         if(it->second->fin_or_rst_recved)
             printf("%12s", "true");
-        else
+        else{
             printf("%12s","false");
+            is_all_fin_or_rst = false;
+        }
     }
     printf("\n");
 
@@ -1862,6 +1865,11 @@ void Optimack::print_seq_table(){
     if(BACKUP_MODE){
         printf("Backup: ");
         subconn_infos[backup_port]->recved_seq.printIntervals();
+    }
+
+    if(is_all_fin_or_rst){
+        printf("All received FIN/ACK. Exit...\n");
+        exit(-1);
     }
     // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
     //     it->second->recved_seq.printIntervals();

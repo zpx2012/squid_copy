@@ -37,8 +37,8 @@ while true;do
     curl -LJ4vk -o /dev/null -m 20 $url 2>&1 | tee $curl_singlerun
     echo
     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True"; then
-        # echo Start: $(date -Iseconds) >> $normal_out
-        # screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}"
+        echo Start: $(date -Iseconds) >> $normal_out
+        screen -dmS normal bash -c "while true; do curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out};done"
 
         echo Start: $(date -Iseconds) >> ${aria2_out} 
         aria2c $url -x 10 --continue=false | tee -a ${aria2_out}
