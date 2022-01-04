@@ -72,14 +72,14 @@ sleep 2
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
-screen -dmS normal bash -c "curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}"
+screen -dmS normal bash -c "while true; do curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}; done"
 curl -LJ4vk $url -o /dev/null -x http://127.0.0.1:3128 --speed-time 360 2>&1 | tee -a ${squid_out}
 cleanup
 
 if grep -q "left intact" $squid_out;
 then
-    # rm $tcpdump_out
-    screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80' > ${tcpdump_out}.tshark; rm $tcpdump_out"
+    rm $tcpdump_out
+    # screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80' > ${tcpdump_out}.tshark; rm $tcpdump_out"
 elif grep -q "curl: (28) Operation too slow" $squid_out; 
 then
     cat ${squid_log} >> ${squid_log}_e28
