@@ -44,7 +44,7 @@ while true;do
 
         echo Start: $(date -Iseconds) >> ${aria2_out} 
         aria2c $url -x 10 --continue=false | tee -a ${aria2_out}
-        rm -v ubuntu-16.04.5-server-i386.iso*
+        rm -v ubuntu-16.04.6-server-i386.iso*
 
         # bash ~/squid_copy/src/optimack/test/ks.sh normal
         # screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N >> ${squid_log}"
