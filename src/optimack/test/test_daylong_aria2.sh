@@ -34,12 +34,14 @@ stime=$(date +%Y%m%d%H%M%S)
 function INT_handler()
 {
     bash ~/squid_copy/src/optimack/test/ks.sh normal
+    bash ~/squid_copy/src/optimack/test/ks.sh ping
     exit
 }
 
 trap INT_handler SIGINT
 
 screen -dmS normal bash ~/squid_copy/src/optimack/test/test_daylong_normal_only.sh $outdir ${mode} $site $url $stime
+screen -dmS ping bash ~/squid_copy/src/optimack/test/ping.sh $site $outdir $stime
 
 while true;do
     echo $(date -Iseconds): Slowdown test
