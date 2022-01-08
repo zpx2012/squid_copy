@@ -3,19 +3,19 @@
 
 sudo apt-get install -y aria2
 
-site='142.93.117.107'
+# site='142.93.117.107'
 # site='138.68.49.206' #SF-HTTP-SV
 # site='67.205.159.15' #NY-HTTP-SV
 # site='143.198.65.98' #SF1-4G
 # site='161.35.100.102' #NY2-4G
 # url="http://$site/ubuntu-16.04.6-server-i386.template"
-url="http://$site/ubuntu-16.04.6-server-i386.iso"
+# url="http://$site/ubuntu-16.04.6-server-i386.iso"
 # url="http://$site/md5sums.gz"
 
-# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
+url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-# site='mirrors.mit.edu'
+site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
