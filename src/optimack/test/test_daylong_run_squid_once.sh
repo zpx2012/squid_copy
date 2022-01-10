@@ -4,7 +4,7 @@
 outdir=$1
 site=$3
 url=$4
-stime=$5
+stime=$(date +%Y%m%d%H%M%S)
 
 tag=$(hostname)_${site}_http_ackpace${7}+${6}optim+1range_${stime}
 squid_out=$outdir/curl_squid_${tag}.txt
