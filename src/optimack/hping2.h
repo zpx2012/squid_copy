@@ -680,6 +680,36 @@ static inline struct myudphdr* udp_hdr(unsigned char *pkt_data)
     return (struct myudphdr*)(pkt_data+((struct myiphdr*)pkt_data)->ihl*4);
 }
 
+typedef enum
+{
+    TLS_TYPE_NONE               = 0,
+    TLS_TYPE_CHANGE_CIPHER_SPEC = 20,
+    TLS_TYPE_ALERT              = 21,
+    TLS_TYPE_HANDSHAKE          = 22,
+    TLS_TYPE_APPLICATION_DATA   = 23,
+    TLS_TYPE_HEARTBEAT          = 24,
+    TLS_TYPE_ACK                = 25  //RFC draft
+} TlsContentType;
+
+struct  __attribute__((packed)) mytlshdr{
+    unsigned char type;
+    u_int16_t version;
+    u_int16_t length;
+};
+
+#define TLSHDR_SIZE sizeof(struct mytlshdr)
+
+static inline struct mytlshdr* tls_hdr(unsigned char *pkt_data)
+{
+    struct mytlshdr* tlshdr = (struct mytlshdr*)tcp_payload(pkt_data);
+    tlshdr->length = htons(tlshdr->length);
+    return tlshdr;
+}
+
+static inline unsigned char* tls_payload(unsigned char *pkt_data)
+{
+    return pkt_data+ip_hdr(pkt_data)->ihl*4+tcp_hdr(pkt_data)->th_off*4+TLSHDR_SIZE;
+}
 
 
 #endif /* _HPING2_H */

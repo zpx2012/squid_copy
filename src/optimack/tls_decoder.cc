@@ -11,6 +11,15 @@
 #include <sys/stat.h>
 #include <openssl/ssl.h>
 
+#include <map>
+#include <utility>
+#include <iterator>
+#include <functional>
+#include <algorithm>
+
+#include<sys/socket.h>
+#include <netdb.h>
+
 #include <linux/netfilter.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <linux/netlink.h>
@@ -32,6 +41,7 @@ char local_ip[16];
 char remote_ip[16];
 unsigned short local_port;
 unsigned short remote_port = 443;
+char *remote_domain;
 
 unsigned char iv_salt[4]; // 4 to be modified
 unsigned char write_key_buffer[100]; // 100 to be modified
@@ -242,28 +252,175 @@ void* pool_handler(void* arg){
     }
 }
 
-typedef enum
-{
-    TLS_TYPE_NONE               = 0,
-    TLS_TYPE_CHANGE_CIPHER_SPEC = 20,
-    TLS_TYPE_ALERT              = 21,
-    TLS_TYPE_HANDSHAKE          = 22,
-    TLS_TYPE_APPLICATION_DATA   = 23,
-    TLS_TYPE_HEARTBEAT          = 24,
-    TLS_TYPE_ACK                = 25  //RFC draft
-} TlsContentType;
 
-struct  __attribute__((packed)) TLSHeader{
-    unsigned char type;
-    u_int16_t version;
-    u_int16_t length;
-};
-
-unsigned char iv[13];
 unsigned char ciphertext_buf[4000] = {0};
 bool key_obtained = false;
 int consumed = 0;
 const EVP_CIPHER *evp_cipher;
+uint seq_ini_rem = 0;
+
+struct record_fragment{
+    int record_size;
+    unsigned char* data;
+    int data_len;
+    record_fragment(int rs, unsigned char* dt, int dl){
+        record_size = rs; data = dt; data_len = dl;
+    }
+};
+std::map<uint, struct record_fragment, std::less<uint>> tls_ciphertext_rcvbuf;
+
+int decrypt_whole_record(unsigned char* record_data, int record_len){
+    if(record_len <= 8)
+        return -1;
+
+    unsigned char iv[13];
+    memcpy(iv, iv_salt, 4);
+    memcpy(iv+4, record_data, 8);
+    iv[12] = 0;
+    printf("IV: ");
+    for(int i = 0; i < 12; i++)
+        printf("%02x", iv[i]);
+    printf("\n");
+
+    unsigned char plaintext[20000] = {0};
+    int ret = gcm_decrypt(record_data+8, record_len-8-16, evp_cipher, write_key_buffer, iv, 12, plaintext, record_data+record_len-16);
+    plaintext[record_len-8-16] = 0;
+    printf("Plaintext: len %d\n%s\n\n", ret, plaintext);
+    
+    unsigned char re_ciphertext[2000];
+    unsigned char re_tag[17];
+    ret = gcm_encrypt(plaintext, record_len-8-16, evp_cipher, write_key_buffer, iv, 12, re_ciphertext, re_tag);
+    re_tag[16] = 0;
+
+    printf("Re encrypted: %d\n", ret);
+    for(int i = 0; i < record_len-8-16; i++){
+        printf("%02x", record_data[i+8]);
+        printf("%02x ", re_ciphertext[i]);
+        if(i % 16 == 15)
+            printf("\n");
+    }
+    printf("\n\n");
+
+    printf("Original tag: ");
+    for(int i = 0; i < 16; i++)
+        printf("%02x ", record_data[record_len-16+i]);
+    printf("\n");
+
+    printf("Reencryp tag: ");
+    for(int i = 0; i < 16; i++)
+        printf("%02x ", re_tag[i]);
+    printf("\n");
+
+    ret = gcm_decrypt(record_data+8, record_len-8-16, evp_cipher, write_key_buffer, iv, 12, plaintext, re_tag);
+    plaintext[record_len-8-16] = 0;
+    printf("Plaintext: len %d\n%s\n\n", ret, plaintext);
+    return 0;
+}
+int insert_to_record_fragment(std::map<uint, struct record_fragment> &tls_ciphertext_rcvbuf, uint seq, int record_size, unsigned char* ciphertext, int ciphertext_len);
+
+int print_hexdump(unsigned char* hexdump, int len){
+    for(int i = 0; i < len; i++){
+        printf("%02X ", hexdump[i]);
+        if(i % 16 == 4)
+            printf("\n");
+    }
+    printf("\n\n");
+}
+
+int merge_record_fragment(std::map<uint, struct record_fragment> &tls_ciphertext_rcvbuf){
+    for(auto prev = tls_ciphertext_rcvbuf.begin(), cur=std::next(prev); prev != tls_ciphertext_rcvbuf.end();){
+        int prev_len = prev->second.data_len, cur_len = cur->second.data_len;
+
+        if(prev->first + prev_len == cur->first){
+            printf("merge_record_fragment: %u-(%d, %p, %d) and %u-(%d, %p, %d)\n", prev->first, prev->second.record_size, prev->second.data, prev->second.data_len, cur->first, cur->second.record_size, cur->second.data, cur->second.data_len);
+            if(prev->second.record_size && prev->second.record_size < prev_len+cur_len){ //new record in middle of fragment, motherfucker
+                int len_last_record = prev->second.record_size - prev->second.data_len;
+                int len_new_record = cur->second.data_len - len_last_record;
+
+                if(len_new_record >= TLSHDR_SIZE){
+                    printf("Before:\n");
+                    print_hexdump(cur->second.data, cur->second.data_len);
+                    struct mytlshdr* tlshdr = (struct mytlshdr*)(cur->second.data+len_last_record);
+                    printf("TLS Record: version %x, type %d, len %d(%x)\n\n", tlshdr->version, tlshdr->type, htons(tlshdr->length), tlshdr->length);
+
+                    if((tlshdr->version == 0x0303 || tlshdr->version == 0x0304) && tlshdr->type == TLS_TYPE_APPLICATION_DATA){
+                        tlshdr->length = htons(tlshdr->length);
+                        unsigned char* ciphertext = cur->second.data + len_last_record + TLSHDR_SIZE;
+                        int ciphertext_len = len_new_record - TLSHDR_SIZE;
+                        insert_to_record_fragment(tls_ciphertext_rcvbuf, cur->first+len_last_record+TLSHDR_SIZE, tlshdr->length, ciphertext, ciphertext_len);
+
+                        cur->second.data_len = len_last_record;
+                        cur_len = cur->second.data_len;
+
+                        // print_hexdump(cur->second.data+len_last_record, len_new_record);
+                    }
+                    else{
+                        printf("merge_record_fragment: header not found\n\n");
+                        printf("After:\n");
+                        print_hexdump(cur->second.data, cur->second.data_len);
+                        printf("New header:\n");
+                        print_hexdump(cur->second.data+cur->second.data_len, len_new_record);
+                        exit(-1);
+                    }
+                }
+            }
+
+            unsigned char* new_data = (unsigned char*)malloc(prev_len+cur_len);
+            memcpy(new_data, prev->second.data, prev_len);
+            memcpy(new_data+prev_len, cur->second.data, cur_len);
+            free(prev->second.data);
+            free(cur->second.data);
+            tls_ciphertext_rcvbuf.erase(cur++);
+            // cur = prev;
+
+            prev->second.data = new_data;
+            prev->second.data_len = prev_len + cur_len;
+            
+            continue;
+        }
+
+        if(prev->second.record_size == prev->second.data_len){
+            decrypt_whole_record(prev->second.data, prev->second.data_len);
+            free(prev->second.data);
+            tls_ciphertext_rcvbuf.erase(prev++);
+            if(prev == tls_ciphertext_rcvbuf.end())
+                break;
+        }
+        prev=cur;
+        cur++;
+    }
+}
+
+int insert_to_record_fragment(std::map<uint, struct record_fragment> &tls_ciphertext_rcvbuf, uint seq, int record_size, unsigned char* ciphertext, int ciphertext_len){
+
+    unsigned char* temp_buf = (unsigned char*)malloc(ciphertext_len);
+    if(!temp_buf){
+        log_error("insert_to_recv_buffer: can't malloc for data_left");
+        return -1;
+    }
+    memset(temp_buf, 0, ciphertext_len);
+    memcpy(temp_buf, ciphertext, ciphertext_len);
+
+    auto ret = tls_ciphertext_rcvbuf.insert( std::pair<uint , struct record_fragment>(seq, record_fragment(record_size, temp_buf, ciphertext_len)) );
+    if (ret.second == false) {
+        printf("tls_ciphertext_rcvbuf: %u already existed.\n", seq);
+        if(ret.first->second.data_len < ciphertext_len){
+            // printf("recv_buffer: old len %d < new len %d. Erase old one, replace with new onw\n", ret.first->second.len, len);
+            // log_error("recv_buffer: old len %d < new len %d. Erase old one, replace with new onw\n", ret.first->second.len, len);
+            free(ret.first->second.data);
+            ret.first->second.data = NULL;
+            ret.first->second.data = temp_buf;
+            ret.first->second.data_len = ciphertext_len;
+        }
+        else
+            return -1;
+    }
+    printf("insert_to_record_fragment: %u-(%d, %p, %d) inserted\n", seq, record_size, temp_buf, ciphertext_len);
+    // merge_record_fragment(tls_ciphertext_rcvbuf);
+    return 0;
+}
+
+
 
 int process_tcp_packet(struct thread_data* thr_data)
 {
@@ -274,87 +431,60 @@ int process_tcp_packet(struct thread_data* thr_data)
     unsigned char *tcp_opt = tcp_options(thr_data->buf);
     unsigned int tcp_opt_len = tcphdr->th_off*4 - TCPHDR_SIZE;
     unsigned char *payload = tcp_payload(thr_data->buf);
-    unsigned int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
+    int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
     unsigned short sport = ntohs(tcphdr->th_sport);
     unsigned short dport = ntohs(tcphdr->th_dport);
     unsigned int seq = htonl(tcphdr->th_seq);
     unsigned int ack = htonl(tcphdr->th_ack);
 
-    printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, remote_ip, sport, local_ip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq, tcphdr->th_ack, ack, iphdr->ttl, payload_len);
+    printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, remote_ip, sport, local_ip, dport, tcp_flags_str(tcphdr->th_flags), seq, seq, ack, ack, iphdr->ttl, payload_len);
     // return 0;
-
     if(payload_len){
-        struct TLSHeader *tlshdr = (struct TLSHeader*)payload;
-        // printf("sizeof TLSHeader: %d\n", sizeof(struct TLSHeader));
-        tlshdr->length = htons(tlshdr->length);
-        if(payload_len > 5){
-            unsigned char* ciphertext = (payload) + 5;
-            int ciphertext_len = payload_len - 5;
-            if( tlshdr->type == TLS_TYPE_HANDSHAKE || tlshdr->type == TLS_TYPE_CHANGE_CIPHER_SPEC){
-                printf("TLS Handshake: type %d letting through\n\n", tlshdr->type);
-                return 0;
-            }
-            else{
-                if(sport == 443 && key_obtained){
-                    if(tlshdr->type == TLS_TYPE_APPLICATION_DATA){ //
-                        printf("TLS Handshake: type %d,  len %d(%x)-%d, letting through\n\n", tlshdr->type, tlshdr->length, tlshdr->length, ntohs(tlshdr->length));
-                        if(ciphertext_len > 8){
-                            
-                            memcpy(iv, iv_salt, 4);
-                            memcpy(iv+4, ciphertext, 8);
-                            // strncpy(reinterpret_cast<char *>(iv), reinterpret_cast<char *>(iv_salt), 4);
-                            // strncpy(reinterpret_cast<char *>(iv)+4, reinterpret_cast<char *>(ciphertext), 8);
-                            iv[12] = 0;
-                            printf("IV: ");
-                            for(int i = 0; i < 12; i++)
-                                printf("%02x", iv[i]);
-                            printf("\n");
-                            
-                            consumed = 0;
-                            memcpy(ciphertext_buf+consumed, ciphertext+8, tlshdr->length-8);
-                            consumed += tlshdr->length - 8;
-                            // for(int i = 0; i < ciphertext_len; i++)
-                            //     printf("%02x", plaintext[i]);
-                            // printf("\n");
-                            if(tlshdr->length <= ciphertext_len){
-                                unsigned char plaintext[2000] = {0};
-                                int ret = gcm_decrypt(ciphertext+8, tlshdr->length-8-16, evp_cipher, write_key_buffer, iv, 12, plaintext);
-                                plaintext[tlshdr->length-8-16] = 0;
-                                printf("Plaintext: len %d\n%s\n\n", ret, plaintext);
-                            }
-                            else{
-                                // memcpy(ciphertext_buf+consumed, 0, tlshdr->length-ciphertext_len);
+        int read_bytes = 0;
+        while(read_bytes < payload_len){
+            unsigned char* remain_payload = payload+read_bytes;
+            struct mytlshdr *tlshdr = (struct mytlshdr*)(remain_payload);
 
-                                unsigned char plaintext[20000] = {0};
-                                int ret = gcm_decrypt(ciphertext_buf, tlshdr->length-8-16, evp_cipher, write_key_buffer, iv, 12, plaintext);
-                                plaintext[tlshdr->length-8-16] = 0;
-                                printf("Plaintext(padded): len %d\n%s\n\n", ret, plaintext);
-
+            if(tlshdr->version == 0x0303 || tlshdr->version == 0x0304){
+                tlshdr->length = htons(tlshdr->length);
+                unsigned char* ciphertext = remain_payload + TLSHDR_SIZE;
+                int ciphertext_len = (tlshdr->length < payload_len - read_bytes - TLSHDR_SIZE)? tlshdr->length : payload_len - read_bytes - TLSHDR_SIZE;
+                printf("process_tcp_packet: TLS Record: version %x, type %d, len %d(%x)\n\n", tlshdr->version, tlshdr->type, tlshdr->length, tlshdr->length);
+                switch (tlshdr->type){
+                    case TLS_TYPE_HANDSHAKE:
+                    case TLS_TYPE_CHANGE_CIPHER_SPEC:
+                    {
+                        if(sport == 443)
+                            seq_ini_rem = seq;
+                        return 0;
+                        break;
+                    }
+                    case TLS_TYPE_APPLICATION_DATA:
+                    {
+                        if(sport == 443 && key_obtained){
+                            if(tlshdr->length > 8){
+                                insert_to_record_fragment(tls_ciphertext_rcvbuf, seq+read_bytes+TLSHDR_SIZE, tlshdr->length, ciphertext, ciphertext_len);
+                                merge_record_fragment(tls_ciphertext_rcvbuf);
                             }
                         }
-                        return 0;
+                        break;
                     }
-                    else {
-                        printf("TLS Handshake: type %d drop\n\n", tlshdr->type);
-
-                        memcpy(ciphertext_buf+consumed, payload, payload_len);
-                        consumed += payload_len;
-                        printf("ciphertext len: %d\n", consumed);
-
-                        // printf("get resembled ciphertext: \n");
-                        // for (int i = 0; i < consumed; i++){
-                        //     printf("%02X ", ciphertext_buf[i]);
-                        //     if((i+1) % 16 == 0)
-                        //         printf("       %d\n", i);
-                        // }
-                        // printf("\n");
-
-                        unsigned char plaintext[3000] = {0};
-                        int ret = gcm_decrypt(ciphertext_buf, consumed, evp_cipher, write_key_buffer, iv, 12, plaintext);
-                        printf("gcm_decrypt returned len is %d\nPlaintext: %s\n", ret, plaintext);
-                        return 0;
-                    }
+                    default:
+                        printf("Unknown type: insert to buffer\n");
+                        insert_to_record_fragment(tls_ciphertext_rcvbuf, seq+read_bytes, 0, payload+read_bytes, payload_len-read_bytes);
+                        merge_record_fragment(tls_ciphertext_rcvbuf);
+                        break;
                 }
+                read_bytes += ciphertext_len + TLSHDR_SIZE;
+            }
+            else{
+                printf("TLS: fragment\n");
+                if(sport == 443 && key_obtained)
+                    if(payload_len > 8){
+                        insert_to_record_fragment(tls_ciphertext_rcvbuf, seq+read_bytes, 0, payload+read_bytes, payload_len-read_bytes);
+                        merge_record_fragment(tls_ciphertext_rcvbuf);
+                    }
+                break;
             }
         }
     }
@@ -387,11 +517,11 @@ void *nfq_loop(void *arg)
 int RecvPacket(SSL *ssl)
 {
     int len=100;
-    char buf[2001];
+    char buf[4001];
     do {
-        len=SSL_read(ssl, buf, 2000);
+        len=SSL_read(ssl, buf, 4000);
         buf[len]=0;
-        printf("Received: len = %d\n%s\n\n", len, buf);
+        // printf("Received: len = %d\n%s\n\n", len, buf);
 //        fprintf(fp, "%s",buf);
     } while (len > 0);
     if (len < 0) {
@@ -416,16 +546,18 @@ int open_ssl_conn(int fd){
     SSL_library_init();
     SSLeay_add_ssl_algorithms();
     SSL_load_error_strings();
-    // const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
-    const SSL_METHOD *method = TLSv1_2_client_method(); /* Create new client-method instance */
-
+    const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
+    // const SSL_METHOD *method = TLSv1_2_client_method(); /* Create new client-method instance */
+    
     SSL_CTX *ctx = SSL_CTX_new(method);
     if (ctx == NULL)
     {
         printf("SSL_CTX_new() failed\n");
         return -1;
     }
-    SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_512);
+    SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+
+    SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_1024);
     SSL_CTX_set_max_send_fragment(ctx, 1024);
 
     SSL *ssl = SSL_new(ctx);
@@ -434,7 +566,7 @@ int open_ssl_conn(int fd){
         printf("SSL_new() failed\n");
         return -1;
     }
-    SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_512);
+    SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_1024);
     SSL_set_fd(ssl, fd);
     // const char* const PREFERRED_CIPHERS = "TLS_AES_128_GCM_SHA256";
     const char* const PREFERRED_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256"; // Use TLS 1.2 GCM hardcoded.
@@ -457,9 +589,10 @@ int open_ssl_conn(int fd){
     printf("\n");
     printf("Connected with %s encryption, max_frag_len %d\n", SSL_get_cipher(ssl),SSL_SESSION_get_max_fragment_length(ssl->session));
     
-    const char *chars = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n";
-    SSL_write(ssl, chars, strlen(chars));
-    printf("Write: %s\n\n", chars);
+    char request[200];
+    sprintf(request, "GET /pub/ubuntu/indices/md5sums.gz HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
+    SSL_write(ssl, request, strlen(request));
+    printf("Write: %s\n\n", request);
 
     // unsigned char session_key[20],iv_salt[4];
     // get_server_session_key_and_iv_salt(ssl, session_key, iv_salt);
@@ -477,7 +610,7 @@ int open_ssl_conn(int fd){
     const SSL_CIPHER *cipher = SSL_SESSION_get0_cipher(SSL_get_session(ssl));
     printf("current session cipher name: %s\n", SSL_CIPHER_standard_name(cipher));
     evp_cipher = EVP_get_cipherbyname("AES-128-GCM"); // Temporary Ugly hack here for Baidu.
-    printf("evp_cipher: %ld\n", evp_cipher);
+    printf("evp_cipher: %p\n", evp_cipher);
     ssize_t key_length = EVP_CIPHER_key_length(evp_cipher);
     printf("key_length: %ld\n", key_length);
 
@@ -535,16 +668,46 @@ int get_localport(int fd){
     return ntohs(my_addr.sin_port);
 }
 
+int hostname_to_ip(char *hostname , char *ip)
+{
+	int sockfd;  
+	struct addrinfo hints, *servinfo, *p;
+	struct sockaddr_in *h;
+	int rv;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC; // use AF_INET6 to force IPv6
+	hints.ai_socktype = SOCK_STREAM;
+
+	if ( (rv = getaddrinfo( hostname , "http" , &hints , &servinfo)) != 0) 
+	{
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+		return 1;
+	}
+
+	// loop through all the results and connect to the first we can
+	for(p = servinfo; p != NULL; p = p->ai_next) 
+	{
+		h = (struct sockaddr_in *) p->ai_addr;
+		strcpy(ip , inet_ntoa( h->sin_addr ) );
+	}
+	
+	freeaddrinfo(servinfo); // all done with this structure
+    printf("%s resolved to %s\n" , hostname , ip);
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
     int opt;
 
     if (argc < 1) {
-        printf("Usage: %s <remote_ip> <remote_port> <local_port> <ack_pacing> \n", argv[0]);
+        printf("Usage: %s <domain> \n", argv[0]);
         exit(-1);
     }
 
-    strncpy(remote_ip, argv[1], 16);
+    remote_domain =  argv[1];
+    hostname_to_ip(remote_domain, remote_ip);
     // resolve((struct sockaddr*)&remote, remote_ip);
 
     strncpy(local_ip, "127.0.0.1", 16);
@@ -575,6 +738,7 @@ int main(int argc, char *argv[])
     // mkdir(result_path, 0755);
 
     init();
+    tls_ciphertext_rcvbuf.clear();
 
     // start the nfq proxy thread
     nfq_stop = 0;

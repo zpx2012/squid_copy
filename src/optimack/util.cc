@@ -338,13 +338,13 @@ char* hex_dump_str(const unsigned char *packet, size_t size)
     char *buf = (char*) malloc(size*3);
     memset(buf, 0, size*3);
     unsigned char *byte = (unsigned char*)packet;
-    char tmp[2];
+    char tmp[4];
     int count = 0;
 
     strncat(buf, "\n\n\t\t", 4);
     for (; byte < ((unsigned char*)packet)+size; byte++) {
         count++;
-        snprintf(tmp, 2, "%02x ", *byte);
+        snprintf(tmp, 4, "%02x ", *byte);
         strncat(buf, tmp, 2);
         if (count % 16 == 0) strncat(buf, "\n\t\t", 3);
     }
