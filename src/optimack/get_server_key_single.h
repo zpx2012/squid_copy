@@ -3680,6 +3680,7 @@ int gcm_encrypt(unsigned char *plaintext, int plaintext_len,
 
 int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
                 const EVP_CIPHER *evp_cipher,
+                unsigned char *aad, int aad_len,
                 unsigned char *key,
                 unsigned char *iv, int iv_len,
                 unsigned char *plaintext,
@@ -3698,19 +3699,24 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
     if(!EVP_DecryptInit_ex(ctx, evp_cipher, NULL, NULL, NULL))
         handleErrors();
 
-    if(!EVP_CIPHER_CTX_set_padding(ctx, 0))
-        handleErrors();
+    // if(!EVP_CIPHER_CTX_set_padding(ctx, 0))
+    //     handleErrors();
+
+
 
     /* Set IV length. Not necessary if this is 12 bytes (96 bits) */
     if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
         handleErrors();
 
-    /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag))
-        handleErrors();
-
     /* Initialise key and IV */
     if(!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
+        handleErrors();
+
+/*
+     * Provide any AAD data. This can be called zero or more times as
+     * required
+     */
+    if(aad && !EVP_DecryptUpdate(ctx, NULL, &len, aad, 16))
         handleErrors();
 
     /*
@@ -3722,6 +3728,10 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
     plaintext_len = len;
     printf("plaintext_len = len =  %d\n", len);
     printf("ciphertext_len = %d\n", ciphertext_len);
+
+    /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
+    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag))
+        handleErrors();
 
     
     /*
