@@ -614,7 +614,7 @@ int open_ssl_conn(int fd){
     ssize_t key_length = EVP_CIPHER_key_length(evp_cipher);
     printf("key_length: %ld\n", key_length);
 
-    test_write_key(ssl, digest_algorithm, evp_cipher, iv_salt, write_key_buffer);
+    get_write_key(ssl, digest_algorithm, evp_cipher, iv_salt, write_key_buffer);
     printf("iv_salt: ");
     for(int i = 0; i < 4; i++)
         printf("%02x", iv_salt[i]);

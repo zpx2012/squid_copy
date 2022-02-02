@@ -9,8 +9,11 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval.h"
+#include <netinet/in.h>
+
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
+#include "tls.h"
 #endif
 // #include "comm/Connection.h"
 // #include "../comm/forward.h"
@@ -54,9 +57,12 @@ struct subconn_info
 
     bool is_backup;
     bool fin_or_rst_recved;
+    bool handshake_finished;
 #ifdef USE_OPENSSL
     SSL *ssl;
-    unsigned char *iv_salt, *session_key;
+    TLS_rcvbuf tls_rcvbuf;
+    // uint ini_seq_tls_data;
+    // unsigned char *iv_salt, *session_key;
 #endif
 };
 
@@ -78,9 +84,11 @@ void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
-void* range_watch(void* arg);
-void* range_recv(void* arg);
 void* send_all_requests(void* arg);
+
+void* range_watch(void* arg);
+// void* range_recv(void* arg);
+
 
 class Optimack
 {
@@ -118,6 +126,9 @@ public:
     int send_ACK_adjusted_rwnd(struct subconn_info* conn, int cur_ack);
     int send_optimistic_ack_with_timer(struct subconn_info* conn, int cur_ack, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int process_tcp_packet(struct thread_data* thr_data);
+    int process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned int seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn, char* log);
+    int process_tcp_ciphertext_packet(int pkt_id, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
+    int process_tcp_plaintext_packet(int pkt_id, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
     void send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq);
     int modify_to_main_conn_packet(struct subconn_info* subconn, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
@@ -128,8 +139,12 @@ public:
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
     void send_data_to_backup(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
+    void send_data_to_subconn(struct subconn_info* conn, unsigned int seq, unsigned char* payload, int payload_len);
+    void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();
+    void send_request(char* request, int len);
+
     // variables
     int main_fd;
     char g_local_ip[16]; //TODO: different connection from client
@@ -138,7 +153,7 @@ public:
     unsigned int g_remote_ip_int;
     unsigned short g_remote_port;
     unsigned short squid_port, backup_port;
-    char request[1000], response[400];
+    char *request, response[400];
     unsigned short request_len;
     struct sockaddr_in dstAddr;
     uint squid_MSS;
@@ -195,9 +210,12 @@ public:
     int establish_tcp_connection(int old_sockfd);
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
+    uint get_byte_seq(uint tcp_seq);
+    uint get_tcp_seq(uint byte_seq);
     int get_lost_range(Interval* intvl);
+    int get_http_response_header_len(unsigned char* payload, int payload_len);
     //IntervalList* get_lost_range(uint start, uint end);
-    int send_http_range_request(int sockfd, Interval range);
+    int send_http_range_request(void* sockfd, Interval range);
     void start_range_recv(IntervalList* list);
     void we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_lis);
     void we2squid_loss_and_insert(uint start, uint end);
@@ -233,28 +251,33 @@ public:
 
     //TLS
 #ifdef USE_OPENSSL
-    typedef enum
-    {
-        TLS_TYPE_NONE               = 0,
-        TLS_TYPE_CHANGE_CIPHER_SPEC = 20,
-        TLS_TYPE_ALERT              = 21,
-        TLS_TYPE_HANDSHAKE          = 22,
-        TLS_TYPE_APPLICATION_DATA   = 23,
-        TLS_TYPE_HEARTBEAT          = 24,
-        TLS_TYPE_ACK                = 25  //RFC draft
-    } TlsContentType;
-    struct TLSHeader{
-        unsigned char type;
-        unsigned short version;
-        unsigned short length;
-        unsigned char* ciphertext;
-    };
+    // typedef enum
+    // {
+    //     TLS_TYPE_NONE               = 0,
+    //     TLS_TYPE_CHANGE_CIPHER_SPEC = 20,
+    //     TLS_TYPE_ALERT              = 21,
+    //     TLS_TYPE_HANDSHAKE          = 22,
+    //     TLS_TYPE_APPLICATION_DATA   = 23,
+    //     TLS_TYPE_HEARTBEAT          = 24,
+    //     TLS_TYPE_ACK                = 25  //RFC draft
+    // } TlsContentType;
+
+    // struct TLSHeader{
+    //     unsigned char type;
+    //     unsigned short version;
+    //     unsigned short length;
+    //     unsigned char* ciphertext;
+    // };
+
     bool is_ssl = false;
-    SSL * open_ssl_conn(int fd);
+    SSL * open_ssl_conn(int sockfd);
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
 #endif
 };
 
+double get_current_epoch_time_second();
+double get_current_epoch_time_nanosecond();
+double elapsed(std::chrono::time_point<std::chrono::system_clock> start);
 
 #endif

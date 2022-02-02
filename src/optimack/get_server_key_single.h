@@ -3613,7 +3613,7 @@ void handleErrors(){
 
 int gcm_encrypt(unsigned char *plaintext, int plaintext_len,
                 const EVP_CIPHER *evp_cipher,
-                //unsigned char *aad, int aad_len,
+                unsigned char *aad, int aad_len,
                 unsigned char *key,
                 unsigned char *iv, int iv_len,
                 unsigned char *ciphertext,
@@ -3648,8 +3648,8 @@ int gcm_encrypt(unsigned char *plaintext, int plaintext_len,
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    // if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
-    //     handleErrors();
+    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
+        handleErrors();
 
     /*
      * Provide the message to be encrypted, and obtain the encrypted output.
@@ -3716,7 +3716,7 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(aad && !EVP_DecryptUpdate(ctx, NULL, &len, aad, 16))
+    if(aad && !EVP_DecryptUpdate(ctx, NULL, &len, aad, 13))
         handleErrors();
 
     /*
@@ -3726,8 +3726,6 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
     if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
         handleErrors();
     plaintext_len = len;
-    printf("plaintext_len = len =  %d\n", len);
-    printf("ciphertext_len = %d\n", ciphertext_len);
 
     /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
     if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag))
@@ -3739,7 +3737,6 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
      * anything else is a failure - the plaintext is not trustworthy.
      */
     ret = EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
-    printf("GCM ret: %d\n", ret);
     ERR_print_errors_fp(stdout);
     
     /* Clean up */
@@ -3755,28 +3752,3 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
     }
 }
 
-void test_write_key(SSL *s, const EVP_MD *md, const EVP_CIPHER *evp_cipher, unsigned char *iv_salt, unsigned char *write_key_buffer){
-    if(!s)
-        return;
-
-    // unsigned char iv_salt[4]; // 4 to be modified
-    // unsigned char write_key_buffer[100]; // 100 to be modified
-    size_t iv_len;
-    size_t write_key_buffer_len;
-    // get_server_session_key_and_iv_salt(s, iv_salt, session_key); // This function is obsolete.
-    iv_len = get_server_write_iv_salt(s, iv_salt, md, evp_cipher);
-    printf("iv_len: %ld\n", iv_len);
-    write_key_buffer_len = get_server_write_key(s, write_key_buffer, md, evp_cipher);
-    printf("write_key_buffer_len: %ld\n", write_key_buffer_len);
-    
-    printf("get_server_write_key: ");
-    for (int i = 0; i < write_key_buffer_len; i++)
-        printf("%02x", write_key_buffer[i]);
-    printf("\n");
-
-    printf("get_server_write_iv_salt: ");
-    for(int i = 0; i < 4; i++)
-        printf("%02x", iv_salt[i]);
-    printf("\n");
-    return;
-}

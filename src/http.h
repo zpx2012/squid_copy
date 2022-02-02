@@ -24,6 +24,9 @@ class HttpStateData : public Client
 
 public:
 
+    // Our code
+    ConnStateData* httpServerConnStateData;
+
     /// assists in making and relaying entry caching/sharing decision
     class ReuseDecision
     {

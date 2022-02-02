@@ -139,7 +139,7 @@ FwdState::FwdState(const Comm::ConnectionPointer &client, StoreEntry * e, HttpRe
     n_tries(0),
     pconnRace(raceImpossible)
 {
-    server_conn = httpserver_conn;
+    httpServerConnStateData = httpserver_conn;
     debugs(17, 2, "Forwarding client request " << client << ", url=" << e->url());
     HTTPMSGLOCK(request);
     serverDestinations.reserve(Config.forward_max_tries);
@@ -925,8 +925,8 @@ FwdState::connectStart()
         serverConn->local.toStr(local_ip, 16);
         unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
 
-        server_conn->optimack_server.cleanup();
-        server_conn->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConn->fd);
+        httpServerConnStateData->optimack_server.cleanup();
+        httpServerConnStateData->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConn->fd);
         /* end */
 
         return;
@@ -947,7 +947,7 @@ FwdState::connectStart()
     calls.connector = commCbCall(17,3, "fwdConnectDoneWrapper", CommConnectCbPtrFun(fwdConnectDoneWrapper, this));
     const time_t connTimeout = serverDestinations[0]->connectTimeout(start_t);
     // Our code server_conn
-    Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout, server_conn);
+    Comm::ConnOpener *cs = new Comm::ConnOpener(serverDestinations[0], calls.connector, connTimeout, httpServerConnStateData);
     if (host)
         cs->setHost(host);
     ++n_tries;

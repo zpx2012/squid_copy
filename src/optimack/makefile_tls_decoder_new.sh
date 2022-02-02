@@ -1,1 +1,1 @@
-g++ -g -Wno-write-strings -I/usr/local/ssl/include tls_decoder_new.cc logging.cc thr_pool.cc hping2.cc util.cc socket.cc sendtcp.cc waitpacket.cc -o tls_decoder_new -lnetfilter_queue -lnfnetlink -pthread -L/usr/local/ssl/lib -l:libssl.a -lcrypto 2>&1 > makefile_decoder.log
+g++ -g -Wno-write-strings -I/usr/local/ssl/include tls_decoder_new.cc tls.cc logging.cc thr_pool.cc hping2.cc util.cc socket.cc sendtcp.cc waitpacket.cc -o tls_decoder_new -lnetfilter_queue -lnfnetlink -pthread -L/usr/local/ssl/lib -l:libssl.a -lcrypto 2>&1 > makefile_decoder.log

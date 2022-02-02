@@ -124,6 +124,7 @@ CreateSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer
         errAction = "failed to allocate handle";
         debugs(83, DBG_IMPORTANT, "TLS error: " << errAction << ": " << Security::ErrorString(errCode));
     }
+
 #elif USE_GNUTLS
     gnutls_session_t tmp;
     errCode = gnutls_init(&tmp, static_cast<unsigned int>(type) | GNUTLS_NONBLOCK);
@@ -157,7 +158,6 @@ CreateSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer
             gnutls_transport_set_int(session.get(), fd);
             gnutls_handshake_set_timeout(session.get(), GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 #endif
-            printf("CreateSession here\n");
             debugs(83, 5, "link FD " << fd << " to TLS session=" << (void*)session.get());
             fd_table[fd].ssl = session;
             fd_table[fd].read_method = &tls_read_method;
@@ -183,6 +183,10 @@ CreateSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer
 bool
 Security::CreateClientSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer &c, const char *squidCtx)
 {
+    printf("CreateSession here\n");
+    SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
+    SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_512);
+
     if (!c || !c->getPeer())
         return CreateSession(ctx, c, Security::ProxyOutgoingConfig, Security::Io::BIO_TO_SERVER, squidCtx);
 
@@ -193,6 +197,8 @@ Security::CreateClientSession(const Security::ContextPointer &ctx, const Comm::C
 bool
 Security::CreateServerSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer &c, Security::PeerOptions &o, const char *squidCtx)
 {
+    SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
+    SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_512);
     return CreateSession(ctx, c, o, Security::Io::BIO_TO_CLIENT, squidCtx);
 }
 

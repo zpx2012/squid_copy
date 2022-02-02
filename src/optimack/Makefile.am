@@ -39,6 +39,9 @@ liboptim_la_SOURCES = \
 	modes_local.h \
 	include/openssl/aes.h \
 	include/openssl/engine.h \
-	get_server_key.h
+	get_server_key.h \
+	tls.h \
+	tls.cc \
+	range_request.cc
 
 liboptim_la_LDFLAGS = -L/usr/local/ssl/lib -l:libssl.a -lcrypto

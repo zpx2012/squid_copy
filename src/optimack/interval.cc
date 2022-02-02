@@ -384,8 +384,8 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
         i--;
         if(temp.start < temp.end)
             ans.push_back(temp);
-        else
-            printf("insertNewInterval: temp start > end\n");
+        else if (temp.start != temp.end)
+            printf("insertNewInterval: temp start(%u) > end(%u)\n", temp.start, temp.end);
     }
     Intervals = ans;
     return;

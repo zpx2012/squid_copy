@@ -95,6 +95,9 @@ HttpStateData::HttpStateData(FwdState *theFwdState) :
     ignoreCacheControl = false;
     surrogateNoStore = false;
     serverConnection = fwd->serverConnection();
+    
+    // Our code
+    httpServerConnStateData = fwd->httpServerConnStateData;
 
     if (fwd->serverConnection() != NULL)
         _peer = cbdataReference(fwd->serverConnection()->getPeer());         /* might be NULL */
@@ -2193,10 +2196,6 @@ HttpStateData::sendRequest()
         return false;
     }
 
-#ifdef USE_OPENSSL
-    printf("https use sendRequest too\n");
-#endif
-
     typedef CommCbMemFunT<HttpStateData, CommTimeoutCbParams> TimeoutDialer;
     AsyncCall::Pointer timeoutCall =  JobCallback(11, 5,
                                       TimeoutDialer, this, HttpStateData::httpTimeout);
@@ -2265,6 +2264,25 @@ HttpStateData::sendRequest()
     buildRequestPrefix(&mb);
 
     Comm::Write(serverConnection, &mb, requestSender);
+
+    /* Our code */
+    // char remote_ip[16], local_ip[16];
+    // serverConnection->remote.toStr(remote_ip, 16);
+    // serverConnection->local.toStr(local_ip, 16);
+    // unsigned short remote_port = serverConnection->remote.port(), local_port = serverConnection->local.port();
+    // httpServerConnStateData->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConnection->fd);
+
+#ifdef USE_OPENSSL
+    httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(fd_table[serverConnection->fd].ssl.get());
+
+    printf("https use sendRequest too\n");
+    printf("ssl:%p\n", fd_table[serverConnection->fd].ssl.get());
+    printf("Request:\n%s\n", mb.content());
+
+#endif
+    httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
+    /* end */
+
     return true;
 }
 

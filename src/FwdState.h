@@ -109,7 +109,7 @@ public:
     Comm::ConnectionPointer const & serverConnection() const { return serverConn; };
 
     // Our code
-    ConnStateData* server_conn;
+    ConnStateData* httpServerConnStateData;
 
 private:
     // hidden for safer management of self; use static fwdStart

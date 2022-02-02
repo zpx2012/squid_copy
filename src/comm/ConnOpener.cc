@@ -348,18 +348,20 @@ Comm::ConnOpener::connected()
 
     lookupLocalAddress();
 
+    /* Our code */
     //serverConnection.remote.toStr(buf, len)
     //serverConnection.remote.port()
     char remote_ip[16], local_ip[16];
     conn_->remote.toStr(remote_ip, 16);
     conn_->local.toStr(local_ip, 16);
     unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
+    std::cout << "ConnOpen:" << conn_ << std::endl;
     
     server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, conn_->fd);
-#ifdef USE_OPENSSL
+// #ifdef USE_OPENSSL
     // printf("connected: call open_duplicate_ssl_conns\n");
     // server->optimack_server.open_duplicate_ssl_conns(fd_table[conn_->fd].ssl.get());
-#endif
+// #endif
 
     /* end */ 
 
