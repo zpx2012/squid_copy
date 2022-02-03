@@ -2504,10 +2504,7 @@ int Optimack::process_tcp_plaintext_packet(
                 int verdict = process_tls_payload(incoming, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
 
                 for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
-                    if(rand() % 5 == 0){
-                        plaintext_buf_local.erase(it++);
-                        continue;
-                    }
+
                     unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
                     subconn_info* subconn_squid = subconn_infos[squid_port];
                     int ciphertext_len = subconn_squid->tls_rcvbuf.generate_record(it->first, it->second.data, it->second.data_len, ciphertext);
@@ -2520,7 +2517,16 @@ int Optimack::process_tcp_plaintext_packet(
                         //         printf("\n");
                         // }
                         // printf("\n\n");
+                        printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
                         log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
+                        // if(rand() % 5 == 0){
+                        //     // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
+                        //     // print_hexdump(it->second.data, it->second.data_len);
+                        //     // printf("Original ciphertext: seq %u\n", it->first);
+                        //     // print_hexdump(ciphertext, ciphertext_len);
+                        //     plaintext_buf_local.erase(it++);
+                        //     continue;
+                        // }
                         process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
                         plaintext_buf_local.erase(it++);
                     }
@@ -3269,7 +3275,7 @@ void Optimack::send_data_to_subconn(struct subconn_info* conn, unsigned int seq,
 
 
 #ifdef USE_OPENSSL
-SSL * Optimack::open_ssl_conn(int sockfd){
+SSL * Optimack::open_ssl_conn(int sockfd, bool limit_recordsize){
     SSL_library_init();
     SSLeay_add_ssl_algorithms();
     SSL_load_error_strings();
@@ -3282,16 +3288,21 @@ SSL * Optimack::open_ssl_conn(int sockfd){
         return nullptr;
     }
     SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
-    SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_512);
-    SSL_CTX_set_max_send_fragment(ctx, MAX_FRAG_LEN);
-
+    
+    if(limit_recordsize){
+        SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_512);
+        SSL_CTX_set_max_send_fragment(ctx, MAX_FRAG_LEN);
+    }
+    
     SSL *ssl = SSL_new(ctx);
     if (ssl == nullptr)
     {
         fprintf(stderr, "SSL_new() failed\n");
         return nullptr;
     }
-    SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_512);
+    if(limit_recordsize)
+        SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_512);
+    
     SSL_set_fd(ssl, sockfd);
 
     const char* const PREFERRED_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256";
@@ -3322,7 +3333,7 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = MAX_FULL_GCM_RECORD_LEN;
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        SSL* ssl = open_ssl_conn(it->second->sockfd);
+        SSL* ssl = open_ssl_conn(it->second->sockfd, true);
         set_subconn_ssl_credentials(it->second, ssl);
     }
     pthread_mutex_unlock(&mutex_subconn_infos);

@@ -270,7 +270,7 @@ public:
     // };
 
     bool is_ssl = false;
-    SSL * open_ssl_conn(int sockfd);
+    SSL * open_ssl_conn(int sockfd, bool limit_recordsize);
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
 #endif
