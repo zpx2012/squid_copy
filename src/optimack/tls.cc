@@ -428,3 +428,55 @@ void get_write_key(SSL *s, const EVP_MD *md, const EVP_CIPHER *evp_cipher, unsig
     printf("\n");
     return;
 }
+
+SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+    
+    const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
+    SSL_CTX *ctx = SSL_CTX_new(method);
+    if (ctx == nullptr)
+    {
+        fprintf(stderr, "SSL_CTX_new() failed\n");
+        return nullptr;
+    }
+    SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+    
+    if(limit_recordsize){
+        SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_512);
+        SSL_CTX_set_max_send_fragment(ctx, MAX_FRAG_LEN);
+    }
+    
+    SSL *ssl = SSL_new(ctx);
+    if (ssl == nullptr)
+    {
+        fprintf(stderr, "SSL_new() failed\n");
+        return nullptr;
+    }
+    if(limit_recordsize)
+        SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_512);
+    
+    SSL_set_fd(ssl, sockfd);
+
+    const char* const PREFERRED_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256";
+    // SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
+    SSL_CTX_set_cipher_list(ctx, PREFERRED_CIPHERS);
+
+    const int status = SSL_connect(ssl);
+    if (status != 1)
+    {
+        SSL_get_error(ssl, status);
+        fprintf(stderr, "SSL_connect failed with SSL_get_error code %d\n", status);
+        return nullptr;
+    }
+    printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
+
+    STACK_OF(SSL_CIPHER)* sk = SSL_get1_supported_ciphers(ssl);
+    for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
+        printf(SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
+    }
+
+    return ssl;
+}
+

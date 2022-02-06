@@ -30,6 +30,7 @@ struct subconn_info
     unsigned int ini_seq_loc;  //local sequence number
     unsigned int next_seq_rem;  //rel
     unsigned int last_next_seq_rem;
+    unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     unsigned int next_seq_loc;  //TODO: rel
     short ack_sent;
     bool seq_init;
@@ -140,10 +141,18 @@ public:
     void send_data_to_backup(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_subconn(struct subconn_info* conn, unsigned int seq, unsigned char* payload, int payload_len);
-    void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
-    void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin);
+    // void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();
     void send_request(char* request, int len);
+
+    void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin);
+
+    bool try_update_uint(uint &src, uint target);
+    bool try_update_uint_with_lock(pthread_mutex_t* mutex, uint &src, uint target);
+
+    struct subconn_info* get_slowest_subconn();
+
+
 
     // variables
     int main_fd;
@@ -251,26 +260,7 @@ public:
 
     //TLS
 #ifdef USE_OPENSSL
-    // typedef enum
-    // {
-    //     TLS_TYPE_NONE               = 0,
-    //     TLS_TYPE_CHANGE_CIPHER_SPEC = 20,
-    //     TLS_TYPE_ALERT              = 21,
-    //     TLS_TYPE_HANDSHAKE          = 22,
-    //     TLS_TYPE_APPLICATION_DATA   = 23,
-    //     TLS_TYPE_HEARTBEAT          = 24,
-    //     TLS_TYPE_ACK                = 25  //RFC draft
-    // } TlsContentType;
-
-    // struct TLSHeader{
-    //     unsigned char type;
-    //     unsigned short version;
-    //     unsigned short length;
-    //     unsigned char* ciphertext;
-    // };
-
     bool is_ssl = false;
-    SSL * open_ssl_conn(int sockfd, bool limit_recordsize);
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
 #endif

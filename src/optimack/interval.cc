@@ -304,6 +304,12 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
     if(start > end)
         return;
  
+    if(start == end){
+        if (newInterval.start > Intervals[n - 1].end)
+            Intervals.insert(Intervals.end(), newInterval);
+        return;
+    }
+
     // If set is empty then simply insert
     // newInterval and return.
     if (n == 0)
@@ -345,6 +351,8 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
         overlap = doesOverlap(Intervals[i], newInterval);
         if (!overlap)
         {
+            if(i != n-1 && Intervals[i].start == Intervals[i].end)
+                continue;
             ans.push_back(Intervals[i]);
  
             // Case 4 : To check if given interval

@@ -141,7 +141,7 @@ restart:
             printf("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
             log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
 #ifdef USE_OPENSSL
-            range_ssl = obj->open_ssl_conn(range_sockfd, false);
+            range_ssl = open_ssl_conn(range_sockfd, false);
             SSL_free(range_ssl_old);
             fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
 #endif
@@ -314,7 +314,7 @@ void Optimack::try_for_gaps_and_request(){
         // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);// ;getIntervalList().at(1).start
         if(first_out_of_order){
-            Interval lost_all_range(recved_seq.getFirstEnd(), first_out_of_order);
+            Interval lost_all_range(recved_seq.getFirstEnd(), first_out_of_order-1);
             if(get_lost_range(&lost_all_range) >= 0){
                 ranges_sent.insert(lost_all_range);
                 log_info("lost on all: request range[%u, %u]",lost_all_range.start+ response_header_len + 1, lost_all_range.end + response_header_len + 1);
@@ -434,38 +434,42 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 printf("After removing [%u, %u], %s\n", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
             }
 
-            int sent, packet_len;
+            int sent, packet_len;//rename to byte_len
+            int send_data_len = 0;//rename to tcp_len
             uint ack, seq, seq_rel;
             for (sent=0; unsent > 0; sent += packet_len, unsent -= packet_len) {
                 ack = subconn->ini_seq_loc + subconn->next_seq_loc;
                 seq_rel = obj->get_tcp_seq(header->start + sent);
                 seq = subconn->ini_seq_rem + seq_rel; // Adding the offset back
 
-                unsigned char* cur_data = (u_char*)(data + sent);
+                unsigned char* send_data = (u_char*)(data + sent);
 #ifndef USE_OPENSSL
                 packet_len = unsent >= obj->squid_MSS? obj->squid_MSS : unsent;
+                send_data_len = packet_len;
 #else
                 packet_len = unsent >= MAX_FRAG_LEN? MAX_FRAG_LEN : unsent;
                 // printf("Range plaintext: seq %u\n", header->start + sent);
                 // print_hexdump(cur_data, packet_len);
 
                 unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
-                packet_len = subconn->tls_rcvbuf.generate_record(seq_rel, cur_data, packet_len, ciphertext);
+                int ciphertext_len = subconn->tls_rcvbuf.generate_record(seq_rel, send_data, packet_len, ciphertext);
+                send_data = ciphertext;
+                send_data_len = ciphertext_len;
                 // printf("Range ciphertext: seq %u\n", seq_rel);
                 // print_hexdump(ciphertext, packet_len);
 #endif
 
-                obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
-                log_debug("[Range] insert [%u,%u] to recved_seq, after %s", seq_rel, seq_rel+packet_len, obj->recved_seq.Intervals2str().substr(0,490).c_str());
+                obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+send_data_len);
+                log_debug("[Range] insert [%u,%u] to recved_seq, after %s", seq_rel, seq_rel+send_data_len, obj->recved_seq.Intervals2str().substr(0,490).c_str());
 
-                obj->all_lost_seq.insertNewInterval_withLock(seq_rel, seq_rel+packet_len);
-                log_debug("[Range] insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+packet_len);
+                obj->all_lost_seq.insertNewInterval_withLock(seq_rel, seq_rel+send_data_len);
+                log_debug("[Range] insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+send_data_len);
      
-                obj->send_data_to_squid(seq_rel, cur_data, packet_len);
-                log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, packet_len);
-                printf("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, packet_len);
+                obj->send_data_to_squid(seq_rel, send_data, send_data_len);
+                log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
+                printf("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
             }
-            obj->send_out_of_order_recv_buffer_withLock(seq_rel + packet_len);
+            obj->send_out_of_order_recv_buffer_withLock(seq_rel + send_data_len);
             recv_offset = 0;
             header->start += sent;
         }
@@ -488,7 +492,6 @@ int Optimack::get_lost_range(Interval* intvl)
     if(start == -1 || end == -1)
         return -1;
     
-    printf("[Range]: get lost range, tcp_seq[%u, %u], byte_seq[%u, %u], tcp_seq[%u, %u]\n", intvl->start, intvl->end, start, end, get_tcp_seq(start), get_tcp_seq(end));
 
     // check if the range has already been sent
     IntervalList lost_range;
@@ -496,8 +499,13 @@ int Optimack::get_lost_range(Interval* intvl)
     lost_range.insertNewInterval(start, end);
     lost_range.substract(&ranges_sent);
     if(lost_range.size()){
+        printf("[Range]: get lost range, tcp_seq[%u, %u], byte_seq[%u, %u], tcp_seq[%u, %u]\n", intvl->start, intvl->end, start, end, get_tcp_seq(start), get_tcp_seq(end));
         intvl->start = lost_range.getIntervalList().at(0).start;
         intvl->end = lost_range.getIntervalList().at(0).end;
+        if((intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
+            printf("get_lost_range: len(%u)%512 != 0\n", intvl->end-intvl->start+1);
+            recved_seq.printIntervals();
+        }
         return 0;
     }
     else
@@ -538,7 +546,7 @@ uint Optimack::get_tcp_seq(uint byte_seq){
 
 #ifdef USE_OPENSSL
     if((byte_seq)%MAX_FRAG_LEN != 0){
-        printf("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
+        // printf("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
         log_info("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
     }
     byte_seq += (byte_seq) / MAX_FRAG_LEN * (TLSHDR_SIZE + 8 + 16);

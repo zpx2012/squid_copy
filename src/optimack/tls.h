@@ -112,3 +112,5 @@ int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigne
 int process_tls_payload(bool in_coming, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
 void get_write_key(SSL *s, const EVP_MD *md, const EVP_CIPHER *evp_cipher, unsigned char *iv_salt, unsigned char *write_key_buffer);
 int print_hexdump(unsigned char* hexdump, int len);
+
+SSL* open_ssl_conn(int sockfd, bool limit_recordsize);
