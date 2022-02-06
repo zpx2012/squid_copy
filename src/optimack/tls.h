@@ -108,8 +108,18 @@ private:
 };
 
 unsigned char* merge_two_data(unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len);
+
+// int process_tls_payload(bool in_coming, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
+int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
 int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
-int process_tls_payload(bool in_coming, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
+
+int parse_tls_during_handshake(unsigned char* payload, int payload_len);
+int parse_tls_handshake(unsigned char* data, size_t data_len);
+int parse_tls_handshake_hello(unsigned char* data, size_t data_len, bool client_hello);
+int parse_tls_handshake_hello_extensions(const uint8_t *data, size_t data_len);
+int parse_tls_handshake_hello_extension_max_frag_len(const uint8_t *data, size_t data_len);
+
+
 void get_write_key(SSL *s, const EVP_MD *md, const EVP_CIPHER *evp_cipher, unsigned char *iv_salt, unsigned char *write_key_buffer);
 int print_hexdump(unsigned char* hexdump, int len);
 

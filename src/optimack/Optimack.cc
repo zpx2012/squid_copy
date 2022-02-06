@@ -2075,6 +2075,30 @@ int Optimack::process_tcp_plaintext_packet(
     unsigned short local_port = subconn->local_port;
     char time_str[64];
 
+
+    if(!subconn->handshake_finished){
+        pthread_mutex_lock(&subconn->mutex_opa);
+        if(!subconn->handshake_finished){
+            // if(payload_len && subconn->seq_init){
+            //     if (subconn->next_seq_loc < seq_rel+payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
+            //         subconn->next_seq_loc = seq_rel+payload_len;
+            //         log_info("S%d: (within handshake) update next_seq_loc to %u\n", subconn_i, subconn->next_seq_loc);
+            //     }
+            // }
+            pthread_mutex_unlock(&subconn->mutex_opa);
+
+#ifdef USE_OPENSSL
+            std::map<uint, struct record_fragment> plaintext_buf_local;
+            process_handshaking_tls_payload(payload, payload_len);
+#endif
+            sprintf(log, "%s - handshake hasn't completed. let it pass.", log);
+            log_info(log);
+
+            return 0;
+        }
+        pthread_mutex_unlock(&subconn->mutex_opa);
+    }
+    
     // Outgoing Packets
     if (!incoming) 
     {
@@ -2084,22 +2108,6 @@ int Optimack::process_tcp_plaintext_packet(
             case TH_ACK | TH_URG:
                 {
 
-
-                    if(!subconn->handshake_finished){
-                        pthread_mutex_lock(&subconn->mutex_opa);
-                        if(!subconn->handshake_finished){
-                            // if(payload_len && subconn->seq_init){
-                            //     if (subconn->next_seq_loc < seq_rel+payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
-                            //         subconn->next_seq_loc = seq_rel+payload_len;
-                            //         log_info("S%d: (within handshake) update next_seq_loc to %u\n", subconn_i, subconn->next_seq_loc);
-                            //     }
-                            // }
-                            pthread_mutex_unlock(&subconn->mutex_opa);
-                            return 0;
-                        }
-                        pthread_mutex_unlock(&subconn->mutex_opa);
-                    }
-                    
                     // init seq and ack if haven't
                     if(!subconn->seq_init){
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - trying lock", pkt_id, subconn_i); 
@@ -2115,8 +2123,8 @@ int Optimack::process_tcp_plaintext_packet(
                         pthread_mutex_unlock(&subconn->mutex_opa);
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - unlock", pkt_id, subconn_i); 
                     }
-                    unsigned int seq_rel = seq - subconn->ini_seq_loc;
 
+                    unsigned int seq_rel = seq - subconn->ini_seq_loc;
                     log_info(log);
 
                     // printf("S%d-%d: receive ACK %x, payload_len %d\n", subconn_i, ack - subconn->ini_seq_rem, payload_len);
@@ -2278,10 +2286,7 @@ int Optimack::process_tcp_plaintext_packet(
     // Incoming Packets
     else        
     {
-        unsigned int seq_rel = seq - subconn->ini_seq_rem;
-        // log_info(log);
-
-        if(!subconn->handshake_finished){
+        // if(!subconn->handshake_finished){
             // pthread_mutex_lock(&subconn->mutex_opa);
             // if(!subconn->handshake_finished){
             //     if(payload_len && subconn->seq_init){
@@ -2289,13 +2294,13 @@ int Optimack::process_tcp_plaintext_packet(
             //             subconn->next_seq_rem = seq_rel+payload_len;
             //             recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
             //     }
-            //     pthread_mutex_unlock(&subconn->mutex_opa);
-                sprintf(log, "%s - handshake hasn't completed. let it pass.", log);
-                log_info(log);
-                return 0;
+                // pthread_mutex_unlock(&subconn->mutex_opa);
+                // return 0;
             // }
             // pthread_mutex_unlock(&subconn->mutex_opa);
-        }
+        // }
+
+        unsigned int seq_rel = seq - subconn->ini_seq_rem;
 
         switch (tcphdr->th_flags) {
             case TH_SYN | TH_ACK://last ack from handshake was lost
@@ -2423,7 +2428,7 @@ int Optimack::process_tcp_plaintext_packet(
 
                 // send_data_to_squid(seq_rel, payload, payload_len);
                 std::map<uint, struct record_fragment> plaintext_buf_local;
-                int verdict = process_tls_payload(incoming, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
+                int verdict = process_incoming_tls_payload(incoming, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
 
                 for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
 
@@ -2441,14 +2446,14 @@ int Optimack::process_tcp_plaintext_packet(
                         // printf("\n\n");
                         // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
                         log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
-                        if(rand() % 5 == 0){
+                        // if(rand() % 5 == 0){
                             // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
                             // print_hexdump(it->second.data, it->second.data_len);
                             // printf("Original ciphertext: seq %u\n", it->first);
                             // print_hexdump(ciphertext, ciphertext_len);
-                            plaintext_buf_local.erase(it++);
-                            continue;
-                        }
+                            // plaintext_buf_local.erase(it++);
+                            // continue;
+                        // }
                         process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
                         plaintext_buf_local.erase(it++);
                     }

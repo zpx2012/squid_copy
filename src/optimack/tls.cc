@@ -289,7 +289,7 @@ int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigne
 // }
 
 //return verdict
-int process_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
+int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
 
     if(!in_coming)
         return -1;
@@ -310,56 +310,174 @@ int process_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char
         return process_incoming_tls_appdata(false, seq_tls_data, payload, payload_len, tls_rcvbuf, plaintext_buf_local);
     }
 }
-// int process_tls_payload(bool in_coming, unsigned int seq, unsigned int ack, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
-//     int read_bytes = 0;
-//     while(read_bytes < payload_len){
-//         unsigned char* remain_payload = payload+read_bytes;
-//         struct mytlshdr *tlshdr = (struct mytlshdr*)(remain_payload);
-//         int tlshdr_len = htons(tlshdr->length);
 
-//         if(tlshdr->version == tls_rcvbuf.get_version_reversed()){
-//             // unsigned char* ciphertext = remain_payload + TLSHDR_SIZE;
-//             // int ciphertext_len = (tlshdr_len < payload_len - read_bytes - TLSHDR_SIZE)? tlshdr_len : payload_len - read_bytes - TLSHDR_SIZE;
-//             // printf("process_tcp_packet: TLS Record: version %x, type %d, len %d(%x)\n", tlshdr->version, tlshdr->type, tlshdr_len, tlshdr_len);
-//             switch (tlshdr->type){
-//                 case TLS_TYPE_HANDSHAKE:
-//                 case TLS_TYPE_CHANGE_CIPHER_SPEC:// what if an application data comes after 
-//                 {
-//                     return 0;
-//                     break;
-//                 }
-//                 case TLS_TYPE_APPLICATION_DATA:
-//                 {
-//                     if(in_coming){
-//                         if(tlshdr_len > 8){
-//                             // Assumption: application data followed by application data
-//                             // insert the rest of the packet to rcvbuf, might contain two or more record
-//                             return process_incoming_tls_appdata(true, seq+read_bytes, payload+read_bytes, payload_len-read_bytes, tls_rcvbuf, plaintext_buf_local);
-                            
-//                         }
-//                     }
-//                     else 
-//                         return 0;
-//                     break;
-//                 }
-//                 default:
-//                     printf("Unknown type: %d letting through\n", tlshdr->type);
-//                     return 0;
-//                     break;
-//             }
-//             read_bytes += tlshdr_len + TLSHDR_SIZE;
-//         }
-//         else{
-//             if(in_coming){
-//                 // printf("TLS: fragment\n");
-//                 return process_incoming_tls_appdata(false, seq+read_bytes, payload+read_bytes, payload_len-read_bytes, tls_rcvbuf, plaintext_buf_local);
-//             }
-//             else
-//                 return 0;
-//             break;
-//         }
-//     }
-// }
+
+// int process_tls_payload(bool in_coming, unsigned int seq, unsigned int ack, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
+int process_tls_during_handshake(unsigned char* payload, int payload_len){
+    int read_bytes = 0;
+
+    while(read_bytes < payload_len){
+        unsigned char* remain_payload = payload+read_bytes;
+        struct mytlshdr *tlshdr = (struct mytlshdr*)(remain_payload);
+        int tlshdr_len = htons(tlshdr->length);
+
+        // if(tlshdr->version == 0x0303){ //CLient hello has 0x0301
+            switch (tlshdr->type){
+                case TLS_TYPE_HANDSHAKE:
+                {
+                    parse_tls_handshake(remain_payload, payload_len - read_bytes);
+                }
+
+                case TLS_TYPE_CHANGE_CIPHER_SPEC:// what if an application data comes after 
+                {
+                    return 0;
+                    break;
+                }
+                case TLS_TYPE_APPLICATION_DATA:
+                {
+                    return 0;
+                    break;
+                }
+                default:
+                {
+                    printf("Unknown type: %d letting through\n", tlshdr->type);
+                    return 0;
+                    break;
+                }
+            }
+            read_bytes += tlshdr_len + TLSHDR_SIZE;
+        // }
+        // else
+        //     return 0;
+    }
+}
+
+
+/* Parse a TLS packet for the Server Name Indication extension in the client
+ * hello handshake, returning the first servername found (pointer to static
+ * array)
+ *
+ * Returns:
+ *  >=0  - length of the hostname and updates *hostname
+ *         caller is responsible for freeing *hostname
+ *  -1   - Incomplete request
+ *  -2   - No Host header included in this request
+ *  -3   - Invalid hostname pointer
+ *  -4   - malloc failure
+ *  < -4 - Invalid TLS client hello
+ */
+int parse_tls_handshake(unsigned char* data, size_t data_len){
+    size_t pos = TLSHDR_SIZE;
+    size_t len;
+
+    /* TLS record length */
+    len = ((size_t)data[3] << 8) +
+        (size_t)data[4] + TLSHDR_SIZE;
+    data_len = std::min(data_len, len);
+
+    /* Check we received entire TLS record length */
+    if (data_len < len){
+        printf("parse_tls_handshake: incomplete packet! data len %u, packet len %u\n", data_len, len);
+        return -1;
+    }
+
+    /*
+     * Handshake
+     */
+    if (pos + 1 > data_len) {
+        return -5;
+    }
+    if (data[pos] == 0x01) {
+        return parse_tls_handshake_hello(data + pos, data_len, true);
+    }    
+    else if (data[pos] == 0x02)
+        return parse_tls_handshake_hello(data + pos, data_len, false);
+}
+
+
+int parse_tls_handshake_hello(unsigned char* data, size_t data_len, bool client_hello){
+    
+    /* Skip past fixed length records:
+       1	Handshake Type
+       3	Length
+       2	Version (again)
+       32	Random
+       to	Session ID Length
+     */
+    size_t pos = 38;
+    size_t len;
+
+     /* Session ID */
+    if (pos + 1 > data_len)
+        return -5;
+    len = (size_t)data[pos];
+    pos += 1 + len;
+
+    /* Cipher Suites */
+    if (pos + 2 > data_len)
+        return -5;
+    len = ((size_t)data[pos] << 8) + (size_t)data[pos + 1];
+    pos += 2 + len;
+
+    /* Compression Methods */
+    if (pos + 1 > data_len)
+        return -5;
+    len = (size_t)data[pos];
+    pos += 1 + len;
+
+    if (pos == data_len) {
+        printf("Received client hello without extensions");
+        return -2;
+    }
+
+    /* Extensions */
+    if (pos + 2 > data_len)
+        return -5;
+    len = ((size_t)data[pos] << 8) + (size_t)data[pos + 1];
+    pos += 2;
+
+    if (pos + len > data_len)
+        return -5;
+    return parse_tls_handshake_hello_extensions(data + pos, len);
+}
+
+
+int parse_tls_handshake_hello_extensions(const uint8_t *data, size_t data_len) {
+    size_t pos = 0;
+    size_t len;
+
+    /* Parse each 4 bytes for the extension header */
+    while (pos + 4 <= data_len) {
+        /* Extension Length */
+        len = ((size_t)data[pos + 2] << 8) +
+            (size_t)data[pos + 3];
+
+        /* Check if it's a max_frag_len */
+        if (data[pos] == 0x00 && data[pos + 1] == 0x01) {
+            /* There can be only one extension of each type, so we break
+               our state and move p to beinnging of the extension here */
+            if (pos + 4 + len > data_len)
+                return -5;
+            return parse_tls_handshake_hello_extension_max_frag_len(data + pos + 4, len);
+        }
+        pos += 4 + len; /* Advance to the next extension header */
+    }
+    /* Check we ended where we expected to */
+    if (pos != data_len)
+        return -5;
+
+    return -2;
+}
+
+
+int parse_tls_handshake_hello_extension_max_frag_len(const uint8_t *data, size_t data_len) {
+    size_t pos = 0; 
+    size_t len;
+
+    unsigned char value = data[pos];
+    printf("parse_max_frag_len_extension: value %d\n", value);
+}
+
 
 // int insert_and_merge_to_record_fragment(){
         // uint new_seq_end = new_seq_start + new_data_len;
@@ -479,4 +597,3 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
 
     return ssl;
 }
-
