@@ -2015,7 +2015,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data){
 // #ifdef USE_OPENSSL
 //     return process_tcp_ciphertext_packet(thr_data->pkt_id, tcphdr, seq, ack, tcp_opt, tcp_opt_len, payload, payload_len, incoming, subconn, log);
 // #else
-    return process_tcp_plaintext_packet(thr_data->pkt_id, tcphdr, seq, ack, tcp_opt, tcp_opt_len, payload, payload_len, incoming, subconn, log);
+    return process_tcp_plaintext_packet(thr_data->pkt_id, thr_data->buf, thr_data->len, tcphdr, seq, ack, tcp_opt, tcp_opt_len, payload, payload_len, incoming, subconn, log);
 // #endif
 }
 
@@ -2063,11 +2063,12 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data){
 
 int Optimack::process_tcp_plaintext_packet(
     int pkt_id,
+    unsigned char* packet, int packet_len,
     struct mytcphdr* tcphdr, 
     unsigned int seq, unsigned int ack, 
     unsigned char *tcp_opt, unsigned int tcp_opt_len, 
     unsigned char* payload, int payload_len, 
-    bool incoming, 
+    bool from_server, 
     subconn_info* subconn, 
     char* log)
 {
@@ -2088,8 +2089,10 @@ int Optimack::process_tcp_plaintext_packet(
             pthread_mutex_unlock(&subconn->mutex_opa);
 
 #ifdef USE_OPENSSL
-            std::map<uint, struct record_fragment> plaintext_buf_local;
-            process_handshaking_tls_payload(payload, payload_len);
+        if(from_server){
+            // alter_tls_handshake_hello_extension_max_frag_len(payload, payload_len, from_server, 1, 0);
+            // compute_checksums(packet, 20, packet_len);
+        }
 #endif
             sprintf(log, "%s - handshake hasn't completed. let it pass.", log);
             log_info(log);
@@ -2100,7 +2103,7 @@ int Optimack::process_tcp_plaintext_packet(
     }
     
     // Outgoing Packets
-    if (!incoming) 
+    if (!from_server) 
     {
         switch (tcphdr->th_flags) {
             case TH_ACK:
@@ -2428,7 +2431,7 @@ int Optimack::process_tcp_plaintext_packet(
 
                 // send_data_to_squid(seq_rel, payload, payload_len);
                 std::map<uint, struct record_fragment> plaintext_buf_local;
-                int verdict = process_incoming_tls_payload(incoming, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
+                int verdict = process_incoming_tls_payload(from_server, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
 
                 for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
 
@@ -2877,7 +2880,7 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         printf("Can't malloc subconn_info\n");
         return;
     }
-    printf("%p\n", squid_conn);
+    printf("open_duplicate_conns: squid_conn %p\n", squid_conn);
     memset(squid_conn, 0, sizeof(struct subconn_info));
     squid_conn->local_port = local_port;
     squid_conn->ini_seq_loc = squid_conn->next_seq_loc = 0;

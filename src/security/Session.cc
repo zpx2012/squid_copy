@@ -183,7 +183,7 @@ CreateSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer
 bool
 Security::CreateClientSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer &c, const char *squidCtx)
 {
-    printf("CreateSession here\n");
+    // printf("CreateSession here\n");
     SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
     SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_512);
 
@@ -197,8 +197,8 @@ Security::CreateClientSession(const Security::ContextPointer &ctx, const Comm::C
 bool
 Security::CreateServerSession(const Security::ContextPointer &ctx, const Comm::ConnectionPointer &c, Security::PeerOptions &o, const char *squidCtx)
 {
-    SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
-    SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_512);
+    // SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
+    // SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_512);
     return CreateSession(ctx, c, o, Security::Io::BIO_TO_CLIENT, squidCtx);
 }
 
