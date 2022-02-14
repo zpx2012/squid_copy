@@ -23,5 +23,5 @@ with open(os.path.expanduser(sys.argv[1]),'r') as inf, open(os.path.expanduser(s
         rtt_avg = parse_ping_result(out)
         if rtt_avg:
             print("%s, %s" % (domain, rtt_avg))
-            if float(rtt_avg) < 100:
+            if float(rtt_avg) > 100:
                 outf.writelines(domain + "," + rtt_avg + "\n")

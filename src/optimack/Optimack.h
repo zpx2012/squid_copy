@@ -30,7 +30,6 @@ struct subconn_info
     unsigned int ini_seq_loc;  //local sequence number
     unsigned int next_seq_rem;  //rel
     unsigned int last_next_seq_rem;
-    unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     unsigned int next_seq_loc;  //TODO: rel
     short ack_sent;
     bool seq_init;
@@ -62,6 +61,7 @@ struct subconn_info
 #ifdef USE_OPENSSL
     SSL *ssl;
     TLS_rcvbuf tls_rcvbuf;
+    unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     // uint ini_seq_tls_data;
     // unsigned char *iv_salt, *session_key;
 #endif

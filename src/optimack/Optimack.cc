@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -58,7 +58,7 @@ using namespace std;
 #define BUFLENGTH 4096
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 0
+#define RANGE_MODE 1
 #endif
 
 #ifndef BACKUP_MODE
@@ -1007,7 +1007,6 @@ full_optimistic_ack_altogether(void* arg)
 #else
                                 obj->send_optimistic_ack(it->second, it->second->next_seq_rem_tls, obj->get_ajusted_rwnd(it->second->next_seq_rem_tls));
                                 sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, it->second->next_seq_rem_tls, it->second->local_port);
-
 #endif
                         }
                         // else{
@@ -2429,39 +2428,38 @@ int Optimack::process_tcp_plaintext_packet(
 #else
                 // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
 
-                // send_data_to_squid(seq_rel, payload, payload_len);
-                // std::map<uint, struct record_fragment> plaintext_buf_local;
-                // int verdict = process_incoming_tls_payload(from_server, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
+                std::map<uint, struct record_fragment> plaintext_buf_local;
+                int verdict = process_incoming_tls_payload(from_server, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
 
-                // for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
+                for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
 
-                //     unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
-                //     subconn_info* subconn_squid = subconn_infos[squid_port];
-                //     int ciphertext_len = subconn_squid->tls_rcvbuf.generate_record(it->first, it->second.data, it->second.data_len, ciphertext);
-                //     if(ciphertext_len > 0){
-                //         // printf("Reencrypt:\n");
-                //         // for(int i = 0; i < ciphertext_len; i++){
-                //         //     printf("%02x", *(payload+it->first-seq_rel+i));
-                //         //     printf("%02x ", ciphertext[i]);
-                //         //     if(i % 16 == 15)
-                //         //         printf("\n");
-                //         // }
-                //         // printf("\n\n");
-                //         // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
-                //         log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
-                //         // if(rand() % 5 == 0){
-                //             // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
-                //             // print_hexdump(it->second.data, it->second.data_len);
-                //             // printf("Original ciphertext: seq %u\n", it->first);
-                //             // print_hexdump(ciphertext, ciphertext_len);
-                //             // plaintext_buf_local.erase(it++);
-                //             // continue;
-                //         // }
-                //         process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
-                //         plaintext_buf_local.erase(it++);
-                //     }
-                // }
-                // try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
+                    unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
+                    subconn_info* subconn_squid = subconn_infos[squid_port];
+                    int ciphertext_len = subconn_squid->tls_rcvbuf.generate_record(it->first, it->second.data, it->second.data_len, ciphertext);
+                    if(ciphertext_len > 0){
+                        // printf("Reencrypt:\n");
+                        // for(int i = 0; i < ciphertext_len; i++){
+                        //     printf("%02x", *(payload+it->first-seq_rel+i));
+                        //     printf("%02x ", ciphertext[i]);
+                        //     if(i % 16 == 15)
+                        //         printf("\n");
+                        // }
+                        // printf("\n\n");
+                        // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
+                        log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
+                        // if(rand() % 5 == 0){
+                            // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
+                            // print_hexdump(it->second.data, it->second.data_len);
+                            // printf("Original ciphertext: seq %u\n", it->first);
+                            // print_hexdump(ciphertext, ciphertext_len);
+                            // plaintext_buf_local.erase(it++);
+                            // continue;
+                        // }
+                        process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
+                        plaintext_buf_local.erase(it++);
+                    }
+                }
+                try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
 #endif
                 strcat(log,"\n");
                 log_info(log);
@@ -2745,7 +2743,7 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
 
     new_subconn->win_scale = 1 << tcp_info.tcpi_rcv_wscale;
 #ifndef USE_OPENSSL
-    new_subconn->payload_len = tcp_info.tcpi_advmss;
+    new_subconn->payload_len = tcp_info.tcpi_snd_mss;
 #else
     new_subconn->payload_len = MAX_FULL_GCM_RECORD_LEN;
 #endif
@@ -2885,12 +2883,12 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
     squid_conn->local_port = local_port;
     squid_conn->ini_seq_loc = squid_conn->next_seq_loc = 0;
     squid_conn->ini_seq_rem = squid_conn->next_seq_rem = 0;
-    squid_conn->win_scale = win_scale = 1 << tcp_info.tcpi_snd_mss;
+    squid_conn->win_scale = win_scale = 1 << tcp_info.tcpi_rcv_wscale;
     squid_conn->ack_pacing = ACKPACING;
     squid_conn->ack_sent = 1; //Assume squid will send ACK
     squid_conn->optim_ack_stop = 1;
     squid_conn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-    squid_conn->payload_len = squid_MSS = tcp_info.tcpi_advmss;
+    squid_conn->payload_len = squid_MSS = tcp_info.tcpi_snd_mss;
     squid_conn->last_data_received = squid_conn->timer_print_log = std::chrono::system_clock::now();
     squid_conn->is_backup = false;
     squid_conn->fin_or_rst_recved = false;

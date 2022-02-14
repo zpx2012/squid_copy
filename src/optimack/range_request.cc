@@ -20,10 +20,11 @@
 #define PACKET_SIZE 1460
 
 struct http_header {
-    int parsed;
-    int remain;
     int start;
     int end;
+    int parsed;
+    int remain;
+    int recved;
 };
 
 const char header_field[] = "HTTP/1.1 206";
@@ -57,6 +58,7 @@ int parse_response(http_header *head, char *response, int unread)
                 if(parse_head < recv_end){
                     head->end = (int)strtol(parse_head, &parse_head, 10);
                     head->remain = head->end - head->start + 1;
+                    head->recved = 0;
                     parse_head = std::search(parse_head, recv_end, tail_field, tail_field+4);
                     if (parse_head < recv_end) {
                         parse_head += 4;
@@ -358,7 +360,7 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
     if (rv > MAX_RANGE_SIZE)
         printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
 
-    char data[MAX_RANGE_SIZE+1];
+    // char data[MAX_RANGE_SIZE+1];
     unread += rv;
     consumed = 0;
     while (unread > 0) {
@@ -415,13 +417,13 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
             // else {
                 // still need more data
                 // we can consume and send all unread data
-                printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->start+unread, header->remain, unread);
-                log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start, header->start+unread, header->remain, unread);
-                memcpy(data, response+consumed, unread);
-                header->remain -= unread;
-                consumed += unread;
-                unsent = unread;
-                unread = 0;
+                printf("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
+                log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
+                // memcpy(data, response+consumed, unread);
+                // header->remain -= unread;
+                // consumed += unread;
+                // unsent = unread;
+                // unread = 0;
                 /*
                 * TODO:
                 * remove interval gaps (header->start, header->start+unread-1) here
@@ -430,8 +432,8 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
                 // printf("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
                 //TODO: not start
-                obj->ranges_sent.removeInterval(header->remain, header->remain+unread);
-                log_error("After removing [%u, %u], %s", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
+                obj->ranges_sent.removeInterval(header->start+header->recved, header->start+header->recved+unread);
+                log_error("After removing [%u, %u], %s", header->start+header->recved, header->start+header->recved+unread, obj->ranges_sent.Intervals2str().c_str());
                 // printf("After removing [%u, %u], %s\n", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
             // }
 
@@ -440,10 +442,10 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
             uint ack, seq, seq_rel;
             for (sent=0; unread > 0; ) {
                 ack = subconn->ini_seq_loc + subconn->next_seq_loc;
-                seq_rel = obj->get_tcp_seq(header->start + sent);
+                seq_rel = obj->get_tcp_seq(header->start + header->recved);
                 seq = subconn->ini_seq_rem + seq_rel; // Adding the offset back
 
-                unsigned char* send_data = (u_char*)(data + sent);
+                unsigned char* send_data = (u_char*)(response + consumed);
 #ifndef USE_OPENSSL
                 packet_len = obj->squid_MSS;
                 if(unread < obj->squid_MSS)
@@ -456,7 +458,7 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
 #else
                 packet_len = MAX_FRAG_LEN;
                 if(unread < MAX_FRAG_LEN)
-                    if(head->remain > unread)
+                    if(header->remain > unread)
                         break;
                     else
                         packet_len = unread;
@@ -464,7 +466,7 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 // printf("Range plaintext: seq %u\n", header->start + sent);
                 // print_hexdump(cur_data, packet_len);
 
-                unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
+                unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
                 int ciphertext_len = subconn->tls_rcvbuf.generate_record(seq_rel, send_data, packet_len, ciphertext);
                 send_data = ciphertext;
                 send_data_len = ciphertext_len;
@@ -482,6 +484,7 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
                 printf("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
 
+                header->recved += packet_len;
                 header->remain -= packet_len;
                 consumed += packet_len;
                 unread -= packet_len;
@@ -491,8 +494,13 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
             recv_offset = unread;
             memcpy(response, response+consumed, unread);
             // header->start += sent;
+            break;
         }
     }
+
+    if(unread == 0 && header->remain == 0)
+        header->parsed = 0;
+
     if (unread < 0){
         log_debug("[Range] error: unread < 0");
         return -1;
