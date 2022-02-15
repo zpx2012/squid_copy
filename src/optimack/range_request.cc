@@ -460,8 +460,10 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 if(unread < MAX_FRAG_LEN)
                     if(header->remain > unread)
                         break;
-                    else
+                    else{
                         packet_len = unread;
+                        printf("[Range] packet length(%u) not equal to MAX_FRAG_LEN\n", unread);
+                    }
                 // packet_len = unsent >= MAX_FRAG_LEN? MAX_FRAG_LEN : unsent;
                 // printf("Range plaintext: seq %u\n", header->start + sent);
                 // print_hexdump(cur_data, packet_len);
@@ -531,7 +533,10 @@ int Optimack::get_lost_range(Interval* intvl)
         intvl->end = lost_range.getIntervalList().at(0).end;
 #ifdef USE_OPENSSL
         if((intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
-            printf("get_lost_range: len(%u)%512 != 0\n", intvl->end-intvl->start+1);
+            printf("get_lost_range: len(%u)%512 != 0, ", intvl->end-intvl->start+1);
+            uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
+            intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
+            printf("change range to [%u, %u]\n", intvl->start, intvl->end);
             recved_seq.printIntervals();
         }
 #endif
@@ -641,7 +646,12 @@ int Optimack::get_http_response_header_len(unsigned char* payload, int payload_l
     char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
     p_content_len += content_len_field_len;
     file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
+#ifndef USE_OPENSSL
     ack_end = file_size + response_header_len+1;
+#else
+    ack_end = ((file_size + response_header_len - 1)/MAX_FRAG_LEN + 1) * MAX_FULL_GCM_RECORD_LEN + 1;
+    
+#endif
     printf("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
     log_info("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);

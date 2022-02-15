@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -998,16 +998,22 @@ full_optimistic_ack_altogether(void* arg)
 
                 is_in_overrun = true;
                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
-                    if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
-                        if(it->second->restart_counter < 3){
-                            for(int i = 0; i < 2; i++)
+                    
+                    if(elapsed(it->second->last_data_received) >= 1.5 && it->second->restart_counter < 3){
 #ifndef USE_OPENSSL                
-                                obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_ajusted_rwnd(it->second->next_seq_rem));
-                                sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, it->second->next_seq_rem, it->second->local_port);
+                        uint next_seq_rem = it->second->next_seq_rem;
 #else
-                                obj->send_optimistic_ack(it->second, it->second->next_seq_rem_tls, obj->get_ajusted_rwnd(it->second->next_seq_rem_tls));
-                                sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, it->second->next_seq_rem_tls, it->second->local_port);
+                        uint next_seq_rem = it->second->next_seq_rem_tls;
 #endif
+                        long next_seq_rem_long = next_seq_rem, stall_seq_long = stall_seq;
+                        if(abs(next_seq_rem_long - stall_seq_long) < 5*mss){
+                            for(int i = 0; i < 2; i++)
+                                obj->send_optimistic_ack(it->second, next_seq_rem, obj->get_ajusted_rwnd(next_seq_rem));
+                            sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, next_seq_rem, it->second->local_port);
+
+                        }
+                        else if(it->second == slowest_subconn){
+                            printf("next_seq_rem %u, stall_seq %u, abs diff %ld\n", next_seq_rem, stall_seq, abs(next_seq_rem_long - stall_seq_long));
                         }
                         // else{
                         //     for(int i = 0; i < 10; i++)
@@ -3251,7 +3257,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     printf("\n");
 
     subconn->ssl = ssl;
-    subconn->tls_rcvbuf.set_credentials(evp_cipher, iv_salt, write_key_buffer, 512, 0x0303);
+    subconn->tls_rcvbuf.set_credentials(evp_cipher, iv_salt, write_key_buffer, MAX_FRAG_LEN, 0x0303);
 
     subconn->handshake_finished = true;
     subconn->payload_len = MAX_FULL_GCM_RECORD_LEN;
