@@ -353,7 +353,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
     
     if(limit_recordsize){
-        SSL_CTX_set_tlsext_max_fragment_length(ctx, TLSEXT_max_fragment_length_1024);
+        SSL_CTX_set_tlsext_max_fragment_length(ctx, MAX_FRAG_LEN / 512);
         // SSL_CTX_set_max_send_fragment(ctx, MAX_FRAG_LEN);
     }
     
@@ -364,7 +364,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
         return nullptr;
     }
     if(limit_recordsize)
-        SSL_set_tlsext_max_fragment_length(ssl, TLSEXT_max_fragment_length_1024);
+        SSL_set_tlsext_max_fragment_length(ssl, MAX_FRAG_LEN / 512);
     
     SSL_set_fd(ssl, sockfd);
 
