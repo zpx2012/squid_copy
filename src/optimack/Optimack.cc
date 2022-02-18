@@ -2797,7 +2797,7 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
 void 
 Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
 {
-    printf("New version: CONN_NUM %d, ACK PACE %d\n", CONN_NUM, ACKPACING);
+    printf("open_duplicate_conns: remote %s:%u, local %s:%u, CONN_NUM %d, ACK PACE %d\n", remote_ip, remote_port, local_ip, local_port, CONN_NUM, ACKPACING);
 
     time_in_HH_MM_SS_nospace(start_time);
     start_timestamp = std::chrono::system_clock::now();

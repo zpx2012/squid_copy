@@ -166,8 +166,8 @@ public:
     unsigned int g_remote_ip_int;
     unsigned short g_remote_port;
     unsigned short squid_port, backup_port;
-    char *request, response[400];
-    unsigned short request_len;
+    char *request, *response;
+    unsigned short request_len, response_len;
     struct sockaddr_in dstAddr;
     uint squid_MSS;
     

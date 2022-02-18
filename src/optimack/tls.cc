@@ -1,5 +1,6 @@
 #include "tls.h"
 #include "logging.h"
+#include <bits/stdc++.h>
 
 #include "get_server_key_single.h"
 
@@ -156,6 +157,35 @@ int TLS_rcvbuf::decrypt_one_payload(uint seq, unsigned char* payload, int payloa
     decrypt_end = decrypt_end_local;
     return 0;
 }
+
+//Assuming the record size doesn't change in the all-but-the-last records
+int TLS_rcvbuf::partial_decrypt_tcp_payload(uint seq, unsigned char* payload, int payload_len){
+    int record_start_local, record_end_local; 
+    
+    // for(record_start_local = (seq/record_full_size*record_full_size+1) - seq, record_end_local = record_start_local + record_full_size - 1; 
+    //     record_start_local < payload_len; 
+    //     record_start_local = record_end_local+1, record_end_local += record_full_size)
+    // {
+    //     unsigned char whole_record_ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
+    //     int partial_start = 0, partial_end;
+    //     if(record_start_local < 0){
+    //         partial_start += abs(record_start_local);
+    //     }
+    //     if(record_end_local >= payload_len)
+    // }
+
+
+    // if(decrypt_start_local < 0){
+    //     // printf("decrypt_one_payload: seq_header_offset %d < 0, seq_start %u, (%d, %p, %d), add to %d\n", decrypt_start_local, seq_data_start, seq, payload, payload_len, decrypt_start_local+record_full_size);
+    //     decrypt_start_local += record_full_size;
+    //     if(decrypt_start_local > payload_len){//doesn't contain one full record size
+    //         decrypt_start = decrypt_end = 0;
+    //         return -1;
+    //     }
+    //     // exit(-1);
+    // }
+}
+
 
 int TLS_rcvbuf::decrypt_record(uint seq, unsigned char* record_data, int record_len, unsigned char* plaintext){
     if(record_len <= 8)
@@ -352,8 +382,9 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     }
     SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
     
+    int max_frag_len_version = std::log2(MAX_FRAG_LEN / 256);
     if(limit_recordsize){
-        SSL_CTX_set_tlsext_max_fragment_length(ctx, MAX_FRAG_LEN / 512);
+        SSL_CTX_set_tlsext_max_fragment_length(ctx, max_frag_len_version);
         // SSL_CTX_set_max_send_fragment(ctx, MAX_FRAG_LEN);
     }
     
@@ -364,7 +395,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
         return nullptr;
     }
     if(limit_recordsize)
-        SSL_set_tlsext_max_fragment_length(ssl, MAX_FRAG_LEN / 512);
+        SSL_set_tlsext_max_fragment_length(ssl, max_frag_len_version);
     
     SSL_set_fd(ssl, sockfd);
 
