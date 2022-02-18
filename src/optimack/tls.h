@@ -23,7 +23,7 @@ struct record_fragment{
     }
 };
 
-#define MAX_FRAG_LEN 1024
+#define MAX_FRAG_LEN 2048
 #define MAX_GCM_RECORD_LEN (8+MAX_FRAG_LEN+16)
 #define MAX_FULL_GCM_RECORD_LEN (TLSHDR_SIZE+MAX_GCM_RECORD_LEN)
 uint get_record_num(unsigned int seq);

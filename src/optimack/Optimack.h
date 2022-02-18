@@ -19,6 +19,10 @@
 // #include "../comm/forward.h"
 // #include <bits/stdc++.h>
 // using namespace std;
+
+#define USE_OPTIMACK 0
+
+
 class Optimack;
 
 struct subconn_info

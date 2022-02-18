@@ -58,7 +58,7 @@ using namespace std;
 #define BUFLENGTH 4096
 
 #ifndef RANGE_MODE
-#define RANGE_MODE 1
+#define RANGE_MODE 0
 #endif
 
 #ifndef BACKUP_MODE
@@ -1794,7 +1794,7 @@ void* overrun_detector(void* arg){
     while(!obj->overrun_stop){
         if(is_timeout_and_update(last_print_seqs, 2)){
             obj->print_seq_table();
-            // obj->is_nfq_full(stdout);
+            obj->is_nfq_full(stdout);
             obj->print_ss(stdout);
             printf("\n");
         }

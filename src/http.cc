@@ -2266,21 +2266,17 @@ HttpStateData::sendRequest()
     Comm::Write(serverConnection, &mb, requestSender);
 
     /* Our code */
-    // char remote_ip[16], local_ip[16];
-    // serverConnection->remote.toStr(remote_ip, 16);
-    // serverConnection->local.toStr(local_ip, 16);
-    // unsigned short remote_port = serverConnection->remote.port(), local_port = serverConnection->local.port();
-    // httpServerConnStateData->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConnection->fd);
-
+    if(USE_OPTIMACK){
 #ifdef USE_OPENSSL
-    httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(fd_table[serverConnection->fd].ssl.get());
+        httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(fd_table[serverConnection->fd].ssl.get());
 
-    printf("https use sendRequest too\n");
-    printf("ssl:%p\n", fd_table[serverConnection->fd].ssl.get());
-    printf("Request:\n%s\n", mb.content());
+        printf("https use sendRequest too\n");
+        printf("ssl:%p\n", fd_table[serverConnection->fd].ssl.get());
+        printf("Request:\n%s\n", mb.content());
 
 #endif
-    httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
+       httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
+    }
     /* end */
 
     return true;
