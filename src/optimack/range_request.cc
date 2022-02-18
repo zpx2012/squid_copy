@@ -639,7 +639,9 @@ int Optimack::get_http_response_header_len(unsigned char* payload, int payload_l
     rp.parse(headerBuf);
     response_header_len = rp.messageHeaderSize();
     // response_header_len = 398;
+    response = (char*)malloc(response_header_len+1);
     memcpy(response, payload, response_header_len);
+    response[response_header_len] = 0;
 
     const char* content_len_field = "Content-Length: ";
     int content_len_field_len = strlen(content_len_field);

@@ -2273,14 +2273,14 @@ HttpStateData::sendRequest()
     // httpServerConnStateData->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConnection->fd);
 
 #ifdef USE_OPENSSL
-    httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(fd_table[serverConnection->fd].ssl.get());
+    // httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(fd_table[serverConnection->fd].ssl.get());
 
     printf("https use sendRequest too\n");
     printf("ssl:%p\n", fd_table[serverConnection->fd].ssl.get());
     printf("Request:\n%s\n", mb.content());
 
 #endif
-    httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
+    // httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
     /* end */
 
     return true;

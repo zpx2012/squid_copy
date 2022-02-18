@@ -23,7 +23,7 @@ struct record_fragment{
     }
 };
 
-#define MAX_FRAG_LEN 1024
+#define MAX_FRAG_LEN 512
 #define MAX_GCM_RECORD_LEN (8+MAX_FRAG_LEN+16)
 #define MAX_FULL_GCM_RECORD_LEN (TLSHDR_SIZE+MAX_GCM_RECORD_LEN)
 uint get_record_num(unsigned int seq);
@@ -36,6 +36,8 @@ public:
     int merge_two_record_fragment(struct record_fragment* frag, unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len);
     int decrypt_record_fragment(std::map<uint, struct record_fragment> &plaintext_rcvbuf);
     int decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf);
+    int partial_decrypt_tcp_payload(uint seq, unsigned char* payload, int payload_len);
+    int partial_decrypt_record();
     int decrypt_record(uint seq, unsigned char* record_data, int record_len, unsigned char* plaintext);
     int generate_record(uint seq, unsigned char* plaintext, int len, unsigned char* record_buf);
     int get_aad(uint64_t record_num, int len, unsigned char* aad);

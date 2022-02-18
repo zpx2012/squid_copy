@@ -186,7 +186,7 @@ Security::CreateClientSession(const Security::ContextPointer &ctx, const Comm::C
 #ifdef USE_OPENSSL
     // printf("CreateSession here\n");
     SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
-    SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_1024);
+    SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_2048);
 #endif
 
     if (!c || !c->getPeer())

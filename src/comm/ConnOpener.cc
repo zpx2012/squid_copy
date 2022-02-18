@@ -357,7 +357,7 @@ Comm::ConnOpener::connected()
     unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
     std::cout << "ConnOpen:" << conn_ << std::endl;
     
-    server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, conn_->fd);
+    // server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, conn_->fd);
 // #ifdef USE_OPENSSL
     // printf("connected: call open_duplicate_ssl_conns\n");
     // server->optimack_server.open_duplicate_ssl_conns(fd_table[conn_->fd].ssl.get());
