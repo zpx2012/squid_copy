@@ -2268,12 +2268,14 @@ HttpStateData::sendRequest()
     /* Our code */
     if(USE_OPTIMACK){
 #ifdef USE_OPENSSL
-        httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(fd_table[serverConnection->fd].ssl.get());
+        SSL* ssl = fd_table[serverConnection->fd].ssl.get();
+        if(ssl){
+            httpServerConnStateData->optimack_server.open_duplicate_ssl_conns(ssl);
 
-        printf("https use sendRequest too\n");
-        printf("ssl:%p\n", fd_table[serverConnection->fd].ssl.get());
-        printf("Request:\n%s\n", mb.content());
-
+            printf("https use sendRequest too\n");
+            printf("ssl:%p\n", ssl);
+            printf("Request:\n%s\n", mb.content());
+        }
 #endif
        httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
     }
