@@ -19,6 +19,10 @@
 // #include "../comm/forward.h"
 // #include <bits/stdc++.h>
 // using namespace std;
+
+#define USE_OPTIMACK 1
+
+
 class Optimack;
 
 struct subconn_info
@@ -99,6 +103,8 @@ public:
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
+    struct subconn_info *create_subconn_info(int sockfd, bool is_backup); 
+    int insert_subconn_info(std::map<uint, struct subconn_info*> &subconn_infos, uint& subconn_count, struct subconn_info* new_subconn);
     void open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_list, bool is_backup);
     void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
     int teardown_nfq();
@@ -259,8 +265,8 @@ public:
     int resend_cnt = 0;
 
     //TLS
-#ifdef USE_OPENSSL
     bool is_ssl = false;
+#ifdef USE_OPENSSL
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
 #endif
