@@ -920,13 +920,14 @@ FwdState::connectStart()
         // }
         //serverConnection.remote.toStr(buf, len)
         //serverConnection.remote.port()
-        char remote_ip[16], local_ip[16];
-        serverConn->remote.toStr(remote_ip, 16);
-        serverConn->local.toStr(local_ip, 16);
-        unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
+        
+        // char remote_ip[16], local_ip[16];
+        // serverConn->remote.toStr(remote_ip, 16);
+        // serverConn->local.toStr(local_ip, 16);
+        // unsigned short remote_port = serverConn->remote.port(), local_port = serverConn->local.port();
 
-        httpServerConnStateData->optimack_server.cleanup();
-        httpServerConnStateData->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConn->fd);
+        // httpServerConnStateData->optimack_server.cleanup();
+        // httpServerConnStateData->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, serverConn->fd);
         /* end */
 
         return;

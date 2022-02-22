@@ -648,12 +648,14 @@ int Optimack::get_http_response_header_len(unsigned char* payload, int payload_l
     char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
     p_content_len += content_len_field_len;
     file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
+    if(file_size)
 #ifndef USE_OPENSSL
-    ack_end = file_size + response_header_len+1;
+        ack_end += file_size + response_header_len;
 #else
-    ack_end = ((file_size + response_header_len - 1)/MAX_FRAG_LEN + 1) * MAX_FULL_GCM_RECORD_LEN + 1;
-    
+        ack_end = ((file_size + response_header_len - 1)/MAX_FRAG_LEN + 1) * MAX_FULL_GCM_RECORD_LEN + 1;
 #endif
+    // else
+    //     ack_end = 1;
     printf("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
     log_info("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);

@@ -2280,7 +2280,7 @@ HttpStateData::sendRequest()
     printf("Request:\n%s\n", mb.content());
 
 #endif
-    // httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
+    httpServerConnStateData->optimack_server.send_request(mb.content(), mb.contentSize());
     /* end */
 
     return true;

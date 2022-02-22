@@ -233,7 +233,7 @@ public:
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
     IntervalList ranges_sent;
-    uint response_header_len = 0, requested_bytes = 0, file_size = 0, ack_end = -1;
+    uint response_header_len = 0, requested_bytes = 0, file_size = 0, ack_end = 1;
 
     //receive buffer
     struct data_segment{
