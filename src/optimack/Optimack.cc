@@ -2036,6 +2036,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data){
 // #ifdef USE_OPENSSL
 //     return process_tcp_ciphertext_packet(thr_data->pkt_id, tcphdr, seq, ack, tcp_opt, tcp_opt_len, payload, payload_len, incoming, subconn, log);
 // #else
+
     return process_tcp_plaintext_packet(thr_data->pkt_id, thr_data->buf, thr_data->len, tcphdr, seq, ack, tcp_opt, tcp_opt_len, payload, payload_len, incoming, subconn, log);
 // #endif
 }
@@ -2295,13 +2296,13 @@ int Optimack::process_tcp_plaintext_packet(
                                     last_off_packet = off_packet_num;
                                 }
                             }
-                            return -1;
+                            return 0;
                         }
                     }
                     else{
                         log_info("P%d-S%d-out: ack %u, win %d", pkt_id, subconn_i, ack - subconn->ini_seq_rem, ntohs(tcphdr->th_win) * subconn->win_scale);
                     }
-                    return -1;
+                    return 0;
                     break;
                 }
             

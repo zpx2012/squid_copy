@@ -147,7 +147,7 @@ int TLS_rcvbuf::decrypt_one_payload(uint seq, unsigned char* payload, int payloa
                 printf("tlshdr length %d != %lu !\n", tlshdr_len, record_full_size-TLSHDR_SIZE);
             }
             unsigned char plaintext[MAX_FRAG_LEN+1] = {0};//
-            int plaintext_len = decrypt_record(seq+decrypt_end_local, payload+decrypt_end_local+TLSHDR_SIZE, tlshdr_len, plaintext);
+            int plaintext_len = decrypt_record(seq+decrypt_end_local, payload+decrypt_end_local, tlshdr_len + TLSHDR_SIZE, plaintext);
             if(plaintext_len > 0)
                 insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, plaintext, plaintext_len);
             // insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, payload+decrypt_end_local, record_full_size);
@@ -160,19 +160,41 @@ int TLS_rcvbuf::decrypt_one_payload(uint seq, unsigned char* payload, int payloa
 
 //Assuming the record size doesn't change in the all-but-the-last records
 int TLS_rcvbuf::partial_decrypt_tcp_payload(uint seq, unsigned char* payload, int payload_len){
-    int record_start_local, record_end_local; 
+    int payload_index_record_start, payload_index_record_end; 
     
-    // for(record_start_local = (seq/record_full_size*record_full_size+1) - seq, record_end_local = record_start_local + record_full_size - 1; 
-    //     record_start_local < payload_len; 
-    //     record_start_local = record_end_local+1, record_end_local += record_full_size)
-    // {
-    //     unsigned char whole_record_ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
-    //     int partial_start = 0, partial_end;
-    //     if(record_start_local < 0){
-    //         partial_start += abs(record_start_local);
-    //     }
-    //     if(record_end_local >= payload_len)
-    // }
+    for(payload_index_record_start = (seq/record_full_size*record_full_size+1) - seq, payload_index_record_end = payload_index_record_start + record_full_size - 1; 
+        payload_index_record_start < payload_len-1; 
+        payload_index_record_start = payload_index_record_end+1, payload_index_record_end += record_full_size)
+    {
+        unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0},
+                      plaintext[MAX_FRAG_LEN+1] = {0};
+        int payload_index_partial_start = 0, 
+            record_index_partial_start = 0,
+            partial_len = MAX_FULL_GCM_RECORD_LEN;
+        if(payload_index_record_start >= 0){
+            payload_index_partial_start = payload_index_record_start;
+            record_index_partial_start = 0;
+            partial_len = (payload_index_record_end >= payload_len-1)? payload_len - payload_index_record_start : record_full_size;
+        }
+        else{
+            payload_index_partial_start = 0;
+            record_index_partial_start = -payload_index_record_start;
+            partial_len = (payload_index_record_end >= payload_len-1)? payload_len : payload_index_record_end;
+        }
+        memcpy(ciphertext + record_index_partial_start, payload + payload_index_partial_start, partial_len);
+        int ret = decrypt_record(seq + payload_index_record_start, ciphertext, MAX_FULL_GCM_RECORD_LEN, plaintext);
+        int plaintext_index_partial_start, plaintext_partial_len = partial_len;
+        if(record_index_partial_start <= TLSHDR_SIZE + 8){
+            plaintext_index_partial_start = 0;
+            plaintext_partial_len -= TLSHDR_SIZE + 8;
+        }
+        if(payload_index_record_end <= payload_len-1){
+            plaintext_partial_len -= 16;
+            //copy tag to record object
+        }
+        //store 
+        printf("Partial decrypt: %s\n", plaintext+plaintext_index_partial_start);
+    }
 
 
     // if(decrypt_start_local < 0){
@@ -188,21 +210,27 @@ int TLS_rcvbuf::partial_decrypt_tcp_payload(uint seq, unsigned char* payload, in
 
 
 int TLS_rcvbuf::decrypt_record(uint seq, unsigned char* record_data, int record_len, unsigned char* plaintext){
-    if(record_len <= 8)
+    if(record_len <= 8 + TLSHDR_SIZE)
         return -1;        
 
+    unsigned char* appdata = record_data + TLSHDR_SIZE;
+    int appdata_len = record_len - TLSHDR_SIZE;
+
+    unsigned char* ciphertext = appdata + 8;
+    int ciphertext_len = appdata_len - 8 - 16;
+
     if(seq == 1)
-        set_iv_explicit_init(record_data);
+        set_iv_explicit_init(appdata);
 
     unsigned char iv[13] = {0};
     memcpy(iv, iv_salt, 4);
-    memcpy(iv+4, record_data, 8);
+    memcpy(iv+4, appdata, 8);
     iv[12] = 0;
 
     unsigned char aad[14] = {0};
     uint64_t record_num = get_record_num(seq);
-    get_aad(record_num, record_len-8-16, aad);
-    int ret = gcm_decrypt(record_data+8, record_len-8-16, evp_cipher, aad, 9, write_key_buffer, iv, 12, plaintext, record_data+record_len-16);
+    get_aad(record_num, ciphertext_len, aad);
+    int ret = gcm_decrypt(ciphertext, ciphertext_len, evp_cipher, aad, 9, write_key_buffer, iv, 12, plaintext, record_data+record_len-16);
     if(ret > 0) {
         log_info("decrypt_record: Record No.%lu, decrypted %d bytes", record_num, ret);
         plaintext[ret] = 0;
@@ -292,6 +320,7 @@ int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigne
 
     int decrypt_start = 0, decrypt_end = 0;
     tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end, plaintext_buf_local);
+    tls_rcvbuf.partial_decrypt_tcp_payload(seq, payload, payload_len);
 
     if(decrypt_start != 0 || decrypt_end != payload_len){
         tls_rcvbuf.lock();
