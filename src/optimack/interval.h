@@ -28,6 +28,25 @@ struct Interval
     Interval(unsigned int s, unsigned int e, double sent_time)
         : start(s), end(e), last_recved(0), sent_epoch_time(sent_time), recved_epoch_time(0)
     {
+    }// A subroutine to check if intervals overlap or not.
+    
+    bool overlaps(Interval b)
+    {
+        return (std::min(end, b.end) >= std::max(start, b.start));
+    }
+
+    bool contains(Interval b){
+        return start <= b.start && end >= b.end;
+    }
+
+    Interval intersect(Interval that) {
+        if (!overlaps(that)) {
+            return Interval();
+        }
+        return Interval{std::max(start, that.start), std::min(end, that.end)};
+    }    
+    int length(){
+        return end - start + 1;
     }
 };
 
@@ -90,9 +109,6 @@ public:
     std::string Intervals2str_withLock();
 
 private:
-    // A subroutine to check if intervals overlap or not.
-    bool doesOverlap(Interval a, Interval b);
-    bool does_a_contains_b(Interval a, Interval b);
     
     std::vector<Interval> Intervals;
     pthread_mutex_t mutex_intervals;

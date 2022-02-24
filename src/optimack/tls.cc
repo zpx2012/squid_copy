@@ -2,6 +2,7 @@
 #include "logging.h"
 #include <bits/stdc++.h>
 
+#include "interval.h"
 #include "get_server_key_single.h"
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -148,8 +149,13 @@ int TLS_rcvbuf::decrypt_one_payload(uint seq, unsigned char* payload, int payloa
             }
             unsigned char plaintext[MAX_FRAG_LEN+1] = {0};//
             int plaintext_len = decrypt_record(seq+decrypt_end_local, payload+decrypt_end_local, tlshdr_len + TLSHDR_SIZE, plaintext);
-            if(plaintext_len > 0)
+            if(plaintext_len > 0){
+                printf("decrypt_one_payload: ciphertext_seq %u\nCiphertext:\n", seq+decrypt_end_local);
+                print_hexdump(payload+decrypt_end_local, record_full_size);
+                printf("Plaintext:\n");
+                print_hexdump(plaintext, plaintext_len);
                 insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, plaintext, plaintext_len);
+            }
             // insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, payload+decrypt_end_local, record_full_size);
         }
     }
@@ -162,50 +168,42 @@ int TLS_rcvbuf::decrypt_one_payload(uint seq, unsigned char* payload, int payloa
 int TLS_rcvbuf::partial_decrypt_tcp_payload(uint seq, unsigned char* payload, int payload_len){
     int payload_index_record_start, payload_index_record_end; 
     
-    for(payload_index_record_start = (seq/record_full_size*record_full_size+1) - seq, payload_index_record_end = payload_index_record_start + record_full_size - 1; 
-        payload_index_record_start < payload_len-1; 
+    for(payload_index_record_start = (seq/record_full_size*record_full_size+1), payload_index_record_end = payload_index_record_start + record_full_size - 1; 
+        payload_index_record_start < seq+payload_len-1; 
         payload_index_record_start = payload_index_record_end+1, payload_index_record_end += record_full_size)
     {
+        Interval full_record_intvl(payload_index_record_start, payload_index_record_end),
+                 payload_intvl(seq, (uint)(seq+payload_len-1));
+        Interval intersect = full_record_intvl.intersect(payload_intvl);
+        int partial_len = intersect.length();
+        printf("Full Record[%u, %u], payload[%u, %u], intersect[%u,%u]\n", full_record_intvl.start, full_record_intvl.end, payload_intvl.start, payload_intvl.end, intersect.start, intersect.end);
+
         unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0},
                       plaintext[MAX_FRAG_LEN+1] = {0};
-        int payload_index_partial_start = 0, 
-            record_index_partial_start = 0,
-            partial_len = MAX_FULL_GCM_RECORD_LEN;
-        if(payload_index_record_start >= 0){
-            payload_index_partial_start = payload_index_record_start;
-            record_index_partial_start = 0;
-            partial_len = (payload_index_record_end >= payload_len-1)? payload_len - payload_index_record_start : record_full_size;
-        }
-        else{
-            payload_index_partial_start = 0;
-            record_index_partial_start = -payload_index_record_start;
-            partial_len = (payload_index_record_end >= payload_len-1)? payload_len : payload_index_record_end;
-        }
-        memcpy(ciphertext + record_index_partial_start, payload + payload_index_partial_start, partial_len);
-        int ret = decrypt_record(seq + payload_index_record_start, ciphertext, MAX_FULL_GCM_RECORD_LEN, plaintext);
-        int plaintext_index_partial_start, plaintext_partial_len = partial_len;
-        if(record_index_partial_start <= TLSHDR_SIZE + 8){
+        memcpy(ciphertext + intersect.start - payload_index_record_start, payload + intersect.start - seq, partial_len);
+        printf("partial decrypt: ciphertext_seq %u, offset %u\n", payload_index_record_start, intersect.start - payload_index_record_start);
+        print_hexdump(ciphertext, MAX_FULL_GCM_RECORD_LEN+1);
+        int ret = decrypt_record(payload_index_record_start, ciphertext, MAX_FULL_GCM_RECORD_LEN, plaintext);
+        uint plaintext_index_partial_start = intersect.start - payload_index_record_start,
+             plaintext_index_partial_end = get_plaintext_seq(intersect.end);
+        int plaintext_partial_len = partial_len;
+        if(intersect.start - payload_index_record_start <= TLSHDR_SIZE + 8){
             plaintext_index_partial_start = 0;
             plaintext_partial_len -= TLSHDR_SIZE + 8;
         }
-        if(payload_index_record_end <= payload_len-1){
+        if(intersect.end - payload_index_record_start <= payload_len-1){
             plaintext_partial_len -= 16;
             //copy tag to record object
         }
-        //store 
-        printf("Partial decrypt: %s\n", plaintext+plaintext_index_partial_start);
+
+        // //store 
+        if(plaintext_partial_len > 0){
+            printf("TLS Record: ciphertext_seq %u, offset %u\n", payload_index_record_start, plaintext_index_partial_start);
+            print_hexdump(plaintext+plaintext_index_partial_start, plaintext_partial_len);
+        }       
+        // BIO_hex_string(stdout, 4, 16, plaintext+plaintext_index_partial_start, plaintext_partial_len);
+        // printf("Partial decrypt: %s\n", plaintext+plaintext_index_partial_start);
     }
-
-
-    // if(decrypt_start_local < 0){
-    //     // printf("decrypt_one_payload: seq_header_offset %d < 0, seq_start %u, (%d, %p, %d), add to %d\n", decrypt_start_local, seq_data_start, seq, payload, payload_len, decrypt_start_local+record_full_size);
-    //     decrypt_start_local += record_full_size;
-    //     if(decrypt_start_local > payload_len){//doesn't contain one full record size
-    //         decrypt_start = decrypt_end = 0;
-    //         return -1;
-    //     }
-    //     // exit(-1);
-    // }
 }
 
 
@@ -219,16 +217,23 @@ int TLS_rcvbuf::decrypt_record(uint seq, unsigned char* record_data, int record_
     unsigned char* ciphertext = appdata + 8;
     int ciphertext_len = appdata_len - 8 - 16;
 
-    if(seq == 1)
-        set_iv_explicit_init(appdata);
-
+    uint64_t record_num = get_record_num(seq);
     unsigned char iv[13] = {0};
     memcpy(iv, iv_salt, 4);
-    memcpy(iv+4, appdata, 8);
+    unsigned long long iv_num = *((unsigned long long*)appdata);
+    if(iv_num){
+        printf("decrypt_record: Record No.%lu, iv_num exists %x\n", record_num, iv_num);
+        memcpy(iv+4, appdata, 8);
+    }
+    else{
+        iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
+        iv_num = htobe64(iv_num+record_num-1);
+        memcpy(iv+4, &iv_num, 8);
+        printf("decrypt_record: Record No.%lu, iv_num not exists %x\n", record_num, iv_num);
+    }
     iv[12] = 0;
 
     unsigned char aad[14] = {0};
-    uint64_t record_num = get_record_num(seq);
     get_aad(record_num, ciphertext_len, aad);
     int ret = gcm_decrypt(ciphertext, ciphertext_len, evp_cipher, aad, 9, write_key_buffer, iv, 12, plaintext, record_data+record_len-16);
     if(ret > 0) {
@@ -319,6 +324,8 @@ int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigne
 
 
     int decrypt_start = 0, decrypt_end = 0;
+    if(seq == 1)
+        tls_rcvbuf.set_iv_explicit_init(payload+TLSHDR_SIZE);
     tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end, plaintext_buf_local);
     tls_rcvbuf.partial_decrypt_tcp_payload(seq, payload, payload_len);
 

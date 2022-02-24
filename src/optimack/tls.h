@@ -93,6 +93,14 @@ public:
     bool empty(){
         return tls_ciphertext_rcvbuf.empty();
     }
+
+    uint get_plaintext_seq(uint ciphertext_seq){
+        return ciphertext_seq / MAX_FULL_GCM_RECORD_LEN * (TLSHDR_SIZE + 8 + 16);
+    }
+
+    uint get_ciphtertext_seq(uint plaintext_seq){
+        return (plaintext_seq) / MAX_FRAG_LEN * (TLSHDR_SIZE + 8 + 16);
+    }
     // std::map<uint, struct record_fragment> tls_plaintext_rcvbuf;
 
 private:

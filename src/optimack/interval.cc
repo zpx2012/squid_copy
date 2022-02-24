@@ -177,16 +177,6 @@ unsigned int IntervalList::getElem_withLock(unsigned int index, bool is_start)
     return ret;
 }
 
-// A subroutine to check if intervals overlap or not.
-bool IntervalList::doesOverlap(Interval a, Interval b)
-{
-    return (std::min(a.end, b.end) >= std::max(a.start, b.start));
-}
-
-bool IntervalList::does_a_contains_b(Interval a, Interval b){
-    return a.start <= b.start && a.end >= b.end;
-}
-
 bool IntervalList::contains(unsigned int start, unsigned int end){
     Interval newInterval = Interval(start, end);
     int n = Intervals.size();
@@ -198,7 +188,7 @@ bool IntervalList::contains(unsigned int start, unsigned int end){
         return false;
     
     for(int i = 0; i < n; i++)
-        if(does_a_contains_b(Intervals[i], newInterval)){
+        if(newInterval.contains(Intervals[i])){
             // log_info("%s - [%u, %u] contains newInterval [%u, %u]", Intervals2str().c_str(), Intervals[i].start, Intervals[i].end, start, end);
             return true;
         }
@@ -256,7 +246,7 @@ void IntervalList::insert(Interval newInterval)
     bool overlap = true;
     for (int i = 0; i < n; i++)
     {
-        overlap = doesOverlap(Intervals[i], newInterval);
+        overlap = newInterval.overlaps(Intervals[i]);// doesOverlap(Intervals[i], );
         if (!overlap)
         {
             ans.push_back(Intervals[i]);
@@ -348,7 +338,7 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
     bool overlap = true;
     for (int i = 0; i < n; i++)
     {
-        overlap = doesOverlap(Intervals[i], newInterval);
+        overlap = newInterval.overlaps(Intervals[i]);
         if (!overlap)
         {
             if(i != n-1 && Intervals[i].start == Intervals[i].end)
@@ -385,7 +375,7 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
             if (i == n - 1)
                 overlap = false;
             else
-                overlap = doesOverlap(Intervals[i + 1], newInterval);
+                overlap = newInterval.overlaps(Intervals[i + 1]);
             i++;
         }
  
@@ -428,7 +418,7 @@ void IntervalList::removeInterval_updateTimer(unsigned int start, unsigned int e
     // this function.
     for (int i = 0; i < n; i++)
     {
-        if(doesOverlap(Intervals[i], Interval(start, end))){
+        if(Intervals[i].overlaps(Interval(start, end))){
             if(Intervals[i].start < start){
                 Interval left = Intervals[i];
                 left.end = start;
@@ -487,7 +477,7 @@ void IntervalList::removeInterval(unsigned int start, unsigned int end)
     // this function.
     for (int i = 0; i < n; i++)
     {
-        if(doesOverlap(Intervals[i], Interval(start, end))){
+        if(Intervals[i].overlaps(Interval(start, end))){
             if(Intervals[i].start < start){
                 Interval left = Intervals[i];
                 left.end = start;

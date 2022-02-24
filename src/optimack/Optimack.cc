@@ -1948,6 +1948,9 @@ void Optimack::send_request(char* rq, int rq_len){
     request_len = rq_len;
     request_recved = true;
 
+    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
+        it->second->handshake_finished = true;
+
     pthread_t request_thread;
     if (pthread_create(&request_thread, NULL, send_all_requests, (void*)this) != 0) {
         log_error("Fail to create send_all_requests thread.");
@@ -2296,13 +2299,13 @@ int Optimack::process_tcp_plaintext_packet(
                                     last_off_packet = off_packet_num;
                                 }
                             }
-                            return 0;
+                            return -1;
                         }
                     }
                     else{
                         log_info("P%d-S%d-out: ack %u, win %d", pkt_id, subconn_i, ack - subconn->ini_seq_rem, ntohs(tcphdr->th_win) * subconn->win_scale);
                     }
-                    return 0;
+                    return -1;
                     break;
                 }
             
@@ -2551,7 +2554,7 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
 #ifdef USE_OPENSSL
             printf("use ssl version get_http_response_header_len\n");
             unsigned char plaintext[MAX_FRAG_LEN+1];
-            int plaintext_len = subconn_infos[squid_port]->tls_rcvbuf.decrypt_record(seq_rel, payload+TLSHDR_SIZE, payload_len-TLSHDR_SIZE, plaintext);
+            int plaintext_len = subconn_infos[squid_port]->tls_rcvbuf.decrypt_record(seq_rel, payload, payload_len, plaintext);
             if(plaintext_len > 0)
                 get_http_response_header_len(plaintext, plaintext_len);
 #endif
@@ -2744,7 +2747,7 @@ struct subconn_info* Optimack::create_subconn_info(int sockfd, bool is_backup){
     new_subconn->is_backup = is_backup;
     new_subconn->seq_init = false;
     new_subconn->fin_or_rst_recved = false;
-    new_subconn->handshake_finished = true;
+    new_subconn->handshake_finished = false;
     new_subconn->recved_seq.insertNewInterval_withLock(0,1);
 
     return new_subconn;
@@ -3198,6 +3201,8 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
 
     return 0;
 }
+
+
 
 
 #endif

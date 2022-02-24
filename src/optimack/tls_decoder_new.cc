@@ -277,7 +277,6 @@ int process_tcp_packet(struct thread_data* thr_data)
         return 0;
 
     if(payload_len){
-        return 1;
         std::map<uint, struct record_fragment> plaintext_buf_local;
         int verdict = process_tls_payload(sport == 443, seq, payload, payload_len, tls_rcvbuf, plaintext_buf_local);
 
