@@ -59,6 +59,7 @@ public:
 
 class Reassembler {
 public:
+	Reassembler() {};
 	Reassembler(uint64_t init_seq, ReassemblerType reassem_type = REASSEM_UNKNOWN);
 	~Reassembler();
 
@@ -88,7 +89,6 @@ public:
 	void SetMaxOldBlocks(uint32_t count)	{ max_old_blocks = count; }
 
 protected:
-	Reassembler()	{ }
 
 	friend class DataBlock;
 

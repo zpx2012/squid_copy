@@ -14,6 +14,7 @@
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
 #include "tls.h"
+
 #endif
 // #include "comm/Connection.h"
 // #include "../comm/forward.h"
@@ -24,6 +25,7 @@
 
 
 class Optimack;
+class TLS_Crypto_Coder;
 
 struct subconn_info
 {
@@ -62,14 +64,14 @@ struct subconn_info
     bool is_backup;
     bool fin_or_rst_recved;
     bool handshake_finished;
-#ifdef USE_OPENSSL
+// #ifdef USE_OPENSSL
     SSL *ssl;
-    TLS_Crypto_Coder crypto_coder;
+    TLS_Crypto_Coder* crypto_coder;
     int record_size;
     unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     // uint ini_seq_tls_data;
     // unsigned char *iv_salt, *session_key;
-#endif
+// #endif
 };
 
 // Multithread

@@ -1,3 +1,5 @@
+#ifndef TLS_H
+#define TLS_H
 #include "hping2.h"
 
 #include <pthread.h>
@@ -14,6 +16,8 @@
 #include <string.h>
 #include "reassembler.h"
 #include "Optimack.h"
+
+struct subconn_info;
 
 struct record_fragment{
     // bool is_header;
@@ -125,7 +129,7 @@ class TLS_Decrypted_Records_Map{
 
 public:
     TLS_Decrypted_Records_Map() { decrypted_record_reassembler_map.clear(); }
-    ~TLS_Decrypted_Records_Map();
+    ~TLS_Decrypted_Records_Map() {}
     int insert_plaintext(int record_num, uint seq, u_char* data, int data_len);
     int insert_tag(int record_num, int conn_id,uint offset, u_char* tag, int tag_len);
     int inserted(int record_num);
@@ -138,8 +142,8 @@ private:
 unsigned char* merge_two_data(unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len);
 
 // int process_tls_payload(bool in_coming, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
-int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
-int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
+int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len); // TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
+int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len); // TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
 
 void set_tls_handshake_hello_extension_max_frag_len(unsigned char *extension, unsigned char dst);
 int alter_tls_handshake_hello_extension_max_frag_len(unsigned char *data, int data_len, bool from_server, unsigned char src, unsigned char dst);
@@ -153,3 +157,5 @@ void get_write_key(SSL *s, const EVP_MD *md, const EVP_CIPHER *evp_cipher, unsig
 int print_hexdump(unsigned char* hexdump, int len);
 
 SSL* open_ssl_conn(int sockfd, bool limit_recordsize);
+
+#endif

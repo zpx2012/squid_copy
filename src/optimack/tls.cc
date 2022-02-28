@@ -2,7 +2,6 @@
 #include <bits/stdc++.h>
 
 #include "interval.h"
-#ifdef USE_OPENSSL
 #include "tls.h"
 #include "get_server_key_single.h"
 
@@ -166,14 +165,15 @@ int TLS_Decrypted_Records_Map::inserted(int record_num){
         
             //encrypt it to generate ciphertext
             u_char* ciphertext = new u_char[buf_len+TLSHDR_SIZE+8+16];
-            int ciphertext_len = subconn->crypto_coder.generate_record(record_num, buf, buf_len, ciphertext);
+// #ifdef USE_OPENSSL
+            int ciphertext_len = subconn->crypto_coder->generate_record(record_num, buf, buf_len, ciphertext);
             //decrypt again to verify
-            int decrypt_ret = subconn->crypto_coder.decrypt_record(record_num, ciphertext, ciphertext_len, buf);
-
+            int decrypt_ret = subconn->crypto_coder->decrypt_record(record_num, ciphertext, ciphertext_len, buf);
             if(decrypt_ret > 0){
                 //deliver packet to squid
                 // subconn_infos->begin()->send_data_to_local(seq, buf, buf_len);
             }
+// #endif
         }
     }
 }
@@ -197,7 +197,7 @@ int TLS_Decrypted_Records_Map::insert_tag(int record_num, int conn_id, uint offs
 
 
 
-int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
+int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len){ // TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
 
     // if(!tls_rcvbuf.get_key_obtained() || !tls_rcvbuf.get_seq_data_start()){
     //     bool is_valid = true;
@@ -219,27 +219,27 @@ int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigne
     // }
 
 
-    int decrypt_start = 0, decrypt_end = 0;
-    if(seq == 1)
-        tls_rcvbuf.set_iv_explicit_init(payload+TLSHDR_SIZE);
-    tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end, plaintext_buf_local);
-    tls_rcvbuf.partial_decrypt_tcp_payload(seq, payload, payload_len);
+    // int decrypt_start = 0, decrypt_end = 0;
+    // if(seq == 1)
+    //     tls_rcvbuf.set_iv_explicit_init(payload+TLSHDR_SIZE);
+    // tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end);
+    // tls_rcvbuf.partial_decrypt_tcp_payload(seq, payload, payload_len);
 
-    if(decrypt_start != 0 || decrypt_end != payload_len){
-        tls_rcvbuf.lock();
-        if(decrypt_end < payload_len){
-            tls_rcvbuf.insert_to_record_fragment(seq+decrypt_end, payload+decrypt_end, payload_len-decrypt_end);
-        }
-        if(decrypt_start){
-            tls_rcvbuf.insert_to_record_fragment(seq, payload, decrypt_start);
-        }
-        if(!tls_rcvbuf.empty()) {
-            tls_rcvbuf.merge_record_fragment();
-            tls_rcvbuf.decrypt_record_fragment(plaintext_buf_local);
-        }
-        tls_rcvbuf.unlock();
-    }
-    return 1;
+    // if(decrypt_start != 0 || decrypt_end != payload_len){
+    //     tls_rcvbuf.lock();
+    //     if(decrypt_end < payload_len){
+    //         tls_rcvbuf.insert_to_record_fragment(seq+decrypt_end, payload+decrypt_end, payload_len-decrypt_end);
+    //     }
+    //     if(decrypt_start){
+    //         tls_rcvbuf.insert_to_record_fragment(seq, payload, decrypt_start);
+    //     }
+    //     if(!tls_rcvbuf.empty()) {
+    //         tls_rcvbuf.merge_record_fragment();
+    //         tls_rcvbuf.decrypt_record_fragment(plaintext_buf_local);
+    //     }
+    //     tls_rcvbuf.unlock();
+    // }
+    // return 1;
 }
 
 // int process_incoming_tls_payload(unsigned int seq, unsigned int ack, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
@@ -251,26 +251,26 @@ int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigne
 // }
 
 //return verdict
-int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
+int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len){ // TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
 
-    if(!in_coming)
-        return -1;
+    // if(!in_coming)
+    //     return -1;
 
-    struct mytlshdr *tlshdr = (struct mytlshdr*)(payload);
-    int tlshdr_len = htons(tlshdr->length);
+    // struct mytlshdr *tlshdr = (struct mytlshdr*)(payload);
+    // int tlshdr_len = htons(tlshdr->length);
 
-    if(tlshdr->version == tls_rcvbuf.get_version_reversed()){
-        if(tlshdr->type == TLS_TYPE_APPLICATION_DATA && tlshdr_len > 8){
-            return process_incoming_tls_appdata(true, seq_tls_data, payload, payload_len, tls_rcvbuf, plaintext_buf_local);
-        }
-        else{
-            printf("Unknown type: %d or tlshdr_len %d <= 8\n", tlshdr->type, tlshdr_len);
-            return -1;
-        }
-    }
-    else{
-        return process_incoming_tls_appdata(false, seq_tls_data, payload, payload_len, tls_rcvbuf, plaintext_buf_local);
-    }
+    // if(tlshdr->version == tls_rcvbuf.get_version_reversed()){
+    //     if(tlshdr->type == TLS_TYPE_APPLICATION_DATA && tlshdr_len > 8){
+    //         return process_incoming_tls_appdata(true, seq_tls_data, payload, payload_len);
+    //     }
+    //     else{
+    //         printf("Unknown type: %d or tlshdr_len %d <= 8\n", tlshdr->type, tlshdr_len);
+    //         return -1;
+    //     }
+    // }
+    // else{
+    //     return process_incoming_tls_appdata(false, seq_tls_data, payload, payload_len);
+    // }
 }
 
 
@@ -705,5 +705,3 @@ void append_tls_handshake_hello_extension_max_frag_len(unsigned char *src, int s
         //         }
         //     }
         // }
-
-#endif

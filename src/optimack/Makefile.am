@@ -42,6 +42,8 @@ liboptim_la_SOURCES = \
 	get_server_key.h \
 	tls.h \
 	tls.cc \
-	range_request.cc
+	range_request.cc \
+	reassembler.h \
+	reassembler.cc
 
 liboptim_la_LDFLAGS = -L/usr/local/ssl/lib -l:libssl.a -lcrypto
