@@ -1,9 +1,8 @@
+#include "tls.h"
 #include "logging.h"
 #include <bits/stdc++.h>
 
 #include "interval.h"
-#ifdef USE_OPENSSL
-#include "tls.h"
 #include "get_server_key_single.h"
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -15,8 +14,205 @@ int print_hexdump(unsigned char* hexdump, int len){
     printf("\n\n");
 }
 
+//All seq is seq since tls_application_data
 
-int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_data, int record_len, unsigned char* plaintext){
+int TLS_rcvbuf::insert_to_record_fragment(uint seq, unsigned char* ciphertext, int ciphertext_len){
+    return insert_to_rcvbuf(tls_ciphertext_rcvbuf, seq, ciphertext, ciphertext_len);
+}
+
+int TLS_rcvbuf::insert_to_rcvbuf(std::map<uint, struct record_fragment> &tls_rcvbuf, uint new_seq_start, unsigned char* new_data, int new_data_len){
+    unsigned char* temp_buf = (unsigned char*)malloc(new_data_len);
+    if(!temp_buf){
+        log_error("insert_to_rcvbuf: can't malloc for %d bytes", new_data_len);
+        return -1;
+    }
+    memset(temp_buf, 0, new_data_len);
+    memcpy(temp_buf, new_data, new_data_len);
+
+    auto ret = tls_rcvbuf.insert( std::pair<uint , struct record_fragment>(new_seq_start, record_fragment(temp_buf, new_data_len)) );
+    if (ret.second == false) {
+        log_error("tls_ciphertext_rcvbuf: %u already existed.\n", new_seq_start);
+        if(ret.first->second.data_len < new_data_len){
+            log_info("recv_buffer: old len %d < new len %d. Erase old one, replace with new onw\n", ret.first->second.data_len, new_data_len);
+            // log_error("recv_buffer: old len %d < new len %d. Erase old one, replace with new onw\n", ret.first->second.len, len);
+            free(ret.first->second.data);
+            ret.first->second.data = NULL;
+            ret.first->second.data = temp_buf;
+            ret.first->second.data_len = new_data_len;
+        }
+        else{
+            free(temp_buf);
+            return -1;
+        }
+    }
+    log_info("insert_to_record_fragment: %u-(%p, %d)-%u inserted", new_seq_start, temp_buf, new_data_len, new_seq_start+new_data_len);
+    return 0;
+}
+
+int TLS_rcvbuf::merge_record_fragment(){
+    if(tls_ciphertext_rcvbuf.empty())
+        return -1;
+    for(auto prev = tls_ciphertext_rcvbuf.begin(), cur=std::next(prev); prev != tls_ciphertext_rcvbuf.end();){
+        int prev_len = prev->second.data_len, cur_len = cur->second.data_len;
+
+        if(prev->first + prev_len == cur->first){
+            log_info("merge_record_fragment: %u-(%p, %d) and %u-(%p, %d)", prev->first, prev->second.data, prev->second.data_len, cur->first, cur->second.data, cur->second.data_len);
+            merge_two_record_fragment(&prev->second, prev->second.data, prev->second.data_len, cur->second.data, cur->second.data_len);
+            tls_ciphertext_rcvbuf.erase(cur++);
+            continue;
+        }
+        prev=cur;
+        cur++;
+    }
+    return 0;
+}
+
+int TLS_rcvbuf::merge_two_record_fragment(struct record_fragment* frag, unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len){
+    frag->data = merge_two_data(first_data, first_data_len, second_data, second_data_len);
+    frag->data_len = first_data_len + second_data_len;
+    return 0;
+}
+
+unsigned char* merge_two_data(unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len){
+    unsigned char* new_data = (unsigned char*)malloc(first_data_len+second_data_len);
+    if(!new_data){
+        printf("merge_two_data:370: malloc(%d) failed!\n", first_data_len+second_data_len);
+        return first_data;
+    }
+    memcpy(new_data, first_data, first_data_len);
+    memcpy(new_data+first_data_len, second_data, second_data_len);
+    free(first_data);
+    free(second_data);
+    return new_data;
+}
+
+
+int TLS_rcvbuf::decrypt_record_fragment(std::map<uint, struct record_fragment> &plaintext_rcvbuf){
+    //Use seq to find the header
+    if(tls_ciphertext_rcvbuf.empty())
+        return -1;
+    
+    for(auto it = tls_ciphertext_rcvbuf.begin(); it != tls_ciphertext_rcvbuf.end();){
+        int decrypt_start, decrypt_end;
+        decrypt_one_payload(it->first, it->second.data, it->second.data_len, decrypt_start, decrypt_end, plaintext_rcvbuf);
+
+        if(decrypt_end != decrypt_start){
+            if(decrypt_end < it->second.data_len)
+                insert_to_record_fragment(it->first+decrypt_end, it->second.data+decrypt_end, it->second.data_len-decrypt_end);
+            if(decrypt_start){
+                unsigned char* old_data = it->second.data;
+                unsigned char* new_data = (unsigned char*)malloc(decrypt_start);
+                memcpy(new_data, old_data, decrypt_start);
+                it->second.data = new_data;
+                it->second.data_len = decrypt_start;
+                free(old_data);
+            }
+            else {
+                free(it->second.data);
+                tls_ciphertext_rcvbuf.erase(it++);
+                continue;
+            }
+        }
+        it++;
+    }
+}
+
+int TLS_rcvbuf::decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf){
+    int decrypt_start_local = (seq/record_full_size*record_full_size+1) - seq;
+    int decrypt_end_local;
+    if(decrypt_start_local < 0){
+        // printf("decrypt_one_payload: seq_header_offset %d < 0, seq_start %u, (%d, %p, %d), add to %d\n", decrypt_start_local, seq_data_start, seq, payload, payload_len, decrypt_start_local+record_full_size);
+        decrypt_start_local += record_full_size;
+        if(decrypt_start_local > payload_len){//doesn't contain one full record size
+            decrypt_start = decrypt_end = 0;
+            return -1;
+        }
+        // exit(-1);
+    }
+
+    for(decrypt_end_local = decrypt_start_local; decrypt_end_local+record_full_size <= payload_len; decrypt_end_local += record_full_size){
+        struct mytlshdr* tlshdr = (struct mytlshdr*)(payload+decrypt_end_local);
+        int tlshdr_len = htons(tlshdr->length);
+        log_info("TLS Record: version %04x, type %d, len %d(%x), offset %d", tlshdr->version, tlshdr->type, tlshdr_len, tlshdr_len, decrypt_end_local);
+
+        if(!( tlshdr->version == version_rvs && tlshdr->type == TLS_TYPE_APPLICATION_DATA ) ){
+            printf("decrypt_record_fragment: header not found\n\n");
+            printf("After:\n");
+            print_hexdump(payload, payload_len);
+            printf("New header: \n");
+            print_hexdump(payload+decrypt_end_local, payload_len-decrypt_end_local);
+            exit(-1);
+        }
+        else {
+            if(tlshdr_len != record_full_size-TLSHDR_SIZE){
+                printf("tlshdr length %d != %lu !\n", tlshdr_len, record_full_size-TLSHDR_SIZE);
+            }
+            unsigned char plaintext[MAX_FRAG_LEN+1] = {0};//
+            int plaintext_len = decrypt_record(seq+decrypt_end_local, payload+decrypt_end_local, tlshdr_len + TLSHDR_SIZE, plaintext);
+            if(plaintext_len > 0){
+                printf("decrypt_one_payload: ciphertext_seq %u\nCiphertext:\n", seq+decrypt_end_local);
+                print_hexdump(payload+decrypt_end_local, record_full_size);
+                printf("Plaintext:\n");
+                print_hexdump(plaintext, plaintext_len);
+                insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, plaintext, plaintext_len);
+            }
+            // insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, payload+decrypt_end_local, record_full_size);
+        }
+    }
+    decrypt_start = decrypt_start_local;
+    decrypt_end = decrypt_end_local;
+    return 0;
+}
+
+//Assuming the record size doesn't change in the all-but-the-last records
+int TLS_rcvbuf::partial_decrypt_tcp_payload(uint seq, unsigned char* payload, int payload_len){
+    uint record_start_seq = (seq/record_full_size*record_full_size+1), 
+         record_end_seq = record_start_seq + record_full_size - 1; 
+    
+    for(; record_start_seq < seq+payload_len-1; record_start_seq = record_end_seq+1, record_end_seq += record_full_size)
+    {
+        Interval record_intvl(record_start_seq, record_end_seq), 
+                 payload_intvl(seq, (uint)(seq+payload_len-1)), 
+                 intersect = record_intvl.intersect(payload_intvl);
+        int partial_len = intersect.length();
+
+        if(partial_len <= 0)
+            continue;
+
+        // printf("Full Record[%u, %u], payload[%u, %u], intersect[%u,%u]\n", record_intvl.start, record_intvl.end, payload_intvl.start, payload_intvl.end, intersect.start, intersect.end);
+
+        uint ciphertext_partial_start_index = intersect.start - record_start_seq, 
+             ciphertext_partial_end_index = intersect.end - record_start_seq,
+             payload_partial_start_index = intersect.start - seq;
+        unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0}, plaintext[MAX_FRAG_LEN+1] = {0};
+        memcpy(ciphertext + ciphertext_partial_start_index, payload + payload_partial_start_index, partial_len);
+        int ret = decrypt_record(record_start_seq, ciphertext, MAX_FULL_GCM_RECORD_LEN, plaintext);
+        // printf("partial decrypt: ciphertext_seq %u, offset %u\n", record_start_seq, intersect.start - record_start_seq);
+        // print_hexdump(ciphertext, MAX_FULL_GCM_RECORD_LEN+1);
+        
+        uint plaintext_partial_start_index = ciphertext_partial_start_index <= TLSHDR_SIZE + 8? 0 : ciphertext_partial_start_index - TLSHDR_SIZE - 8,
+             plaintext_partial_end_index = ciphertext_partial_end_index;
+
+        if(ciphertext_partial_end_index <= payload_len-1){
+            plaintext_partial_end_index -= 16;
+            //copy tag to record object
+            //store_tag(record_num, tag, subconn_id)
+        }
+        int plaintext_partial_len = plaintext_partial_end_index - plaintext_partial_start_index + 1;
+
+        // //store 
+        if(plaintext_partial_len > 0){
+            printf("TLS Record: ciphertext_seq %u, offset %u\n", record_start_seq, plaintext_partial_start_index);
+            print_hexdump(plaintext+plaintext_partial_start_index, plaintext_partial_len);
+        }
+        // store_plaintext(record_num, offset, data, data_len)
+        // BIO_hex_string(stdout, 4, 16, plaintext+plaintext_index_partial_start, plaintext_partial_len);
+        // printf("Partial decrypt: %s\n", plaintext+plaintext_index_partial_start);
+    }
+}
+
+
+int TLS_rcvbuf::decrypt_record(uint seq, unsigned char* record_data, int record_len, unsigned char* plaintext){
     if(record_len <= 8 + TLSHDR_SIZE)
         return -1;        
 
@@ -26,7 +222,7 @@ int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_
     unsigned char* ciphertext = appdata + 8;
     int ciphertext_len = appdata_len - 8 - 16;
 
-    // uint64_t record_num = get_record_num(seq);
+    uint64_t record_num = get_record_num(seq);
     unsigned char iv[13] = {0};
     memcpy(iv, iv_salt, 4);
     unsigned long long iv_num = *((unsigned long long*)appdata);
@@ -55,8 +251,7 @@ int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_
     return ret;
 }
 
-
-int TLS_Crypto_Coder::generate_record(uint64_t record_num, unsigned char* plaintext, int len, unsigned char* record_buf){
+int TLS_rcvbuf::generate_record(uint seq, unsigned char* plaintext, int len, unsigned char* record_buf){
     //len > record_size?
     
     record_buf[0] = TLS_TYPE_APPLICATION_DATA;
@@ -64,7 +259,7 @@ int TLS_Crypto_Coder::generate_record(uint64_t record_num, unsigned char* plaint
     *((uint16_t*)(record_buf+3)) = ntohs(len+8+16);
 
     unsigned char iv[13];
-    // uint64_t record_num = get_record_num(seq);
+    uint64_t record_num = get_record_num(seq);
     memcpy(iv, iv_salt, 4);
     unsigned long long iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
     iv_num = htobe64(iv_num+record_num-1);
@@ -100,7 +295,7 @@ uint get_record_num(unsigned int seq){
 }
 
 
-int TLS_Crypto_Coder::get_aad(uint64_t record_num, int len, unsigned char* aad){
+int TLS_rcvbuf::get_aad(uint64_t record_num, int len, unsigned char* aad){
     record_num = htobe64(record_num);
     memcpy(aad, &record_num, 8);
     aad[8] = TLS_TYPE_APPLICATION_DATA;
@@ -122,62 +317,6 @@ int TLS_Decrypted_Record_Reassembler::insert_tag(int conn_id, uint offset, u_cha
     tags[conn_id].NewBlock(offset, tag_len, tag);
     return 0;
 }
-
-// if complete, return subconn_id; otherwise, -1
-int TLS_Decrypted_Record_Reassembler::check_complete(){
-    if(plntxt_buffer->TotalSize() == expected_size){
-        for (auto it = tags.begin(); it != tags.end(); it++){
-            if(it->second.TotalSize() == 16)
-                return it->first;
-        }
-    }
-    return -1;
-}
-
-int TLS_Decrypted_Record_Reassembler::get_complete_plaintext(u_char* buf){
-    int copied_len = plntxt_buffer->InOrderStrs(buf, expected_size);
-    if (copied_len != expected_size){
-        printf("TLS_Decrypted_Record_Reassembler::get_complete_plaintext: Not complete! copied_len %d\n", copied_len);
-        return -1;
-    }
-    return copied_len;
-}
-
-int TLS_Decrypted_Records_Map::inserted(int record_num){
-    //Found record
-    auto tls_decrpyted_record_it = decrypted_record_reassembler_map.find(record_num);
-    if(tls_decrpyted_record_it == decrypted_record_reassembler_map.end()){
-        printf("TLS_Decrypted_Records_Map::inserted: decrypted_record_reassembler_map doesn't have record_num %d\n", record_num);
-    }
-    TLS_Decrypted_Record_Reassembler* tls_decrpyted_record = &tls_decrpyted_record_it->second;
-    
-    //Found the complete tag
-    int port = tls_decrpyted_record->check_complete();
-    if(port != -1){
-        auto it = subconn_infos->find(port);
-        if(it == subconn_infos->end()){
-            printf("TLS_Decrypted_Records_Map::inserted: subconn_infos doesn't have port %d\n", port);
-        }
-        struct subconn_info *subconn = it->second;
-
-        u_char *buf;
-        int buf_len = tls_decrpyted_record->get_complete_plaintext(buf);
-        if(buf_len > 0){
-        
-            //encrypt it to generate ciphertext
-            u_char* ciphertext = new u_char[buf_len+TLSHDR_SIZE+8+16];
-            int ciphertext_len = subconn->crypto_coder.generate_record(record_num, buf, buf_len, ciphertext);
-            //decrypt again to verify
-            int decrypt_ret = subconn->crypto_coder.decrypt_record(record_num, ciphertext, ciphertext_len, buf);
-
-            if(decrypt_ret > 0){
-                //deliver packet to squid
-                // subconn_infos->begin()->send_data_to_local(seq, buf, buf_len);
-            }
-        }
-    }
-}
-
 
 int TLS_Decrypted_Records_Map::insert_plaintext(int record_num, uint seq, u_char* data, int data_len){
     if (!decrypted_record_reassembler_map.count(record_num)){
@@ -705,5 +844,3 @@ void append_tls_handshake_hello_extension_max_frag_len(unsigned char *src, int s
         //         }
         //     }
         // }
-
-#endif

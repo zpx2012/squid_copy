@@ -46,7 +46,10 @@ struct Interval
         return Interval{std::max(start, that.start), std::min(end, that.end)};
     }    
     int length(){
-        return end - start + 1;
+        if(start > end)
+            return end - start + 1;
+        else
+            return 0;
     }
 };
 

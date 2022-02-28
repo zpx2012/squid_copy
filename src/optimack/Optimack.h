@@ -64,7 +64,8 @@ struct subconn_info
     bool handshake_finished;
 #ifdef USE_OPENSSL
     SSL *ssl;
-    TLS_rcvbuf tls_rcvbuf;
+    TLS_Crypto_Coder crypto_coder;
+    int record_size;
     unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     // uint ini_seq_tls_data;
     // unsigned char *iv_salt, *session_key;
@@ -267,8 +268,12 @@ public:
     //TLS
     bool is_ssl = false;
 #ifdef USE_OPENSSL
+    TLS_Decrypted_Records_Map decrypted_records_map;
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
+    int decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf);
+    int partial_decrypt_tcp_payload(uint seq, unsigned char* payload, int payload_len);
+    int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len);
 #endif
 };
 
