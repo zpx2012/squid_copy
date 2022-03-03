@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -2432,8 +2432,8 @@ int Optimack::process_tcp_plaintext_packet(
                         if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
                         // if(recved_seq.getFirstEnd() > 1){
                             // if(optim_ack_stop){
-                                // start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
-                                // printf("P%d-S%d: Start optimistic_ack_altogether\n", pkt_id, subconn_i);
+                                start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
+                                printf("P%d-S%d: Start optimistic_ack_altogether\n", pkt_id, subconn_i);
                             // }
                         }
                     }
@@ -2465,13 +2465,15 @@ int Optimack::process_tcp_plaintext_packet(
 #ifdef USE_OPENSSL
                     // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
                     std::map<uint, struct record_fragment> plaintext_buf_local;
-                    // int verdict = process_incoming_tls_payload(from_server, seq_rel , payload, payload_len, subconn->tls_rcvbuf, plaintext_buf_local);
+                    int verdict = process_incoming_tls_payload(from_server, seq_rel , payload, payload_len, subconn, decrypted_records_map, plaintext_buf_local);
 
                     for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
-
-                        unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
-                        subconn_info* subconn_squid = subconn_infos[squid_port];
-                        int ciphertext_len = subconn_squid->crypto_coder->generate_record(get_record_num(it->first), it->second.data, it->second.data_len, ciphertext);
+                        
+                        // unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
+                        // subconn_info* subconn_squid = subconn_infos[squid_port];
+                        // int ciphertext_len = subconn_squid->crypto_coder->generate_record(get_record_num(it->first), it->second.data, it->second.data_len, ciphertext);
+                        unsigned char *ciphertext = it->second.data;
+                        int ciphertext_len = it->second.data_len;
                         if(ciphertext_len > 0){
                             // printf("Reencrypt:\n");
                             // for(int i = 0; i < ciphertext_len; i++){
@@ -2738,6 +2740,7 @@ struct subconn_info* Optimack::create_subconn_info(int sockfd, bool is_backup){
         return NULL;
     }
     memset(new_subconn, 0, sizeof(struct subconn_info));
+    new_subconn->sockfd = sockfd;
     new_subconn->local_port = get_localport(sockfd);
     new_subconn->ini_seq_loc = new_subconn->next_seq_loc = 0;
     new_subconn->ini_seq_rem = new_subconn->next_seq_rem = 0;
@@ -3161,8 +3164,9 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     pthread_mutex_lock(&mutex_subconn_infos);
     is_ssl = true;
-    set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = MAX_FULL_GCM_RECORD_LEN;
+    set_subconn_ssl_credentials(squid_subconn, squid_ssl);
+    decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         it->second->handshake_finished = false;
         SSL* ssl = open_ssl_conn(it->second->sockfd, true);
@@ -3199,115 +3203,15 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     printf("\n");
 
     subconn->ssl = ssl;
-    subconn->crypto_coder->set_credentials(evp_cipher, iv_salt, write_key_buffer, 0x0303);
+    subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303);
 
     subconn->handshake_finished = true;
-    subconn->payload_len = MAX_FULL_GCM_RECORD_LEN;
+    subconn->payload_len = subconn->record_size = MAX_FULL_GCM_RECORD_LEN;
+
 
     return 0;
 }
 
-//Assuming the record size doesn't change in the all-but-the-last records
-int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len){
-    int record_full_size = subconn->record_size;
-    uint record_start_seq = (seq / record_full_size * record_full_size + 1), 
-         record_end_seq = record_start_seq + record_full_size - 1; 
-    
-    for(; record_start_seq < seq+payload_len-1; record_start_seq = record_end_seq+1, record_end_seq += record_full_size)
-    {
-        Interval record_intvl(record_start_seq, record_end_seq), 
-                 payload_intvl(seq, (uint)(seq+payload_len-1)), 
-                 intersect = record_intvl.intersect(payload_intvl);
-        int partial_len = intersect.length();
-
-        if(partial_len <= 0)
-            continue;
-
-        // printf("Full Record[%u, %u], payload[%u, %u], intersect[%u,%u]\n", record_intvl.start, record_intvl.end, payload_intvl.start, payload_intvl.end, intersect.start, intersect.end);
-        uint record_num = get_record_num(record_start_seq);
-
-        uint ciphertext_partial_start_index = intersect.start - record_start_seq, 
-             ciphertext_partial_end_index = intersect.end - record_start_seq,
-             payload_partial_start_index = intersect.start - seq;
-        unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0}, plaintext[MAX_FRAG_LEN+1] = {0};
-        memcpy(ciphertext + ciphertext_partial_start_index, payload + payload_partial_start_index, partial_len);
-        int ret = subconn->crypto_coder->decrypt_record(record_num, ciphertext, MAX_FULL_GCM_RECORD_LEN, plaintext);
-        // printf("partial decrypt: ciphertext_seq %u, offset %u\n", record_start_seq, intersect.start - record_start_seq);
-        // print_hexdump(ciphertext, MAX_FULL_GCM_RECORD_LEN+1);
-        
-        uint plaintext_start_seq = record_start_seq + TLSHDR_SIZE + 8,
-             plaintext_end_seq = record_end_seq - 16;
-        Interval plaintext_intersect = intersect.intersect(Interval(plaintext_start_seq, plaintext_end_seq));
-        int plaintext_partial_len = plaintext_intersect.length();
-        if(plaintext_partial_len > 0){
-            uint plaintext_partial_start_index = plaintext_intersect.start - plaintext_start_seq;
-            decrypted_records_map.insert_plaintext(record_num, plaintext_partial_start_index, plaintext + plaintext_partial_start_index, plaintext_partial_len);
-
-            // printf("TLS Record: ciphertext_seq %u, offset %u\n", record_start_seq, plaintext_partial_start_index);
-            // print_hexdump(plaintext+plaintext_partial_start_index, plaintext_partial_len);
-        }
-
-        uint tag_start_seq = plaintext_end_seq + 1,
-             tag_end_seq = record_end_seq;
-        Interval tag_intersect = intersect.intersect(Interval(tag_start_seq, tag_end_seq));
-        int tag_partial_len = tag_intersect.length();
-        if(tag_partial_len > 0){
-            uint tag_partial_start_index = tag_intersect.start - tag_start_seq;
-            u_char* tag = ciphertext + MAX_FULL_GCM_RECORD_LEN - 16;
-            decrypted_records_map.insert_tag(record_num, subconn->id, tag_partial_start_index, tag + tag_partial_start_index, tag_partial_len);
-        }
-    }
-}
-
-
-
-
-int Optimack::decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf){
-    // int decrypt_start_local = (seq/record_full_size*record_full_size+1) - seq;
-    // int decrypt_end_local;
-    // if(decrypt_start_local < 0){
-    //     // printf("decrypt_one_payload: seq_header_offset %d < 0, seq_start %u, (%d, %p, %d), add to %d\n", decrypt_start_local, seq_data_start, seq, payload, payload_len, decrypt_start_local+record_full_size);
-    //     decrypt_start_local += record_full_size;
-    //     if(decrypt_start_local > payload_len){//doesn't contain one full record size
-    //         decrypt_start = decrypt_end = 0;
-    //         return -1;
-    //     }
-    //     // exit(-1);
-    // }
-
-    // for(decrypt_end_local = decrypt_start_local; decrypt_end_local+record_full_size <= payload_len; decrypt_end_local += record_full_size){
-    //     struct mytlshdr* tlshdr = (struct mytlshdr*)(payload+decrypt_end_local);
-    //     int tlshdr_len = htons(tlshdr->length);
-    //     log_info("TLS Record: version %04x, type %d, len %d(%x), offset %d", tlshdr->version, tlshdr->type, tlshdr_len, tlshdr_len, decrypt_end_local);
-
-    //     if(!( tlshdr->version == version_rvs && tlshdr->type == TLS_TYPE_APPLICATION_DATA ) ){
-    //         printf("decrypt_record_fragment: header not found\n\n");
-    //         printf("After:\n");
-    //         print_hexdump(payload, payload_len);
-    //         printf("New header: \n");
-    //         print_hexdump(payload+decrypt_end_local, payload_len-decrypt_end_local);
-    //         exit(-1);
-    //     }
-    //     else {
-    //         if(tlshdr_len != record_full_size-TLSHDR_SIZE){
-    //             printf("tlshdr length %d != %lu !\n", tlshdr_len, record_full_size-TLSHDR_SIZE);
-    //         }
-    //         unsigned char plaintext[MAX_FRAG_LEN+1] = {0};//
-    //         int plaintext_len = decrypt_record(seq+decrypt_end_local, payload+decrypt_end_local, tlshdr_len + TLSHDR_SIZE, plaintext);
-    //         if(plaintext_len > 0){
-    //             printf("decrypt_one_payload: ciphertext_seq %u\nCiphertext:\n", seq+decrypt_end_local);
-    //             print_hexdump(payload+decrypt_end_local, record_full_size);
-    //             printf("Plaintext:\n");
-    //             print_hexdump(plaintext, plaintext_len);
-    //             // insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, plaintext, plaintext_len);
-    //         }
-    //         // insert_to_rcvbuf(plaintext_rcvbuf, seq+decrypt_end_local, payload+decrypt_end_local, record_full_size);
-    //     }
-    // }
-    // decrypt_start = decrypt_start_local;
-    // decrypt_end = decrypt_end_local;
-    // return 0;
-}
 
 #endif
 

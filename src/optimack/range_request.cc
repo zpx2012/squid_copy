@@ -469,7 +469,7 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 // print_hexdump(cur_data, packet_len);
 
                 unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
-                int ciphertext_len = subconn->crypto_coder->generate_record(seq_rel, send_data, packet_len, ciphertext);
+                int ciphertext_len = subconn->crypto_coder->generate_record(get_record_num(seq_rel), send_data, packet_len, ciphertext);
                 send_data = ciphertext;
                 send_data_len = ciphertext_len;
                 // printf("Range ciphertext: seq %u\n", seq_rel);

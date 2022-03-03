@@ -353,8 +353,8 @@ uint64_t Reassembler::MemoryAllocation(ReassemblerType rtype)
 	return Reassembler::sizes[rtype];
 	}
 
-int Reassembler::InOrderStrs(u_char* buf, int buf_len){
-	if(!buf || !buf_len){
+int Reassembler::InOrderStrs(u_char* &buf, int buf_len){
+	if(!buf_len){
 		return 0;
 	}
 
@@ -364,18 +364,24 @@ int Reassembler::InOrderStrs(u_char* buf, int buf_len){
 	for ( b = blocks; b; b = b->next ){
 		DataBlock* next = b->next;
 		if(!next){
+			memcpy(buf+copied_len, b->block, b->Size());
+			copied_len += b->Size();
 			break;
 		}
 		else{
+			if(DEBUG_reassem)
+				printf("InOrderStrs: seq %lu, upper %lu, size %lu, next->seq %lu\n", b->seq, b->upper, b->Size(), next->seq);
 			if(b->upper == next->seq){
 				if(copied_len + b->Size() > buf_len){
-					printf("Reassembler::InOrderBytes: copied_len(%d) + b->Size()(%d) > buf_len(%d)\n", copied_len, b->Size(), buf_len);
+					if(DEBUG_reassem)
+						printf("Reassembler::InOrderBytes: copied_len(%d) + b->Size()(%d) > buf_len(%d)\n", copied_len, b->Size(), buf_len);
 				}
 				memcpy(buf+copied_len, b->block, b->Size());
 				copied_len += b->Size();
 	 		}
 			else if(b->upper < next->seq){
-				printf("Reassembler::InOrderBytes: b->seq(%d) + b->Size()(%d) < next->seq(%d)\n", b->seq, b->Size(), next->seq);
+				if(DEBUG_reassem)
+					printf("Reassembler::InOrderBytes: b->seq(%d) + b->Size()(%d) < next->seq(%d)\n", b->seq, b->Size(), next->seq);
 				break;
 			}
 			else

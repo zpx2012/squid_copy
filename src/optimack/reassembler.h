@@ -77,7 +77,7 @@ public:
 	uint64_t LastReassemSeq() const	{ return last_reassem_seq; }
 
 	uint64_t TotalSize() const;	// number of bytes buffered up
-	int InOrderStrs(u_char* buf, int buf_len);
+	int InOrderStrs(u_char* &buf, int buf_len);
 	// void Describe(ODesc* d) const override;
 
 	// Sum over all data buffered in some reassembler.

@@ -3627,8 +3627,10 @@ int gcm_encrypt(unsigned char *plaintext, int plaintext_len,
 
 
     /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new()))
-        handleErrors();
+    if(!(ctx = EVP_CIPHER_CTX_new())){
+        printf("gcm_encrypt: EVP_CIPHER_CTX_new failed.\n");
+        return -1;
+    }
 
     /* Initialise the encryption operation. */
     if(1 != EVP_EncryptInit_ex(ctx, evp_cipher, NULL, NULL, NULL))
@@ -3692,12 +3694,17 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
     int ret;
 
     /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new()))
-        handleErrors();
+    if(!(ctx = EVP_CIPHER_CTX_new())){
+        printf("gcm_decrypt: EVP_CIPHER_CTX_new failed.\n");
+        return -1;
+    }
 
     /* Initialise the decryption operation. */
     if(!EVP_DecryptInit_ex(ctx, evp_cipher, NULL, NULL, NULL))
-        handleErrors();
+    {
+        printf("gcm_decrypt: EVP_DecryptInit_ex failed!\n");
+        return -1;
+    }
 
     // if(!EVP_CIPHER_CTX_set_padding(ctx, 0))
     //     handleErrors();
@@ -3706,30 +3713,45 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
 
     /* Set IV length. Not necessary if this is 12 bytes (96 bits) */
     if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
-        handleErrors();
+    {
+        printf("gcm_decrypt: EVP_CIPHER_CTX_ctrl failed!\n");
+        return -1;
+    }
 
     /* Initialise key and IV */
     if(!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
-        handleErrors();
+    {
+        printf("gcm_decrypt: EVP_DecryptInit_ex failed!\n");
+        return -1;
+    }
 
 /*
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
     if(aad && !EVP_DecryptUpdate(ctx, NULL, &len, aad, 13))
-        handleErrors();
+    {
+        printf("gcm_decrypt: EVP_DecryptUpdate failed!\n");
+        return -1;
+    }
 
     /*
      * Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary
      */
     if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
-        handleErrors();
+    {
+        printf("gcm_decrypt: EVP_DecryptUpdate failed!\n");
+        return -1;
+    }
     plaintext_len = len;
 
     /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
     if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag))
-        handleErrors();
+    {
+        printf("gcm_decrypt: EVP_CIPHER_CTX_ctrl failed!\n");
+        return -1;
+    }
 
     
     /*
