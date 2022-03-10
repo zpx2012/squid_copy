@@ -844,9 +844,10 @@ void
 Debug::Finish()
 {
     // TODO: Optimize to remove at least one extra copy.
-    _db_print(Current->forceAlert, "%s\n", Current->buf.str().c_str());
-    Current->forceAlert = false;
-
+    if(Current){
+        _db_print(Current->forceAlert, "%s\n", Current->buf.str().c_str());
+        Current->forceAlert = false;
+    }
     Context *past = Current;
     Current = past->upper;
     if (Current)

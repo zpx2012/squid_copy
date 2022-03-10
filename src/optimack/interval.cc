@@ -295,7 +295,7 @@ void IntervalList::insertNewInterval(unsigned int start, unsigned int end)
         return;
  
     if(start == end){
-        if (newInterval.start > Intervals[n - 1].end)
+        if (n > 0 && newInterval.start > Intervals[n - 1].end)
             Intervals.insert(Intervals.end(), newInterval);
         return;
     }

@@ -635,9 +635,12 @@ void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header
 int Optimack::get_http_response_header_len(unsigned char* payload, int payload_len){
     Http1::ResponseParser rp;
     SBuf headerBuf;
+    pthread_mutex_lock(&mutex_range);
     headerBuf.assign((char*)payload, payload_len);
     rp.parse(headerBuf);
     response_header_len = rp.messageHeaderSize();
+    pthread_mutex_unlock(&mutex_range);
+
     // response_header_len = 398;
     response = (char*)malloc(response_header_len+1);
     memcpy(response, payload, response_header_len);
@@ -655,7 +658,7 @@ int Optimack::get_http_response_header_len(unsigned char* payload, int payload_l
         ack_end = ((file_size + response_header_len - 1)/MAX_FRAG_LEN + 1) * MAX_FULL_GCM_RECORD_LEN + 1;
 #endif
     // else
-    //     ack_end = 1;
+    ack_end = 1;
     printf("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
     log_info("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);

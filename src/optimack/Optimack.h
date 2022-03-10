@@ -144,8 +144,8 @@ public:
     void send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq);
     int modify_to_main_conn_packet(struct subconn_info* subconn, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
-    int get_ajusted_rwnd(int cur_ack);
-    int get_ajusted_rwnd_backup(int cur_ack);
+    int get_adjusted_rwnd(int cur_ack);
+    int get_adjusted_rwnd_backup(int cur_ack);
     void update_optimistic_ack_timer(bool is_zero_window, std::chrono::time_point<std::chrono::system_clock>& last_send_ack, std::chrono::time_point<std::chrono::system_clock>& last_zero_window);
     int generate_sack_blocks(unsigned char * buf,int len, IntervalList* sack_list, uint ini_seq_rem);
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
@@ -210,7 +210,7 @@ public:
                  max_opt_ack = 0; 
     unsigned int backup_dup_ack = 0, backup_max_opt_ack = 0;
     int win_scale = 1 << 7, 
-        rwnd = 1, adjusted_rwnd = 0, win_end = 1, backup_dup_ack_rwnd = 1,
+        rwnd = 64256, adjusted_rwnd = 0, win_end = 1, backup_dup_ack_rwnd = 1,
         max_win_size = 0,
         same_ack_cnt = 0,
         overrun_cnt = 0,
