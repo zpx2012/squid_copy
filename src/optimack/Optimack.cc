@@ -3167,8 +3167,8 @@ void Optimack::send_data_to_subconn(struct subconn_info* conn, bool to_client, u
 }
 
 void Optimack::send_data_to_server_and_update_seq(struct subconn_info* conn, unsigned char* payload, int payload_len){
-    send_data_to_subconn(conn, conn->cur_seq_loc, payload, payload_len);
-    conn->cur_seq_loc += payload_len;
+    send_data_to_subconn(conn, false, conn->next_seq_loc, payload, payload_len);
+    conn->next_seq_loc += payload_len;
 }
 
 #ifdef USE_OPENSSL

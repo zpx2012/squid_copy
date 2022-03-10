@@ -151,7 +151,9 @@ public:
     void extract_sack_blocks(unsigned char * const buf, const uint16_t len, IntervalList& sack_list,  unsigned int ini_seq);
     void send_data_to_backup(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
-    void send_data_to_subconn(struct subconn_info* conn, unsigned int seq, unsigned char* payload, int payload_len);
+    void send_data_to_subconn(struct subconn_info* conn, bool to_client, unsigned int seq, unsigned char* payload, int payload_len);
+    void send_data_to_server_and_update_seq(struct subconn_info* conn, unsigned char* payload, int payload_len);
+    
     // void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();
     void send_request(char* request, int len);
