@@ -9,7 +9,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 import time, traceback, subprocess as sp, re, shlex, os, psutil, signal
 
 
-def get_onload_time(driver):
+def get_onload_time(driver, domain):
     try:
         url = 'http://' + domain
         driver.get(url)
@@ -144,7 +144,7 @@ def killall_process(process_name):
 def cleanup(tcpdump_p, squid_p, proxy_driver):
     # print("enter cleanup")
     # stop_tcpdump(tcpdump_p)
-    squid_p.terminate()
+    # squid_p.terminate()
     # squid_p.kill()
     # os.system("sudo kill -9 %d" % squid_p.pid)
     exec("sudo iptables -F")
@@ -167,13 +167,13 @@ def test_proxy(domain, out_dir, outfile):
 
             # tcpdump_outfile = out_dir + "pktdump_%s.pcap.%s" % (domain, start_time)
             # tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
-
-            squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
+            squid_p = 0
+            # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
             # p = sp.Popen(shlex.split(squid_path+" -N | tee ~/rs/squid_output_%s_%s.log" % (domain, start_time)), stdout=sp.PIPE, encoding='utf8')
-            time.sleep(5)
+            # time.sleep(5)
 
             proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
-            timing, err = get_onload_time(proxy_driver)
+            timing, err = get_onload_time(proxy_driver, domain)
             cleanup(0, squid_p, proxy_driver)
 
             output = [domain, 'Proxy', time.strftime("%Y-%m-%d %H:%M:%S"), err]
@@ -193,7 +193,7 @@ def test_proxy(domain, out_dir, outfile):
 
 
     except (KeyboardInterrupt, SystemExit):
-        cleanup(0, squid_p, proxy_driver)
+        cleanup(0, 0, proxy_driver)
         pass
 
     except:
@@ -206,12 +206,16 @@ home_dir = os.path.expanduser("~") + "/"
 out_dir = home_dir + "rs/browser/"
 os.system("sudo mkdir -p "  + out_dir)
 squid_path = home_dir + "squid/sbin/squid"
+# test_normal("www.baidu.com")
+
 with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % time.strftime("%Y-%m-%dT%H:%M:%S"), "w") as outfile:
-    outfile.writelines(','.join(timing_keys) + "\n")
-    for line_num, line in enumerate(filter(None,infile.read().splitlines())):
-        domain = line.strip().split(",")[0]
-        print("Test: " + domain)
-        test_proxy(domain, out_dir, outfile)
-        print("\n")
+    test_proxy("www.baidu.com", out_dir, outfile)
+
+#     outfile.writelines(','.join(timing_keys) + "\n")
+#     for line_num, line in enumerate(filter(None,infile.read().splitlines())):
+#         domain = line.strip().split(",")[0]
+#         print("Test: " + domain)
+#         test_proxy(domain, out_dir, outfile)
+#         print("\n")
 
 

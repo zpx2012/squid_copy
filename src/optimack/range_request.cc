@@ -600,13 +600,19 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
     char range_request[MAX_RANGE_REQ_LEN];
     memcpy(range_request, request, request_len);
     sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
-#ifndef USE_OPENSSL
-    int sockfd_ = (long)sockfd;
-    int rv = send(sockfd_, range_request, strlen(range_request), 0);
-#else
-    SSL *ssl = (SSL *)sockfd;
-    int rv = SSL_write(ssl, range_request, strlen(range_request));      
+
+    int rv;
+    if(is_ssl){
+#ifdef USE_OPENSSL
+        SSL *ssl = (SSL *)sockfd;
+        rv = SSL_write(ssl, range_request, strlen(range_request));      
 #endif
+    }
+    else{
+        int sockfd_ = (long)sockfd;
+        rv = send(sockfd_, range_request, strlen(range_request), 0);
+    }
+    
     if (rv < 0){
         // printf("[Range] bytes [%u, %u] failed\n", start, end);
         log_debug("[Range] bytes %d - %d failed", start, end);

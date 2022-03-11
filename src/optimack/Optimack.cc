@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -48,7 +48,7 @@ using namespace std;
 #endif
 
 #define MAX_STALL_TIME 240
-#define MAX_RESTART_COUNT 3
+#define MAX_RESTART_COUNT 3000
 
 #define LOGSIZE 10240
 #define IPTABLESLEN 128
@@ -851,7 +851,9 @@ full_optimistic_ack_altogether(void* arg)
                         // }
                     }
                     
-                    if (obj->ack_end > 1 && opa_ack_start < obj->ack_end && (opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS))){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
+                    if ((opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS))){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
+                        if (obj->ack_end > 1 && opa_ack_start >= obj->ack_end)
+                            continue;
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -2166,11 +2168,12 @@ int Optimack::process_tcp_plaintext_packet(
                         try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_loc, seq_rel+payload_len);
                         bool pass = false;
                         if(seq - subconn->ini_seq_loc == 1){//Request retranx
-                            printf("S%d-%d: Resend request\n", subconn_i, local_port);
+                            printf("S%d-%d: Resend first request\n", subconn_i, local_port);
                             pass = true;
                         }
                         else {
                             pass = true;
+                            printf("S%d-%d: Send request %u\n", subconn_i, local_port, seq_rel);
 
                             if(is_ssl){
 #ifdef USE_OPENSSL
@@ -2188,8 +2191,10 @@ int Optimack::process_tcp_plaintext_packet(
                                 }
 #endif
                             }
-                            else
-                                printf("S%d-%d: Unknown request, seq %u(%x), len %d\n", subconn_i, local_port, seq - subconn->ini_seq_loc, seq - subconn->ini_seq_loc, payload_len);
+                            if(subconn_i){
+                                tcphdr->th_ack = htonl(subconn->ini_seq_rem + subconn->next_seq_rem);
+                                compute_checksums(packet, 20, packet_len);
+                            }
                         }
                         if(pass)
                             return 0;
@@ -2385,6 +2390,12 @@ int Optimack::process_tcp_plaintext_packet(
                                 // send_optimistic_ack(subconn, seq_rel+payload_len+1, get_adjusted_rwnd(seq_rel+payload_len+1)); // Reply to Keep-Alive
                         // }
                     }
+                }
+
+                //Send ACK to fake-client to stop retranx
+                if(subconn_i && ack == subconn->ini_seq_loc + subconn->next_seq_loc){
+                    // printf("S%d-%d: Request %u being received by server. Send ACK to fake-client\n", subconn_i, local_port, ack);
+                    send_ACK(g_local_ip, g_remote_ip, subconn->local_port, g_remote_port, "", ack, subconn->ini_seq_rem + 1);
                 }
 
                 if (!payload_len) {
