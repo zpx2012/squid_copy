@@ -223,7 +223,7 @@ public:
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;
     double last_ack_epochtime, last_inorder_data_epochtime;
-    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *forward_seq_file, *recv_seq_file, *processed_seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe;
+    FILE *log_file, *rwnd_file, *adjust_rwnd_file, *forward_seq_file, *recv_seq_file, *processed_seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe, *info_file;
     char output_dir[100];
     char home_dir[10];
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
@@ -235,7 +235,7 @@ public:
     uint get_byte_seq(uint tcp_seq);
     uint get_tcp_seq(uint byte_seq);
     int get_lost_range(Interval* intvl);
-    int get_http_response_header_len(unsigned char* payload, int payload_len);
+    int get_http_response_header_len(subconn_info* subconn, unsigned char* payload, int payload_len);
     //IntervalList* get_lost_range(uint start, uint end);
     int send_http_range_request(void* sockfd, Interval range);
     void start_range_recv(IntervalList* list);

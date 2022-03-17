@@ -22,7 +22,7 @@
 #include "servers/forward.h"
 
 // Our code
-#include "optimack/Optimack.h"
+// #include "optimack/Optimack.h"
 
 /**
  * Common base for all Server classes used
@@ -35,7 +35,7 @@ public:
     virtual ~Server() {}
 
     // Our code
-    Optimack optimack_server;
+    // Optimack optimack_server;
 
     /* AsyncJob API */
     virtual void start();

@@ -33,6 +33,7 @@ DataBlock::DataBlock(Reassembler* reass, const u_char* data,
 	rtype = reassem_type;
 	Reassembler::sizes[rtype] += pad_size(size) + padded_sizeof(DataBlock);
 	Reassembler::total_size += pad_size(size) + padded_sizeof(DataBlock);
+	printf("DataBlock: add %p, next %p, prev %p\n", block, next, prev);
 	}
 
 uint64_t Reassembler::total_size = 0;
@@ -97,6 +98,8 @@ void Reassembler::NewBlock(uint64_t seq, uint64_t len, const u_char* data)
 	{
 	if ( len == 0 )
 		return;
+
+	// const std::lock_guard<std::mutex> lock(mutex);
 
 	uint64_t upper_seq = seq + len;
 
@@ -231,8 +234,11 @@ uint64_t Reassembler::TrimToSeq(uint64_t seq)
 
 void Reassembler::ClearBlocks()
 	{
+	// const std::lock_guard<std::mutex> lock(mutex);
+
 	while ( blocks )
 		{
+		printf("DataBlock: delete %p, next %p\n", blocks, blocks->next);
 		DataBlock* b = blocks->next;
 		delete blocks;
 		blocks = b;
@@ -243,6 +249,8 @@ void Reassembler::ClearBlocks()
 
 void Reassembler::ClearOldBlocks()
 	{
+	// const std::lock_guard<std::mutex> lock(mutex);
+
 	while ( old_blocks )
 		{
 		DataBlock* b = old_blocks->next;
@@ -253,8 +261,9 @@ void Reassembler::ClearOldBlocks()
 	last_old_block = 0;
 	}
 
-uint64_t Reassembler::TotalSize() const
+uint64_t Reassembler::TotalSize() 
 	{
+	// const std::lock_guard<std::mutex> lock(mutex);
 	return size_of_all_blocks;
 	}
 
@@ -357,6 +366,8 @@ int Reassembler::InOrderStrs(u_char* &buf, int buf_len){
 	if(!buf_len){
 		return 0;
 	}
+
+	// const std::lock_guard<std::mutex> lock(mutex);
 
 	buf = new u_char[buf_len+1];
 	int copied_len = 0;

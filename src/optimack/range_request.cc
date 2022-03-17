@@ -142,11 +142,13 @@ restart:
             close(range_sockfd_old);
             printf("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
             log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
+            if(obj->is_ssl){
 #ifdef USE_OPENSSL
             range_ssl = open_ssl_conn(range_sockfd, false);
             SSL_free(range_ssl_old);
             fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
 #endif
+            }
             obj->range_request_count = 0;
             erase_count = 0;
         }
@@ -174,11 +176,13 @@ restart:
                 continue;
             }
             if(!it->sent_epoch_time){
-#ifndef USE_OPENSSL
-                obj->send_http_range_request((void*)range_sockfd, *it);
-#else
-                obj->send_http_range_request(range_ssl, *it);
+                if(obj->is_ssl)
+#ifdef USE_OPENSSL
+                    obj->send_http_range_request(range_ssl, *it);
 #endif
+                else
+                    obj->send_http_range_request((void*)range_sockfd, *it);
+
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
@@ -204,21 +208,26 @@ restart:
         // printf("Receiving packet\n");
         if(recv_offset == 0)
             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset+1);
-#ifndef USE_OPENSSL
-        rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
-#else
-        rv = SSL_read(range_ssl, response+recv_offset, MAX_RANGE_SIZE-recv_offset);
+        if(obj->is_ssl){
+#ifdef USE_OPENSSL
+            rv = SSL_read(range_ssl, response+recv_offset, MAX_RANGE_SIZE-recv_offset);
 #endif
+        }
+        else{
+            rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
+        }
+
         if (rv > 0) {
             log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
             printf("[Range] recved %d bytes, hand over to process_range_rv\n", rv);
             process_range_rv(response, rv, obj, subconn, range_job_vector, header, consumed, unread, parsed, recv_offset, unsent);
         }
-#ifndef USE_OPENSSL
-        else if (rv == 0 || !(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)){
-#else
         else if(rv == 0){
-#endif            
+            if(!obj->is_ssl){
+                if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+            }
+
             if(rv == 0){
                 log_debug("[Range] recv ret %d, sockfd %d closed ", rv, range_sockfd);
                 printf("[Range] recv ret %d, sockfd %d closed\n", rv, range_sockfd);
@@ -230,7 +239,8 @@ restart:
             cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
             printf("closed range_sockfd %d\n", range_sockfd);
 #ifdef USE_OPENSSL
-            range_ssl_old = range_ssl;
+            if(obj->is_ssl)
+                range_ssl_old = range_ssl;
 #endif
         }
         usleep(100);
@@ -446,35 +456,39 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 seq = subconn->ini_seq_rem + seq_rel; // Adding the offset back
 
                 unsigned char* send_data = (u_char*)(response + consumed);
-#ifndef USE_OPENSSL
-                packet_len = obj->squid_MSS;
-                if(unread < obj->squid_MSS)
-                    if(header->remain > unread)
-                        break;
-                    else
-                        packet_len = unread;
-                // packet_len = unsent >= obj->squid_MSS? obj->squid_MSS : unsent;
-                send_data_len = packet_len;
-#else
-                packet_len = MAX_FRAG_LEN;
-                if(unread < MAX_FRAG_LEN)
-                    if(header->remain > unread)
-                        break;
-                    else{
-                        packet_len = unread;
-                        printf("[Range] packet length(%u) not equal to MAX_FRAG_LEN\n", unread);
-                    }
-                // packet_len = unsent >= MAX_FRAG_LEN? MAX_FRAG_LEN : unsent;
-                // printf("Range plaintext: seq %u\n", header->start + sent);
-                // print_hexdump(cur_data, packet_len);
 
-                unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
-                int ciphertext_len = subconn->crypto_coder->generate_record(get_record_num(seq_rel), send_data, packet_len, ciphertext);
-                send_data = ciphertext;
-                send_data_len = ciphertext_len;
-                // printf("Range ciphertext: seq %u\n", seq_rel);
-                // print_hexdump(ciphertext, packet_len);
+                if(obj->is_ssl){
+#ifdef USE_OPENSSL
+                    packet_len = MAX_FRAG_LEN;
+                    if(unread < MAX_FRAG_LEN)
+                        if(header->remain > unread)
+                            break;
+                        else{
+                            packet_len = unread;
+                            printf("[Range] packet length(%u) not equal to MAX_FRAG_LEN\n", unread);
+                        }
+                    // packet_len = unsent >= MAX_FRAG_LEN? MAX_FRAG_LEN : unsent;
+                    // printf("Range plaintext: seq %u\n", header->start + sent);
+                    // print_hexdump(cur_data, packet_len);
+
+                    unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
+                    int ciphertext_len = subconn->crypto_coder->generate_record(get_record_num(seq_rel), send_data, packet_len, ciphertext);
+                    send_data = ciphertext;
+                    send_data_len = ciphertext_len;
+                    // printf("Range ciphertext: seq %u\n", seq_rel);
+                    // print_hexdump(ciphertext, packet_len);
 #endif
+                }
+                else{
+                    packet_len = obj->squid_MSS;
+                    if(unread < obj->squid_MSS)
+                        if(header->remain > unread)
+                            break;
+                        else
+                            packet_len = unread;
+                    // packet_len = unsent >= obj->squid_MSS? obj->squid_MSS : unsent;
+                    send_data_len = packet_len;
+                }
 
                 obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+send_data_len);
                 log_debug("[Range] insert [%u,%u] to recved_seq, after %s", seq_rel, seq_rel+send_data_len, obj->recved_seq.Intervals2str().substr(0,490).c_str());
@@ -532,13 +546,14 @@ int Optimack::get_lost_range(Interval* intvl)
         intvl->start = lost_range.getIntervalList().at(0).start;
         intvl->end = lost_range.getIntervalList().at(0).end;
 #ifdef USE_OPENSSL
-        if((intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
-            printf("get_lost_range: len(%u)%512 != 0, ", intvl->end-intvl->start+1);
-            uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
-            intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
-            printf("change range to [%u, %u]\n", intvl->start, intvl->end);
-            recved_seq.printIntervals();
-        }
+        if(is_ssl)
+            if((intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
+                printf("get_lost_range: len(%u)%512 != 0, ", intvl->end-intvl->start+1);
+                uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
+                intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
+                printf("change range to [%u, %u]\n", intvl->start, intvl->end);
+                recved_seq.printIntervals();
+            }
 #endif
         return 0;
     }
@@ -563,7 +578,8 @@ uint Optimack::get_byte_seq(uint tcp_seq){
 
 #ifdef USE_OPENSSL
     // uint record_num = get_record_num(tcp_seq);
-    tcp_seq_sign -= tcp_seq_sign / MAX_FULL_GCM_RECORD_LEN * (TLSHDR_SIZE + 8 + 16);
+    if(is_ssl)
+        tcp_seq_sign -= tcp_seq_sign / MAX_FULL_GCM_RECORD_LEN * (TLSHDR_SIZE + 8 + 16);
 #endif
 
     tcp_seq_sign -= response_header_len + 1; // range starts from zero!
@@ -579,11 +595,13 @@ uint Optimack::get_tcp_seq(uint byte_seq){
     byte_seq += response_header_len + 1;
 
 #ifdef USE_OPENSSL
-    if((byte_seq)%MAX_FRAG_LEN != 0){
-        // printf("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
-        log_info("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
+    if(is_ssl){
+        if((byte_seq)%MAX_FRAG_LEN != 0){
+            // printf("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
+            log_info("get_tcp_seq: Not full divide: seq(%u %x) mod record_full_size(%d)\n", byte_seq, byte_seq, MAX_FRAG_LEN);
+        }
+        byte_seq += (byte_seq) / MAX_FRAG_LEN * (TLSHDR_SIZE + 8 + 16);
     }
-    byte_seq += (byte_seq) / MAX_FRAG_LEN * (TLSHDR_SIZE + 8 + 16);
 #endif
 
     return byte_seq;
@@ -638,7 +656,7 @@ void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header
     consumed = unread = parsed = recv_offset = unsent = 0;
 }
 
-int Optimack::get_http_response_header_len(unsigned char* payload, int payload_len){
+int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char* payload, int payload_len){
     Http1::ResponseParser rp;
     SBuf headerBuf;
     pthread_mutex_lock(&mutex_range);
@@ -657,16 +675,19 @@ int Optimack::get_http_response_header_len(unsigned char* payload, int payload_l
     char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
     p_content_len += content_len_field_len;
     file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
-    if(file_size)
-#ifndef USE_OPENSSL
-        ack_end += file_size + response_header_len;
-#else
-        ack_end = ((file_size + response_header_len - 1)/MAX_FRAG_LEN + 1) * MAX_FULL_GCM_RECORD_LEN + 1;
+    if(file_size){
+        if(is_ssl){
+#ifdef USE_OPENSSL
+            ack_end = ((file_size + response_header_len - 1)/MAX_FRAG_LEN + 1) * MAX_FULL_GCM_RECORD_LEN + 1;
 #endif
+        }
+        else
+            ack_end += file_size + response_header_len;
+    }
     // else
-    ack_end = 1;
-    printf("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
-    log_info("Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", response_header_len, rp.parseStatusCode, file_size, ack_end);
+    // ack_end = 1;
+    printf("S%d-%d: Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", subconn->id, subconn->local_port, response_header_len, rp.parseStatusCode, file_size, ack_end);
+    log_info("S%d-%d: Server response - headBlockSize %u, StatusCode %d, ContentLength %u, ACK end %u\n", subconn->id, subconn->local_port, response_header_len, rp.parseStatusCode, file_size, ack_end);
     // printf("seq in this conn-%u, file byte-%u, %c\n", seq_rel+response_header_len, 0, payload[response_header_len+1]);
     // src/http/StatusCode.h
 }

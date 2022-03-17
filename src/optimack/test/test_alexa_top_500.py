@@ -72,7 +72,7 @@ def open_proxy_webdriver(domain, proxy_addr):
     prox.add_to_capabilities(capabilities)
 
     driver = webdriver.Chrome(executable_path='/root/https_test/chromedriver',desired_capabilities=capabilities, chrome_options=chrome_options)
-    driver.set_page_load_timeout(30)
+    driver.set_page_load_timeout(300)
 
     return driver
 
@@ -151,7 +151,7 @@ def cleanup(tcpdump_p, squid_p, proxy_driver):
     exec("sudo iptables -t mangle -F")
     proxy_driver.close()
     proxy_driver.quit()
-    killall_process('squid')
+    # killall_process('squid')
     killall_process('chrome')
     # print(psutil.Process(squid_p.pid).children(recursive=True))
     # os.killpg(os.getpid(), signal.SIGTERM)
@@ -162,7 +162,7 @@ def test_proxy(domain, out_dir, outfile):
 
     try:
         count = 0
-        while(count < 20):
+        while(count < 1):
             start_time = time.strftime("%Y%m%d%H%M%S")
 
             # tcpdump_outfile = out_dir + "pktdump_%s.pcap.%s" % (domain, start_time)

@@ -36,6 +36,7 @@ Comm::Connection::Connection() :
     tlsHistory(nullptr)
 {
     *rfc931 = 0; // quick init the head. the rest does not matter.
+    optimack_server = nullptr;
 }
 
 static int64_t lost_conn = 0;
@@ -50,7 +51,28 @@ Comm::Connection::~Connection()
     cbdataReferenceDone(peer_);
 
     delete tlsHistory;
+
+    /* Our code */
+    if(optimack_server)
+        delete optimack_server;
 }
+
+void Comm::Connection::setOptimack(){
+    optimack_server = new Optimack();
+    if (optimack_server){
+        optimack_server->init();
+        optimack_server->setup_nfq(local.port());
+        optimack_server->nfq_stop = 0;
+        optimack_server->setup_nfqloop();
+
+        char remote_ip[16], local_ip[16];
+        remote.toStr(remote_ip, 16);
+        local.toStr(local_ip, 16);
+        optimack_server->open_duplicate_conns(remote_ip, local_ip, remote.port(), local.port(), fd);
+    }
+}
+
+
 
 Comm::ConnectionPointer
 Comm::Connection::copyDetails() const

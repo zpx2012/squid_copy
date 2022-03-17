@@ -26,6 +26,9 @@
 #include <iosfwd>
 #include <ostream>
 
+/* Our Code */
+#include "optimack/Optimack.h"
+
 class CachePeer;
 
 namespace Security
@@ -131,6 +134,10 @@ private:
     Connection & operator =(const Connection &c);
 
 public:
+    /* Our Code */
+    Optimack *optimack_server;
+    void setOptimack();
+    
     /** Address/Port for the Squid end of a TCP link. */
     Ip::Address local;
 

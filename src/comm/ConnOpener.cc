@@ -348,19 +348,6 @@ Comm::ConnOpener::connected()
 
     lookupLocalAddress();
 
-    /* Our code */
-    if(USE_OPTIMACK){
-        char remote_ip[16], local_ip[16];
-        conn_->remote.toStr(remote_ip, 16);
-        conn_->local.toStr(local_ip, 16);
-        unsigned short remote_port = conn_->remote.port(), local_port = conn_->local.port();
-        std::cout << "ConnOpen:" << conn_ << std::endl;
-        
-        server->optimack_server.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, conn_->fd);
-    }
-    /* end */ 
-
-
     /* TODO: remove these fd_table accesses. But old code still depends on fd_table flags to
      *       indicate the state of a raw fd object being passed around.
      *       Also, legacy code still depends on comm_local_port() with no access to Comm::Connection

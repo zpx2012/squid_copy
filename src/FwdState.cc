@@ -712,6 +712,14 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
     serverConn = conn;
     debugs(17, 3, HERE << serverConnection() << ": '" << entry->url() << "'" );
 
+    /* Our code */
+    if(USE_OPTIMACK){
+        std::cout << "ConnOpen:" << conn << std::endl;
+        conn->setOptimack();
+    }
+    /* end */ 
+
+
     closeHandler = comm_add_close_handler(serverConnection()->fd, fwdServerClosedWrapper, this);
 
     if (!request->flags.pinned) {
@@ -895,6 +903,9 @@ FwdState::connectStart()
     // closed the connection that failed the race. And re-pinning assumes this.
     if (pconnRace != raceHappened)
         temp = pconnPop(serverDestinations[0], host);
+
+    /** Our code: don't reuse connections **/   
+    // const bool openedPconn = false;
 
     const bool openedPconn = Comm::IsConnOpen(temp);
     pconnRace = openedPconn ? racePossible : raceImpossible;

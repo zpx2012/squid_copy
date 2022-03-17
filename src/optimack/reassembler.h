@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <sys/types.h>
 #include <stdint.h>
+#include <thread>
+#include <mutex>
 
 inline size_t pad_size(size_t size)
 	{
@@ -76,7 +78,7 @@ public:
 	int HasBlocks() const		{ return blocks != 0; }
 	uint64_t LastReassemSeq() const	{ return last_reassem_seq; }
 
-	uint64_t TotalSize() const;	// number of bytes buffered up
+	uint64_t TotalSize() ;	// number of bytes buffered up
 	int InOrderStrs(u_char* &buf, int buf_len);
 	// void Describe(ODesc* d) const override;
 
@@ -119,6 +121,8 @@ protected:
 
 	static uint64_t total_size;
 	static uint64_t sizes[REASSEM_NUM];
+
+    std::mutex mutex;
 };
 
 inline DataBlock::~DataBlock()

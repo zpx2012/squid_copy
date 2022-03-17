@@ -54,12 +54,6 @@ Http::One::Server::start()
                                       TimeoutDialer, this, Http1::Server::requestTimeout);
     commSetConnTimeout(clientConnection, Config.Timeout.request_start_timeout, timeoutCall);
     readSomeData();
-
-    // Our code
-    optimack_server.init();
-    optimack_server.setup_nfq(clientConnection->remote.port());
-    optimack_server.nfq_stop = 0;
-    optimack_server.setup_nfqloop();
 }
 
 void
