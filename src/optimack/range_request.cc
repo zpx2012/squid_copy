@@ -619,11 +619,12 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
     memcpy(range_request, request, request_len);
     sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
 
-    int rv;
+    int rv = -1;
     if(is_ssl){
 #ifdef USE_OPENSSL
         SSL *ssl = (SSL *)sockfd;
-        rv = SSL_write(ssl, range_request, strlen(range_request));      
+        if(ssl)
+            rv = SSL_write(ssl, range_request, strlen(range_request));      
 #endif
     }
     else{
@@ -650,6 +651,7 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
 
 
 void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
+    close(range_sockfd);
     range_sockfd_old = range_sockfd;
     range_sockfd = -1;
     memset(header, 0, sizeof(http_header));

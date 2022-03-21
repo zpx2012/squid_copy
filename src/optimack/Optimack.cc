@@ -331,8 +331,9 @@ bool Optimack::is_nfq_full(FILE* out_file){
 void Optimack::print_ss(FILE* out_file){
     char cmd[100];
     snprintf(cmd, 100, "ss -o state established '( sport = %d )' -tnm", squid_port);
-    std::string rst_str = exec(cmd);
-    fprintf(out_file, "%s", rst_str.c_str());
+    system(cmd);
+    // std::string rst_str = exec(cmd);
+    // fprintf(out_file, "%s", rst_str.c_str());
     // cout << "cat /proc/net/netfilter/nfnetlink_queue:\n " << rst_str << endl;
     return;
 }
@@ -1957,7 +1958,7 @@ void Optimack::send_request(char* rq, int rq_len){
     request_len = rq_len;
     request_recved = true;
 
-    // printf("S%d-%d: send_request(%p): send request len %d, request:\n%s\n", 0, squid_port, this, rq_len, rq);
+    printf("S%d-%d: send_request(%p): send request len %d, request:\n%s\n", 0, squid_port, this, rq_len, rq);
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
         it->second->handshake_finished = true;
@@ -2514,6 +2515,8 @@ int Optimack::process_tcp_plaintext_packet(
                             // printf("\n\n");
                             // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
                             log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
+                            for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
+                                try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
                             // if(rand() % 5 == 0){
                                 // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
                                 // print_hexdump(it->second.data, it->second.data_len);

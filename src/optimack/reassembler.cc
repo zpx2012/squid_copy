@@ -33,7 +33,8 @@ DataBlock::DataBlock(Reassembler* reass, const u_char* data,
 	rtype = reassem_type;
 	Reassembler::sizes[rtype] += pad_size(size) + padded_sizeof(DataBlock);
 	Reassembler::total_size += pad_size(size) + padded_sizeof(DataBlock);
-	printf("DataBlock: add %p, next %p, prev %p\n", block, next, prev);
+	if(DEBUG_reassem)
+		printf("DataBlock: add %p, next %p, prev %p\n", block, next, prev);
 	}
 
 uint64_t Reassembler::total_size = 0;
@@ -51,6 +52,8 @@ Reassembler::~Reassembler()
 	{
 	ClearBlocks();
 	ClearOldBlocks();
+	blocks = last_block = old_blocks = last_old_block = 0;
+	last_reassem_seq = trim_seq = max_old_blocks = total_old_blocks = size_of_all_blocks = total_size = 0;
 	}
 
 void Reassembler::CheckOverlap(DataBlock *head, DataBlock *tail,
@@ -238,7 +241,8 @@ void Reassembler::ClearBlocks()
 
 	while ( blocks )
 		{
-		printf("DataBlock: delete %p, next %p\n", blocks, blocks->next);
+		if(DEBUG_reassem)
+			printf("DataBlock: delete %p, next %p\n", blocks, blocks->next);
 		DataBlock* b = blocks->next;
 		delete blocks;
 		blocks = b;

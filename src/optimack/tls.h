@@ -101,13 +101,14 @@ class TLS_Decrypted_Record_Reassembler{
     // receive_buffer
     // tag_buffer
 public:
-    TLS_Decrypted_Record_Reassembler(int size);
+    TLS_Decrypted_Record_Reassembler(int rn, int size);
     ~TLS_Decrypted_Record_Reassembler();
     int insert_plaintext(uint seq, u_char* data, int data_len);
     int insert_tag(TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len);
-    TLS_Crypto_Coder* check_complete(u_char* &buf, int &buf_len);
+    int check_complete(u_char* &buf, int &buf_len);
     int get_complete_plaintext(u_char* &buf, int &buf_len);
-    bool verify(const u_char* plntxt, int plntxt_len, TLS_Crypto_Coder* crypto_coder, const u_char* tag);
+    bool verify(u_char* plntxt, int plntxt_len, TLS_Crypto_Coder* crypto_coder, u_char* tag);
+    void cleanup();
     
     void lock();
     void unlock();
@@ -121,6 +122,8 @@ private:
     // std::mutex mutex;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+    friend TLS_Decrypted_Records_Map;
+
 };
 
 
@@ -130,9 +133,21 @@ public:
     TLS_Decrypted_Records_Map(TLS_Crypto_Coder* coder) { 
         main_subconn_cypto_coder = coder;
         decrypted_record_reassembler_map.clear(); 
+
+        // decrypted_record_reassembler_map = new TLS_Decrypted_Record_Reassembler*[42750];
+        // for (size_t i = 0; i < 42750; i++)
+        // {
+        //     decrypted_record_reassembler_map[i] = new TLS_Decrypted_Record_Reassembler(i, MAX_FRAG_LEN);
+        // }
+        
     }
     ~TLS_Decrypted_Records_Map() {
-
+        // lock();
+        // for(size_t i = 0; i < 42750; i++)
+        //     delete decrypted_record_reassembler_map[i];
+        // delete [] decrypted_record_reassembler_map;
+        // unlock();
+        
         for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); ){
             delete it->second;
             lock();
@@ -140,21 +155,21 @@ public:
             unlock();  
         }      
     }
-    int insert_plaintext(int record_num, uint seq, u_char* data, int data_len);
-    int insert_tag(int record_num, TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len);
-    int inserted(int record_num, u_char* &return_str);
-    void lock(){
-        printf("TLS_Decrypted_Records_Map: try lock\n");
-        pthread_mutex_lock(&mutex);
-    }
 
-    void unlock(){
-        pthread_mutex_unlock(&mutex);
-        printf("TLS_Decrypted_Records_Map: try unlock\n");
-    }
-
+    int insert_plaintext(int record_num, uint seq, u_char* data, int data_len, u_char* &return_str);
+    // int insert_tag(int record_num, TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len, u_char* &return_str);
+    // int inserted(int record_num, u_char* &return_str);
+    // int insert(int record_num, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, u_char* &return_str);
+    int insert(int record_num, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, uint tag_offset, u_char* tag, int tag_len, u_char* &return_str);
+    
+    int inserted(int record_num, TLS_Decrypted_Record_Reassembler* tls_decrpyted_record, u_char* &return_str);
+    void lock();
+    void unlock();
+    
 private:
+    // TLS_Decrypted_Record_Reassembler** decrypted_record_reassembler_map;
     std::map<int, TLS_Decrypted_Record_Reassembler*> decrypted_record_reassembler_map;
+    std::map<int, pthread_mutex_t> mutex_map;
     // std::map<uint, struct subconn_info*> *subconn_infos;
     TLS_Crypto_Coder* main_subconn_cypto_coder;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
