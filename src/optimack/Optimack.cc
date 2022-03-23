@@ -419,7 +419,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
-    log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
+    log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
 
@@ -2454,12 +2454,30 @@ int Optimack::process_tcp_plaintext_packet(
                     pthread_mutex_lock(&mutex_subconn_infos);
                     if(optim_ack_stop){
                         std::map<uint, struct subconn_info*>::iterator it;
-                        for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
-                            if (!it->second->is_backup && it->second->seq_init && it->second->next_seq_rem <= 1){
+                        for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+                            uint next_seq_rem_tmp = it->second->next_seq_rem;
+                            if(is_ssl)
+#ifdef USE_OPENSSL
+                                next_seq_rem_tmp = it->second->next_seq_rem_tls;
+#endif
+                            if (!it->second->is_backup && it->second->seq_init && next_seq_rem_tmp <= 1){
                                 send_optimistic_ack(it->second, 1, get_adjusted_rwnd(1));
                                 break;
                             }
-                        if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
+                        }
+
+                        bool start_optimack = false;
+                        if(is_ssl){
+#ifdef USE_OPENSSL
+                            if(it == subconn_infos.end())
+                                start_optimack = true;
+#endif
+                        }
+                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
+                            start_optimack = true;
+                        }
+                        
+                        if(start_optimack){
                         // if(recved_seq.getFirstEnd() > 1){
                             // if(optim_ack_stop){
                                 start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
@@ -3178,9 +3196,9 @@ void Optimack::send_data_to_subconn(struct subconn_info* conn, bool to_client, u
         packet_len = unsent >= squid_MSS? squid_MSS : unsent;
         unsigned char* payload_to_send = payload+sent;
         if(to_client){
-        unsigned int seq_to_send = conn->ini_seq_rem + seq + sent;
-        send_ACK_payload(g_local_ip, g_remote_ip, conn->local_port, g_remote_port, payload_to_send, packet_len, conn->ini_seq_loc + conn->next_seq_loc, seq_to_send);
-        log_info("send_data_to_subconn: seq %u, ack %u, len %d", seq+sent, conn->next_seq_loc, packet_len);
+            unsigned int seq_to_send = conn->ini_seq_rem + seq + sent;
+            send_ACK_payload(g_local_ip, g_remote_ip, conn->local_port, g_remote_port, payload_to_send, packet_len, conn->ini_seq_loc + conn->next_seq_loc, seq_to_send);
+            log_info("send_data_to_subconn: seq %u, ack %u, len %d", seq+sent, conn->next_seq_loc, packet_len);
         }
         else{
             unsigned int seq_to_send = conn->ini_seq_loc + seq + sent;
@@ -3202,12 +3220,12 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     pthread_mutex_lock(&mutex_subconn_infos);
     is_ssl = true;
-    squid_MSS = MAX_FULL_GCM_RECORD_LEN;
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
+    squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         it->second->handshake_finished = false;
-        SSL* ssl = open_ssl_conn(it->second->sockfd, true);
+        SSL* ssl = open_ssl_conn(it->second->sockfd, false);
         set_subconn_ssl_credentials(it->second, ssl);
     }
     pthread_mutex_unlock(&mutex_subconn_infos);
@@ -3244,8 +3262,9 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303);
 
     subconn->handshake_finished = true;
-    subconn->payload_len = subconn->record_size = MAX_FULL_GCM_RECORD_LEN;
-
+    subconn->record_size = MAX_FULL_GCM_RECORD_LEN;
+    if(subconn->record_size < subconn->payload_len)
+        subconn->payload_len = subconn->record_size;
 
     return 0;
 }

@@ -16,7 +16,7 @@
 // range
 #define MAX_REQUEST_LEN 1024
 #define MAX_RANGE_REQ_LEN 1536
-#define MAX_RANGE_SIZE 14600
+#define MAX_RANGE_SIZE 20000
 #define PACKET_SIZE 1460
 
 struct http_header {
@@ -144,9 +144,9 @@ restart:
             log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, obj->get_localport(range_sockfd));
             if(obj->is_ssl){
 #ifdef USE_OPENSSL
-            range_ssl = open_ssl_conn(range_sockfd, false);
-            SSL_free(range_ssl_old);
-            fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
+                range_ssl = open_ssl_conn(range_sockfd, false);
+                SSL_free(range_ssl_old);
+                fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
 #endif
             }
             obj->range_request_count = 0;
@@ -325,6 +325,13 @@ void Optimack::try_for_gaps_and_request(){
         // lost_range [recved_seq[0].end, recved_seq[1].end]
         // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);// ;getIntervalList().at(1).start
+        if(is_ssl){
+#ifdef USE_OPENSSL
+            uint second_end = recved_seq.getElem_withLock(1,false);
+            if(second_end == first_out_of_order)
+                return;
+#endif
+        }
         if(first_out_of_order){
             Interval lost_all_range(recved_seq.getFirstEnd(), first_out_of_order-1);
             if(get_lost_range(&lost_all_range) >= 0){
@@ -434,17 +441,6 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 // consumed += unread;
                 // unsent = unread;
                 // unread = 0;
-                /*
-                * TODO:
-                * remove interval gaps (header->start, header->start+unread-1) here
-                */
-                // range_job->removeInterval(header->start, header->start+unsent);
-                log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
-                // printf("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
-                //TODO: not start
-                obj->ranges_sent.removeInterval(header->start+header->recved, header->start+header->recved+unread);
-                log_error("After removing [%u, %u], %s", header->start+header->recved, header->start+header->recved+unread, obj->ranges_sent.Intervals2str().c_str());
-                // printf("After removing [%u, %u], %s\n", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
             // }
 
             int sent, packet_len;//rename to byte_len
@@ -466,6 +462,8 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                         else{
                             packet_len = unread;
                             printf("[Range] packet length(%u) not equal to MAX_FRAG_LEN\n", unread);
+                            if(seq_rel+packet_len != obj->ack_end)
+                                break;
                         }
                     // packet_len = unsent >= MAX_FRAG_LEN? MAX_FRAG_LEN : unsent;
                     // printf("Range plaintext: seq %u\n", header->start + sent);
@@ -496,6 +494,16 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 obj->all_lost_seq.insertNewInterval_withLock(seq_rel, seq_rel+send_data_len);
                 log_debug("[Range] insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+send_data_len);
      
+                // remove interval gaps (header->start, header->start+unread-1) here
+                // range_job->removeInterval(header->start, header->start+unsent);
+                // log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
+                // printf("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
+                //TODO: not start
+                obj->ranges_sent.removeInterval_updateTimer(header->start+header->recved, header->start+header->recved+send_data_len);
+                log_error("After removing [%u, %u], %s", header->start+header->recved, header->start+header->recved+send_data_len, obj->ranges_sent.Intervals2str().c_str());
+                // printf("After removing [%u, %u], %s\n", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
+
+
                 obj->send_data_to_squid(seq_rel, send_data, send_data_len);
                 log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
                 printf("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
@@ -547,8 +555,9 @@ int Optimack::get_lost_range(Interval* intvl)
         intvl->end = lost_range.getIntervalList().at(0).end;
 #ifdef USE_OPENSSL
         if(is_ssl)
-            if((intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
-                printf("get_lost_range: len(%u)%512 != 0, ", intvl->end-intvl->start+1);
+            if((intvl->end != ack_end) && (intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
+                printf("get_lost_range: len(%u)%%d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
+                // return -1;
                 uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
                 intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
                 printf("change range to [%u, %u]\n", intvl->start, intvl->end);

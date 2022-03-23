@@ -5,7 +5,7 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-#define TLS_DEBUG 0
+#define TLS_DEBUG 1
 
 int print_hexdump(unsigned char* hexdump, int len){
     for(int i = 0; i < len; i++){
@@ -354,38 +354,42 @@ void TLS_Decrypted_Records_Map::unlock(){
 //     return 0;
 // }
 
-int TLS_Decrypted_Records_Map::insert(int record_num, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, uint tag_offset, u_char* tag, int tag_len, u_char* &return_str){
+int TLS_Decrypted_Records_Map::insert(int record_num, int record_size, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, uint tag_offset, u_char* tag, int tag_len, u_char* &return_str){
     // if (!decrypted_record_reassembler_map.count(record_num)){
-        lock();
-        if (!decrypted_record_reassembler_map.count(record_num)){
-            decrypted_record_reassembler_map[record_num] = new TLS_Decrypted_Record_Reassembler(record_num, MAX_FRAG_LEN);
-            mutex_map[record_num] = PTHREAD_MUTEX_INITIALIZER;
-        }
-        TLS_Decrypted_Record_Reassembler* tls_decrypted_record = decrypted_record_reassembler_map[record_num];
-        pthread_mutex_t* mutex_record = &mutex_map[record_num];
-        if(tls_decrypted_record){
-            if(TLS_DEBUG)
-                printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, get tls_decrypted_record(%p), record_num %d, plntxt_buffer(%p)\n", tls_decrypted_record, record_num, seq, tls_decrypted_record, tls_decrypted_record->record_num, tls_decrypted_record->plntxt_buffer);
+        // lock();
+        // if (!decrypted_record_reassembler_map.count(record_num)){
+        //     decrypted_record_reassembler_map[record_num] = new TLS_Decrypted_Record_Reassembler(record_num, MAX_FRAG_LEN);
+        //     mutex_map[record_num] = PTHREAD_MUTEX_INITIALIZER;
+        // }
+        // TLS_Decrypted_Record_Reassembler* tls_decrypted_record = decrypted_record_reassembler_map[record_num];
+        // pthread_mutex_t* mutex_record = &mutex_map[record_num];
+        // if(tls_decrypted_record){
+        //     if(TLS_DEBUG)
+        //         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, get tls_decrypted_record(%p), record_num %d, plntxt_buffer(%p)\n", tls_decrypted_record, record_num, seq, tls_decrypted_record, tls_decrypted_record->record_num, tls_decrypted_record->plntxt_buffer);
 
-            if(!tls_decrypted_record->plntxt_buffer){
-                if(TLS_DEBUG)
-                    printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, try lock to delete tls_record\n", tls_decrypted_record, record_num, seq);
-                pthread_mutex_lock(mutex_record);
-                if(TLS_DEBUG)
-                    printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, gain lock. plntxt_buffer empty, delete it, call cleanup.\n", tls_decrypted_record, record_num, seq);
+        //     if(!tls_decrypted_record->plntxt_buffer){
+        //         if(TLS_DEBUG)
+        //             printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, try lock to delete tls_record\n", tls_decrypted_record, record_num, seq);
+        //         pthread_mutex_lock(mutex_record);
+        //         if(TLS_DEBUG)
+        //             printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, gain lock. plntxt_buffer empty, delete it, call cleanup.\n", tls_decrypted_record, record_num, seq);
 
-                delete tls_decrypted_record;
-                pthread_mutex_unlock(mutex_record);
-                if(TLS_DEBUG)
-                    printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, unlock. Set map entry to nullptr\n", tls_decrypted_record, record_num, seq);
+        //         delete tls_decrypted_record;
+        //         pthread_mutex_unlock(mutex_record);
+        //         if(TLS_DEBUG)
+        //             printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, unlock. Set map entry to nullptr\n", tls_decrypted_record, record_num, seq);
 
-                decrypted_record_reassembler_map[record_num] = nullptr;
-                unlock();
-                return -1;
-            }
-        }
-        unlock();
+        //         decrypted_record_reassembler_map[record_num] = nullptr;
+        //         unlock();
+        //         return -1;
+        //     }
+        // }
+        // unlock();
     // }
+
+    TLS_Decrypted_Record_Reassembler* tls_decrypted_record = decrypted_record_reassembler_map[record_num];
+    pthread_mutex_t* mutex_record = &mutex_map[record_num];
+
 
     if(tls_decrypted_record && tls_decrypted_record->record_num == record_num){
         if(TLS_DEBUG)
@@ -397,6 +401,9 @@ int TLS_Decrypted_Records_Map::insert(int record_num, TLS_Crypto_Coder* cryto_co
 
         int ret;
         if(tls_decrypted_record->plntxt_buffer && tls_decrypted_record->record_num == record_num){// when tls_decrypted_record is deleted, this pointer will point to any address, plntxt_buffer will not be null, but record_num will not be correct either 
+
+            if(record_size)
+                tls_decrypted_record->expected_size = record_size;
 
             if(data && data_len){
                 tls_decrypted_record->insert_plaintext(seq, data, data_len);
@@ -413,20 +420,22 @@ int TLS_Decrypted_Records_Map::insert(int record_num, TLS_Crypto_Coder* cryto_co
             }
 
             ret = inserted(record_num, tls_decrypted_record, return_str);
+            if(ret >= 0)
+                delete tls_decrypted_record;
         }
         // tls_decrypted_record->unlock();
-        // delete tls_decrypted_record;
         pthread_mutex_unlock(mutex_record);
 
         if(TLS_DEBUG)
             printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, unlock\n", tls_decrypted_record, record_num, seq);
 
-            // if(ret >= 0){
-            //     lock();
-            //     decrypted_record_reassembler_map[record_num] = nullptr;
-            //     // decrypted_record_reassembler_map.erase(record_num);
-            //     unlock();
-            // }
+            if(ret >= 0){
+                // lock();
+                
+                decrypted_record_reassembler_map[record_num] = nullptr;
+                // decrypted_record_reassembler_map.erase(record_num);
+                // unlock();
+            }
 
         return ret;
     }
@@ -550,6 +559,13 @@ int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned
         // printf("partial decrypt: ciphertext_seq %u, offset %u\n", record_start_seq, intersect.start - record_start_seq);
         // print_hexdump(ciphertext, MAX_FULL_GCM_RECORD_LEN+1);
         
+        int cur_record_size = 0, full_plaintext_size = 0;
+        if(record_start_seq == intersect.start){
+            struct mytlshdr *tlshdr = (struct mytlshdr*)(ciphertext);
+            cur_record_size = htons(tlshdr->length);
+            full_plaintext_size = cur_record_size - 8 -16;
+        }
+
         uint plaintext_start_seq = record_start_seq + TLSHDR_SIZE + 8,
              plaintext_end_seq = record_end_seq - 16;
         Interval plaintext_intersect = intersect.intersect(Interval(plaintext_start_seq, plaintext_end_seq));
@@ -578,7 +594,7 @@ int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned
 
         if(plaintext_partial_len || tag_partial_len){
             u_char* complete_ciphertext = NULL;
-            int complete_ciphertext_len = decrypted_records_map->insert(record_num, subconn->crypto_coder, 
+            int complete_ciphertext_len = decrypted_records_map->insert(record_num, full_plaintext_size, subconn->crypto_coder, 
                                                                         plaintext_partial_start_index, plaintext_partial_buf , plaintext_partial_len,
                                                                         tag_partial_start_index, tag, tag_partial_len, 
                                                                         complete_ciphertext);
