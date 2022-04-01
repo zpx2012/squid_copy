@@ -115,8 +115,10 @@ public:
 
 private:
     int record_num;
+    int expected_size; //plaintext_len
+    int record_size;
+
     Reassembler* plntxt_buffer;
-    int expected_size;
     std::map<TLS_Crypto_Coder*, Reassembler*> tags;
 
     // std::mutex mutex;
@@ -126,36 +128,35 @@ private:
 
 };
 
-
 class TLS_Decrypted_Records_Map{
 
 public:
     TLS_Decrypted_Records_Map(TLS_Crypto_Coder* coder) { 
         main_subconn_cypto_coder = coder;
-        // decrypted_record_reassembler_map.clear(); 
+        decrypted_record_reassembler_map.clear(); 
 
-        decrypted_record_reassembler_map = new TLS_Decrypted_Record_Reassembler*[42750];
-        mutex_map = new pthread_mutex_t[42750];
-        for (size_t i = 0; i < 42750; i++)
-        {
-            decrypted_record_reassembler_map[i] = new TLS_Decrypted_Record_Reassembler(i, MAX_FRAG_LEN);
-            mutex_map[i] = PTHREAD_MUTEX_INITIALIZER;
-        }
+        // decrypted_record_reassembler_map = new TLS_Decrypted_Record_Reassembler*[42750];
+        // mutex_map = new pthread_mutex_t[42750];
+        // for (size_t i = 0; i < 42750; i++)
+        // {
+        //     decrypted_record_reassembler_map[i] = new TLS_Decrypted_Record_Reassembler(i, MAX_FRAG_LEN);
+        //     mutex_map[i] = PTHREAD_MUTEX_INITIALIZER;
+        // }
         
     }
     ~TLS_Decrypted_Records_Map() {
-        lock();
-        for(size_t i = 0; i < 42750; i++)
-            delete decrypted_record_reassembler_map[i];
-        delete [] decrypted_record_reassembler_map;
-        unlock();
+        // lock();
+        // for(size_t i = 0; i < 42750; i++)
+        //     delete decrypted_record_reassembler_map[i];
+        // delete [] decrypted_record_reassembler_map;
+        // unlock();
         
-        // for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); ){
-        //     delete it->second;
-        //     lock();
-        //     decrypted_record_reassembler_map.erase(it++);
-        //     unlock();  
-        // }      
+        for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); ){
+            delete it->second;
+            lock();
+            decrypted_record_reassembler_map.erase(it++);
+            unlock();  
+        }      
     }
 
     int insert_plaintext(int record_num, uint seq, u_char* data, int data_len, u_char* &return_str);
@@ -163,18 +164,55 @@ public:
     // int inserted(int record_num, u_char* &return_str);
     // int insert(int record_num, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, u_char* &return_str);
     int insert(int record_num, int record_size, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, uint tag_offset, u_char* tag, int tag_len, u_char* &return_str);
-    
     int inserted(int record_num, TLS_Decrypted_Record_Reassembler* tls_decrpyted_record, u_char* &return_str);
+    
+    TLS_Decrypted_Record_Reassembler* get_record_reassembler(int key){
+        return decrypted_record_reassembler_map[key];
+    }
+
     void lock();
     void unlock();
 
 private:
-    TLS_Decrypted_Record_Reassembler** decrypted_record_reassembler_map;
-    // std::map<int, TLS_Decrypted_Record_Reassembler*> decrypted_record_reassembler_map;
-    pthread_mutex_t* mutex_map;
-    // std::map<int, pthread_mutex_t> mutex_map;
+    // TLS_Decrypted_Record_Reassembler** decrypted_record_reassembler_map;
+    std::map<int, TLS_Decrypted_Record_Reassembler*> decrypted_record_reassembler_map;
+    // pthread_mutex_t* mutex_map;
+    std::map<int, pthread_mutex_t> mutex_map;
     // std::map<uint, struct subconn_info*> *subconn_infos;
     TLS_Crypto_Coder* main_subconn_cypto_coder;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+};
+
+
+struct TLS_Record_Seq_Info{
+    int record_num;
+    int record_size_with_header;
+    uint seq;//starting seq
+    uint upper_seq;
+    TLS_Record_Seq_Info(): record_num(0), record_size_with_header(0), seq(0), upper_seq(0) {}
+    TLS_Record_Seq_Info(int rn, int rswh, uint s, uint us): record_num(rn), record_size_with_header(rswh), seq(s), upper_seq(us) {}
+};
+
+
+class TLS_Record_Number_Seq_Map{
+public:
+    TLS_Record_Number_Seq_Map();
+
+    ~TLS_Record_Number_Seq_Map();
+    int insert(uint start_seq, int record_size_with_header);
+    // int insert(uint start_seq, TLS_Record_Seq_Info* seq_info);
+    int set_record_seq_info(uint seq, struct mytlshdr* tlshdr);
+    int set_size(uint start_seq, int record_size_with_header);
+    int get_record_seq_info(uint seq, TLS_Record_Seq_Info* return_info);
+    int get_record_num(uint seq);
+
+    void lock();
+    void unlock();
+private:
+    uint next_record_start_seq;
+    int record_num_count;
+    uint first_max_frag_seq, last_piece_start_seq;
+    std::map<int, TLS_Record_Seq_Info*> tls_seq_map;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 };
 
@@ -182,10 +220,10 @@ private:
 unsigned char* merge_two_data(unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len);
 
 // int process_tls_payload(bool in_coming, unsigned int seq, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local);
-int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, subconn_info* subconn, TLS_Decrypted_Records_Map* decrypted_records_map, std::map<uint, struct record_fragment> &return_buffer);
-int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, TLS_Decrypted_Records_Map* decrypted_records_map, std::map<uint, struct record_fragment> &return_buffer);
+// int process_incoming_tls_payload(bool in_coming, unsigned int seq_tls_data, unsigned char* payload, int payload_len, subconn_info* subconn, TLS_Decrypted_Records_Map* decrypted_records_map, std::map<uint, struct record_fragment> &return_buffer);
+// int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, TLS_Decrypted_Records_Map* decrypted_records_map, std::map<uint, struct record_fragment> &return_buffer);
 int decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf);
-int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len, TLS_Decrypted_Records_Map* decrypted_records_map, std::map<uint, struct record_fragment> &return_buffer);
+// int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len, TLS_Decrypted_Records_Map* decrypted_records_map, std::map<uint, struct record_fragment> &return_buffer);
 
 
 void set_tls_handshake_hello_extension_max_frag_len(unsigned char *extension, unsigned char dst);

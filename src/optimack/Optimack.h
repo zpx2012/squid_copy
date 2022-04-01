@@ -18,6 +18,7 @@
 
 class TLS_Crypto_Coder;
 class TLS_Decrypted_Records_Map;
+class TLS_Record_Number_Seq_Map;
 #endif
 // #include "comm/Connection.h"
 // #include "../comm/forward.h"
@@ -275,8 +276,11 @@ public:
     bool is_ssl = false;
 #ifdef USE_OPENSSL
     TLS_Decrypted_Records_Map* decrypted_records_map;
+    TLS_Record_Number_Seq_Map* tls_record_seq_map;
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
+    int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, std::map<uint, struct record_fragment> &return_buffer);
+    int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len, std::map<uint, struct record_fragment> &return_buffer);
 #endif
 };
 

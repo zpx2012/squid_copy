@@ -40,11 +40,11 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1500
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -1729,7 +1729,7 @@ void Optimack::print_seq_table(){
     }
     printf("\n");
 
-    printf("%12s%12u","Port",cur_ack_rel);
+    printf("%12s%12u","Port", cur_ack_rel);
     
     // for (auto const& [port, subconn] : subconn_infos){
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
@@ -1743,6 +1743,17 @@ void Optimack::print_seq_table(){
         printf("%12u", it->second->next_seq_rem);
     }
     printf("\n");
+
+    if(is_ssl){
+#ifdef USE_OPENSSL
+        printf("%12s%12u", "Next_seq_tls", recved_seq.getFirstEnd());
+        // for (auto const& [port, subconn] : subconn_infos){
+        for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+            printf("%12u", it->second->next_seq_rem_tls);
+        }
+        printf("\n");
+#endif
+    }
 
 
     printf("%12s%12u", "Restart_cont", ack_end);
@@ -1816,7 +1827,7 @@ void* overrun_detector(void* arg){
 
     auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
-        if(is_timeout_and_update(last_print_seqs, 2)){
+        if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
             // obj->is_nfq_full(stdout);
             // obj->print_ss(stdout);
@@ -2513,7 +2524,7 @@ int Optimack::process_tcp_plaintext_packet(
 #ifdef USE_OPENSSL
                     // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
                     std::map<uint, struct record_fragment> plaintext_buf_local;
-                    int verdict = process_incoming_tls_payload(from_server, seq_rel , payload, payload_len, subconn, decrypted_records_map, plaintext_buf_local);
+                    int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
 
                     for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
                         
@@ -2632,6 +2643,7 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
             if(is_new_segment){//change to Interval
                 unsigned char* intvl_data = payload+it->start-seq_rel;
                 int intvl_data_len = it->end-it->start;
+                // insert_to_recv_buffer_withLock(it->start, intvl_data, intvl_data_len);
                 if(order_flag == IN_ORDER_NEWEST){
                     subconn->last_inorder_data_time = std::chrono::system_clock::now();
                     send_data_to_squid(it->start, intvl_data, intvl_data_len);
@@ -2686,9 +2698,9 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
         }
     }
     else{
-        int rwnd_tmp = get_adjusted_rwnd(seq_rel+payload_len);
-        if(rwnd_tmp > 0)
-            send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
+        // int rwnd_tmp = get_adjusted_rwnd(seq_rel+payload_len);
+        // if(rwnd_tmp > 0)
+        //     send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
     }
 
     // Too many packets forwarded to squid will cause squid to discard right most packets
@@ -3191,6 +3203,7 @@ void Optimack::send_data_to_subconn(struct subconn_info* conn, bool to_client, u
         printf("send_data_to_subconn: payload is NULL or payload_len == 0\n");
         return;
     }
+    // usleep(1000);
     int packet_len = 0;
     for(int unsent = payload_len, sent = 0; unsent > 0; unsent -= packet_len, sent += packet_len){
         packet_len = unsent >= squid_MSS? squid_MSS : unsent;
@@ -3205,7 +3218,7 @@ void Optimack::send_data_to_subconn(struct subconn_info* conn, bool to_client, u
             send_ACK_payload(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, payload_to_send, packet_len, conn->ini_seq_rem + conn->next_seq_rem, seq_to_send);
             log_info("send_data_to_server: seq %u, ack %u, len %d", seq+sent, conn->next_seq_rem, packet_len);
         }
-        usleep(10);
+        // usleep(100);
     }
 }
 
@@ -3223,6 +3236,7 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
+    tls_record_seq_map = new TLS_Record_Number_Seq_Map();
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         it->second->handshake_finished = false;
         SSL* ssl = open_ssl_conn(it->second->sockfd, false);
