@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 3
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -2544,8 +2544,8 @@ int Optimack::process_tcp_plaintext_packet(
                             // printf("\n\n");
                             // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
                             log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
-                            for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
-                                try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
+                            // for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
+                            //     try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
                             // if(rand() % 5 == 0){
                                 // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
                                 // print_hexdump(it->second.data, it->second.data_len);
@@ -3273,7 +3273,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     printf("\n");
 
     subconn->ssl = ssl;
-    subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303);
+    subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
 
     subconn->handshake_finished = true;
     subconn->record_size = MAX_FULL_GCM_RECORD_LEN;

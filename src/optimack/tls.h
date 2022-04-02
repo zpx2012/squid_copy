@@ -27,6 +27,7 @@ struct record_fragment{
     // bool is_header;
     unsigned char* data;//whole record, header and data
     int data_len;
+    unsigned short* participated_subconns;
     record_fragment( unsigned char* dt, int dl){
         data = dt; data_len = dl;
     }
@@ -39,11 +40,12 @@ int insert_to_rcvbuf(std::map<uint, struct record_fragment> &tls_rcvbuf, uint ne
 #define MAX_FULL_GCM_RECORD_LEN (TLSHDR_SIZE+MAX_GCM_RECORD_LEN)
 uint get_record_num(unsigned int seq);
 
+class TLS_Decrypted_Record_Reassembler;
 class TLS_Decrypted_Records_Map;
 
 class TLS_Crypto_Coder{
 public:
-    TLS_Crypto_Coder(const EVP_CIPHER * ec, unsigned char* salt, unsigned char* key, unsigned int vs_rvs){
+    TLS_Crypto_Coder(const EVP_CIPHER * ec, unsigned char* salt, unsigned char* key, unsigned int vs_rvs, unsigned short lp){
         this->evp_cipher = ec;
         
         memcpy(this->iv_salt, salt, 4);
@@ -56,6 +58,7 @@ public:
 
         this->version_rvs = vs_rvs;
 
+        this->local_port = lp;
     }
 
     int partial_decrypt_record();
@@ -93,7 +96,9 @@ private:
     // int record_size = 0, record_full_size = 0;
     unsigned short version_rvs;
 
+    unsigned short local_port;
     // TLS_Decrypted_Records_Map* decrypted_records_map;
+    friend TLS_Decrypted_Record_Reassembler;
 };
 
 
@@ -103,9 +108,9 @@ class TLS_Decrypted_Record_Reassembler{
 public:
     TLS_Decrypted_Record_Reassembler(int rn, int size);
     ~TLS_Decrypted_Record_Reassembler();
-    int insert_plaintext(uint seq, u_char* data, int data_len);
+    int insert_plaintext(TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len);
     int insert_tag(TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len);
-    int check_complete(u_char* &buf, int &buf_len);
+    int check_complete(u_char* &buf, int &buf_len, u_short* &return_ports, int& return_ports_len);
     int get_complete_plaintext(u_char* &buf, int &buf_len);
     bool verify(u_char* plntxt, int plntxt_len, TLS_Crypto_Coder* crypto_coder, u_char* tag);
     void cleanup();
@@ -163,8 +168,8 @@ public:
     // int insert_tag(int record_num, TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len, u_char* &return_str);
     // int inserted(int record_num, u_char* &return_str);
     // int insert(int record_num, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, u_char* &return_str);
-    int insert(int record_num, int record_size, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, uint tag_offset, u_char* tag, int tag_len, u_char* &return_str);
-    int inserted(int record_num, TLS_Decrypted_Record_Reassembler* tls_decrpyted_record, u_char* &return_str);
+    int insert(int record_num, int record_size, TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len, uint tag_offset, u_char* tag, int tag_len, u_char* &return_str, u_short* &return_ports, int& return_ports_len);
+    int inserted(int record_num, TLS_Decrypted_Record_Reassembler* tls_decrpyted_record, u_char* &return_str, u_short* &return_ports, int& return_ports_len);
     
     TLS_Decrypted_Record_Reassembler* get_record_reassembler(int key){
         return decrypted_record_reassembler_map[key];
