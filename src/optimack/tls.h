@@ -175,6 +175,8 @@ public:
         return decrypted_record_reassembler_map[key];
     }
 
+    void print_result();
+
     void lock();
     void unlock();
 

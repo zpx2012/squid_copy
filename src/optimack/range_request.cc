@@ -351,7 +351,12 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // log_info("first: recved_seq.lastend %u, last_recv_inorder %u", it->second->recved_seq.getLastEnd(), last_recv_inorder);
-        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3 && it->second->next_seq_rem <= last_recv_inorder){
+        uint next_seq_rem = it->second->next_seq_rem;
+// #ifdef USE_OPENSSL                
+//         if(is_ssl)
+//             next_seq_rem = it->second->next_seq_rem_tls;
+// #endif        
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3 && next_seq_rem <= last_recv_inorder){
             // log_info("<=, return false\n");
             return false;
         }
@@ -362,7 +367,12 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
-        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3 && it->second->next_seq_rem <= last_recv_inorder){
+        uint next_seq_rem = it->second->next_seq_rem;
+// #ifdef USE_OPENSSL                
+//         if(is_ssl)
+//             next_seq_rem = it->second->next_seq_rem_tls;
+// #endif
+        if(!it->second->is_backup && !it->second->fin_or_rst_recved && it->second->restart_counter < 3 && next_seq_rem <= last_recv_inorder){
             log_info("second: %s, <=, return false", tmp);
             return false;
         }

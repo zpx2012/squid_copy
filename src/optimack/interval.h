@@ -47,7 +47,7 @@ struct Interval
     }    
     int length(){
         if(start < end)
-            return end - start + 1;
+            return end - start;
         else
             return 0;
     }

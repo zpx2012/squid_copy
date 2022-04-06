@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -916,10 +916,10 @@ full_optimistic_ack_altogether(void* arg)
             struct subconn_info* slowest_subconn = obj->get_slowest_subconn();
             if(slowest_subconn){
                 min_next_seq_rem = slowest_subconn->next_seq_rem;
-#ifdef USE_OPENSSL
-                if(obj->is_ssl)
-                    min_next_seq_rem = slowest_subconn->next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
-#endif                
+// #ifdef USE_OPENSSL
+//                 if(obj->is_ssl)
+//                     min_next_seq_rem = slowest_subconn->next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
+// #endif                
                 if(elapsed(slowest_subconn->last_data_received) >= 1.5){
                     is_stall = true;
                     stall_port = slowest_subconn->local_port;
@@ -1013,10 +1013,10 @@ full_optimistic_ack_altogether(void* arg)
                     
                     if(elapsed(it->second->last_data_received) >= 1.5 && it->second->restart_counter < MAX_RESTART_COUNT){           
                         uint next_seq_rem = it->second->next_seq_rem;
-#ifdef USE_OPENSSL                
-                        if(obj->is_ssl)
-                            next_seq_rem = it->second->next_seq_rem_tls;
-#endif
+// #ifdef USE_OPENSSL                
+//                         if(obj->is_ssl)
+//                             next_seq_rem = it->second->next_seq_rem_tls;
+// #endif
                         long next_seq_rem_long = next_seq_rem, stall_seq_long = stall_seq;
                         if(abs(next_seq_rem_long - stall_seq_long) < 5*mss){
                             for(int i = 0; i < 2; i++)
@@ -1233,6 +1233,17 @@ void Optimack::log_seq_gaps(){
     map<string, int> lost_per_second;
     for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
         counts[j/1460] = 0;
+    }
+
+
+    if(is_ssl){
+#ifdef USE_OPENSSL
+        decrypted_records_map->print_result();
+        for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+            printf("%d: %s\n", it->first, it->second->recved_seq.Intervals2str().c_str());
+        }
+        sleep(10);
+#endif
     }
     // for(size_t k = 0; k < subconn_infos.size(); k++){
     //     size_t n = 1;
@@ -1899,10 +1910,10 @@ struct subconn_info* Optimack::get_slowest_subconn(){
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end();it++){
         uint next_seq_rem = it->second->next_seq_rem;
-#ifdef USE_OPENSSL
-        if(is_ssl)
-            next_seq_rem = it->second->next_seq_rem_tls;
-#endif
+// #ifdef USE_OPENSSL
+//         if(is_ssl)
+//             next_seq_rem = it->second->next_seq_rem_tls;
+// #endif
         if(!it->second->is_backup && !it->second->fin_or_rst_recved && next_seq_rem < min_next_seq_rem && it->second->restart_counter < MAX_RESTART_COUNT){
             slowest_subconn = it->second;
             min_next_seq_rem = next_seq_rem;
@@ -2276,7 +2287,7 @@ int Optimack::process_tcp_plaintext_packet(
                             // log_info(recved_seq.Intervals2str().c_str());
                         }
                         // pthread_mutex_unlock(sack_list.getMutex());
-                        log_info("P%d-Squid-out: squid ack %u, th_win %u, win_scale %d, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s, SACK: %s\n", pkt_id, cur_ack_rel, ntohs(tcphdr->th_win), win_scale, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str), sack_list.Intervals2str().c_str());
+                        printf("P%d-Squid-out: squid ack %u, th_win %u, win_scale %d, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s, SACK: %s\n", pkt_id, cur_ack_rel, ntohs(tcphdr->th_win), win_scale, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str), sack_list.Intervals2str().c_str());
 
                         if (cur_ack_rel == last_ack_rel){
                             if(cur_ack_rel < recved_seq.getFirstEnd())
@@ -2469,7 +2480,7 @@ int Optimack::process_tcp_plaintext_packet(
                             uint next_seq_rem_tmp = it->second->next_seq_rem;
                             if(is_ssl)
 #ifdef USE_OPENSSL
-                                next_seq_rem_tmp = it->second->next_seq_rem_tls;
+                                // next_seq_rem_tmp = it->second->next_seq_rem_tls;
 #endif
                             if (!it->second->is_backup && it->second->seq_init && next_seq_rem_tmp <= 1){
                                 send_optimistic_ack(it->second, 1, get_adjusted_rwnd(1));
@@ -2522,6 +2533,7 @@ int Optimack::process_tcp_plaintext_packet(
 
                 if(is_ssl){
 #ifdef USE_OPENSSL
+                    subconn->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
                     // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
                     std::map<uint, struct record_fragment> plaintext_buf_local;
                     int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
@@ -2558,7 +2570,8 @@ int Optimack::process_tcp_plaintext_packet(
                             plaintext_buf_local.erase(it++);
                         }
                     }
-                    try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
+                    update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
+                    // try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
 #endif
                 }
                 else
