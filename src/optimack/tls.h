@@ -139,7 +139,7 @@ public:
     TLS_Decrypted_Records_Map(TLS_Crypto_Coder* coder) { 
         main_subconn_cypto_coder = coder;
         decrypted_record_reassembler_map.clear(); 
-
+        successful = failed = 0;
         // decrypted_record_reassembler_map = new TLS_Decrypted_Record_Reassembler*[42750];
         // mutex_map = new pthread_mutex_t[42750];
         // for (size_t i = 0; i < 42750; i++)
@@ -188,6 +188,7 @@ private:
     // std::map<uint, struct subconn_info*> *subconn_infos;
     TLS_Crypto_Coder* main_subconn_cypto_coder;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    int successful, failed;
 };
 
 

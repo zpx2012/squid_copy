@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 6
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -81,6 +81,8 @@ using namespace std;
 #ifndef DEBUG_PRINT_LEVEL
 #define DEBUG_PRINT_LEVEL 0
 #endif
+
+#define LOG_SQUID_ACK 1
 
 
 // Utility
@@ -1528,11 +1530,13 @@ Optimack::init()
     // processed_seq_file = fopen(tmp_str, "w");
     // fprintf(processed_seq_file, "time,port,processed_seq_num\n");
    
-    // memset(tmp_str, 0, 600);
-    // sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
-    // ack_file = fopen(tmp_str, "w");
-    // fprintf(ack_file, "time,ack_num\n");
-    
+    if(LOG_SQUID_ACK){
+        memset(tmp_str, 0, 600);
+        sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
+        ack_file = fopen(tmp_str, "w");
+        fprintf(ack_file, "time,ack_rel,rwnd\n");
+    }
+
     // sprintf(seq_gaps_count_file_name, "/root/rs/seq_gaps_count_file_%s.csv", cur_time.time_in_HH_MM_SS());
     sprintf(seq_gaps_count_file_name, "%s/seq_gaps_count_%s_%s.csv", output_dir, start_time, hostname);
     // seq_gaps_count_file = fopen(seq_gaps_count_file_name, "a");
@@ -2251,6 +2255,7 @@ int Optimack::process_tcp_plaintext_packet(
                         uint cur_ack_rel_local = ack - subconn->ini_seq_rem;
                         this->win_end = cur_ack_rel + rwnd;
                         // log_seq(ack_file, cur_ack_rel_local);
+                        fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
 
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", pkt_id, cur_ack_rel, rwnd, max_win_size);

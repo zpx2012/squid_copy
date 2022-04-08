@@ -5,7 +5,8 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-#define TLS_DEBUG 1
+const int tls_debug = 3;
+const int lock_debug = 0;
 
 int print_hexdump(unsigned char* hexdump, int len){
     for(int i = 0; i < len; i++){
@@ -65,7 +66,7 @@ int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_
     unsigned long long iv_num = *((unsigned long long*)appdata);
     if(iv_num){
         memcpy(iv+4, appdata, 8);
-        if(TLS_DEBUG){
+        if(tls_debug){
             printf("decrypt_record: Record No.%lu, iv_num exists ", record_num);
             print_hexdump(appdata, 8);
         }
@@ -74,7 +75,7 @@ int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_
         iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
         iv_num = htobe64(iv_num+record_num-1);
         memcpy(iv+4, &iv_num, 8);
-        if(TLS_DEBUG)
+        if(tls_debug)
             printf("decrypt_record: Record No.%lu, iv_num not exists %x\n", record_num, iv_num);
     }
     iv[12] = 0;
@@ -154,7 +155,7 @@ TLS_Decrypted_Record_Reassembler::TLS_Decrypted_Record_Reassembler(int rs, int s
     record_num = rs;
     expected_size = size;
     tags.clear();
-    if(TLS_DEBUG)
+    if(tls_debug)
         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d created\n", this, rs);
 }
 
@@ -169,7 +170,7 @@ TLS_Decrypted_Record_Reassembler:: ~TLS_Decrypted_Record_Reassembler(){
 void TLS_Decrypted_Record_Reassembler::cleanup(){
     // const std::lock_guard<std::mutex> lock(mutex);
     // lock();
-    if (TLS_DEBUG)
+    if (tls_debug)
         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, cleanup\n", this, record_num);
     
     if(!tags.empty()){
@@ -188,20 +189,20 @@ void TLS_Decrypted_Record_Reassembler::cleanup(){
 
 
 void TLS_Decrypted_Record_Reassembler::lock(){
-    if(TLS_DEBUG)
+    if(tls_debug && lock_debug)
         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, try lock\n", this, record_num);
     pthread_mutex_lock(&mutex);
 }
 
 void TLS_Decrypted_Record_Reassembler::unlock(){
     pthread_mutex_unlock(&mutex);
-    if(TLS_DEBUG)
+    if(tls_debug && lock_debug)
         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, try unlock\n", this, record_num);
 }
 
 int TLS_Decrypted_Record_Reassembler::insert_plaintext(TLS_Crypto_Coder* cypto_coder, uint seq, u_char* data, int data_len){
 	// const std::lock_guard<std::mutex> lock(mutex);
-    if(TLS_DEBUG)
+    if(tls_debug)
         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, insert plaintext,  plaintext_len %d\n", this, record_num, seq, data_len);
     lock();
     if(plntxt_buffer){
@@ -217,11 +218,11 @@ int TLS_Decrypted_Record_Reassembler::insert_plaintext(TLS_Crypto_Coder* cypto_c
 int TLS_Decrypted_Record_Reassembler::insert_tag(TLS_Crypto_Coder* cypto_coder, uint offset, u_char* tag, int tag_len){
 	// const std::lock_guard<std::mutex> lock(mutex);
     if(tag_len < 0 || tag_len > 16){
-        if(TLS_DEBUG)
+        if(tls_debug)
             printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, insert tag, offset %u, tag_len %d, invalid tag_len! return -1.\n", this, record_num, offset, tag_len);
         return -1;
     }
-    if(TLS_DEBUG)
+    if(tls_debug)
         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, insert tag, offset %u, tag_len %d\n", this, record_num, offset, tag_len);
     lock();
     if(plntxt_buffer){
@@ -244,19 +245,19 @@ int TLS_Decrypted_Record_Reassembler::check_complete(u_char* &buf, int &buf_len,
     if(plntxt_buffer && plntxt_buffer->TotalSize() == expected_size){
         for (auto it = tags.begin(); it != tags.end(); it++){
             if(it->second->TotalSize() == 16){
-                if(TLS_DEBUG)
+                if(tls_debug)
                     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, plaintext is complete,found tag in coder %p\n", this, record_num, it->first);
                 get_complete_plaintext(buf, buf_len);
                 u_char* tag = NULL;
                 int tag_len = 0;
                 tag_len = it->second->InOrderStrs(tag, 16);
                 if(tag_len != 16){
-                    if(TLS_DEBUG)
+                    if(tls_debug)
                         printf("TLS_Decrypted_Record_Reassembler(%p):No.%d, inserted: tag_len is %d\n", this, record_num, tag_len);
                     continue;
                 }
                 verdict = verify(buf, buf_len, it->first, tag);
-                if(TLS_DEBUG)
+                if(tls_debug)
                 break;
             }
         }
@@ -295,7 +296,7 @@ bool TLS_Decrypted_Record_Reassembler::verify(u_char* plntxt, int plntxt_len, TL
         ciphertext[ciphertext_len] = 0;
         u_char* regenerated_tag = ciphertext + ciphertext_len - 16;
         int ret = strncmp((char *)(tag), (char *)regenerated_tag, 16);
-        if(TLS_DEBUG){
+        if(tls_debug){
             print_hexdump(tag, 16);
             print_hexdump(regenerated_tag, 16);
             printf("strncmp: %d\n", ret);
@@ -319,23 +320,37 @@ int TLS_Decrypted_Records_Map::inserted(int record_num, TLS_Decrypted_Record_Rea
     if(ret < 0)
         return -1;
 
+    if(tls_debug){
+        if(ret == 1)
+            printf("inserted: No.%d. Tag verified.\n", record_num);
+        else{
+            printf("inserted: No.%d. Tag verification failed.\n", record_num);
+            if(tls_debug > 2){
+                printf("Plaintext:\n");
+                print_hexdump(buf, buf_len);
+            }
+        }
+    }
+
     int ciphertext_len = 0;
     if(ret == 1){
-        if(TLS_DEBUG){
-            printf("inserted: No.%d. Tag verified.\n", record_num);
-        }
-
         u_char* ciphertext = new u_char[buf_len+TLSHDR_SIZE+8+16+1];
         ciphertext_len = main_subconn_cypto_coder->generate_record(record_num, buf, buf_len, ciphertext);
         delete [] buf;
         if(ciphertext_len > 0){
             return_str = ciphertext;
-            if(TLS_DEBUG){
+            if(tls_debug){
                 printf("inserted: No.%d. Re-encrypted. assign return_str to %p\n", record_num, ciphertext);
             }
-
         }
     }
+
+    lock();
+    if(ret == 1)
+        successful++;
+    else
+        failed++;
+    unlock();
     return ciphertext_len;
 }
 
@@ -343,29 +358,29 @@ int TLS_Decrypted_Records_Map::inserted(int record_num, TLS_Decrypted_Record_Rea
 void TLS_Decrypted_Records_Map::print_result(){
     int incompleted_counter = 0;
     printf("Print TLS_Decrypted_Record_Reassembler:\n");
-    for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); it++){
-        // if(it->second == nullptr){
-        //     printf("%d:1, ", it->first);
-        //     completed_counter++;
-        // }
-        if(it->second){
-            incompleted_counter++;
-            printf("%d:%d(%d), ", it->first, it->second->plntxt_buffer->TotalSize(), it->second->expected_size);
-        }
-    }
-    printf("\nIncompleted: %d/%d.\n", incompleted_counter, decrypted_record_reassembler_map.size());
+    // for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); it++){
+    //     // if(it->second == nullptr){
+    //     //     printf("%d:1, ", it->first);
+    //     //     completed_counter++;
+    //     // }
+    //     if(it->second){
+    //         incompleted_counter++;
+    //         printf("%d:%d(%d), ", it->first, it->second->plntxt_buffer->TotalSize(), it->second->expected_size);
+    //     }
+    // }
+    printf("\nSuccessful, Failed, Incompleted/Total: %d, %d, %d/%d.\n", successful, failed, decrypted_record_reassembler_map.size() - successful - failed, decrypted_record_reassembler_map.size());
 }
 
 
 void TLS_Decrypted_Records_Map::lock(){
-    if(TLS_DEBUG)
+    if(tls_debug && lock_debug)
         printf("TLS_Decrypted_Records_Map: try lock\n");
     pthread_mutex_lock(&mutex);
 }
 
 void TLS_Decrypted_Records_Map::unlock(){
     pthread_mutex_unlock(&mutex);
-    if(TLS_DEBUG)
+    if(tls_debug && lock_debug)
         printf("TLS_Decrypted_Records_Map: try unlock\n");
 }
 
@@ -378,7 +393,7 @@ void TLS_Decrypted_Records_Map::unlock(){
 //         unlock();
 //     }
 //     decrypted_record_reassembler_map[record_num]->insert_plaintext(seq, data, data_len);
-//     if(TLS_DEBUG){
+//     if(tls_debug){
 //         printf("insert_plaintext: No.%d, seq %u, len %d\n", record_num, seq, data_len);
 //     }
 //     return 0;
@@ -393,19 +408,19 @@ int TLS_Decrypted_Records_Map::insert(int record_num, int record_size, TLS_Crypt
         }
 
         // if(tls_decrypted_record){
-        //     if(TLS_DEBUG)
+        //     if(tls_debug)
         //         printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, get tls_decrypted_record(%p), record_num %d, plntxt_buffer(%p)\n", tls_decrypted_record, record_num, seq, tls_decrypted_record, tls_decrypted_record->record_num, tls_decrypted_record->plntxt_buffer);
 
         //     if(!tls_decrypted_record->plntxt_buffer){
-        //         // if(TLS_DEBUG)
+        //         // if(tls_debug)
         //         //     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, try lock to delete tls_record\n", tls_decrypted_record, record_num, seq);
         //         // pthread_mutex_lock(mutex_record);
-        //         // if(TLS_DEBUG)
+        //         // if(tls_debug)
         //         //     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, gain lock. plntxt_buffer empty, delete it, call cleanup.\n", tls_decrypted_record, record_num, seq);
 
         //         // delete tls_decrypted_record;
         //         // pthread_mutex_unlock(mutex_record);
-        //         // if(TLS_DEBUG)
+        //         // if(tls_debug)
         //         //     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, unlock. Set map entry to nullptr\n", tls_decrypted_record, record_num, seq);
 
         //         decrypted_record_reassembler_map[record_num] = nullptr;
@@ -421,10 +436,10 @@ int TLS_Decrypted_Records_Map::insert(int record_num, int record_size, TLS_Crypt
 
 
     if(tls_decrypted_record && tls_decrypted_record->record_num == record_num){
-        // if(TLS_DEBUG)
+        // if(tls_debug)
         //     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, try lock to insert\n", tls_decrypted_record, record_num, seq);
         // pthread_mutex_lock(mutex_record);
-        // if(TLS_DEBUG)
+        // if(tls_debug)
         //     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, gain lock, inner_recordnum %d, plntxt_buffer(%p)\n", tls_decrypted_record, record_num, seq, tls_decrypted_record->record_num, tls_decrypted_record->plntxt_buffer);
         // tls_decrypted_record->lock();
 
@@ -439,7 +454,7 @@ int TLS_Decrypted_Records_Map::insert(int record_num, int record_size, TLS_Crypt
                 // pthread_mutex_lock(mutex_record);
                 if(tls_decrypted_record->plntxt_buffer && tls_decrypted_record->record_num == record_num){// when tls_decrypted_record is deleted, this pointer will point to any address, plntxt_buffer will not be null, but record_num will not be correct either 
                     tls_decrypted_record->insert_plaintext(crypto_coder, seq, data, data_len);
-                    if(TLS_DEBUG)
+                    if(tls_debug)
                         printf("TLS_Decrypted_Record_Map(%p): No.%d, seq %u, insert_plaintext len %d\n", this, record_num, seq, data_len, tls_decrypted_record->record_num, tls_decrypted_record->plntxt_buffer);
                 }
                 // pthread_mutex_unlock(mutex_record);
@@ -449,7 +464,7 @@ int TLS_Decrypted_Records_Map::insert(int record_num, int record_size, TLS_Crypt
                 // pthread_mutex_lock(mutex_record);
                 if(tls_decrypted_record->plntxt_buffer && tls_decrypted_record->record_num == record_num){// when tls_decrypted_record is deleted, this pointer will point to any address, plntxt_buffer will not be null, but record_num will not be correct either 
                     tls_decrypted_record->insert_tag(crypto_coder, tag_offset, tag, tag_len);
-                    if(TLS_DEBUG){
+                    if(tls_debug){
                         printf("TLS_Decrypted_Record_Map(%p): No.%d, seq %u, insert_tag: offset %u, len %d, ", this, record_num, seq, tag_offset, tag_len);
                         print_hexdump(tag, tag_len);
                     }
@@ -467,7 +482,7 @@ int TLS_Decrypted_Records_Map::insert(int record_num, int record_size, TLS_Crypt
         }
         // tls_decrypted_record->unlock();
         // pthread_mutex_unlock(mutex_record);
-        // if(TLS_DEBUG)
+        // if(tls_debug)
         //     printf("TLS_Decrypted_Record_Reassembler(%p): No.%d, seq %u, unlock\n", tls_decrypted_record, record_num, seq);
 
         if(ret >= 0){
@@ -513,7 +528,7 @@ int TLS_Record_Number_Seq_Map::insert(uint start_seq, int record_size_with_heade
 
 int TLS_Record_Number_Seq_Map::set_record_seq_info(uint seq, struct mytlshdr* tlshdr){
     if(tlshdr->version != 0x0303 || tlshdr->type != TLS_TYPE_APPLICATION_DATA){
-        if(TLS_DEBUG)
+        if(tls_debug)
             printf("TLS_Record_Number_Seq_Map: seq %u is not tlshdr\n", seq);
         return -1;
     }
@@ -533,7 +548,7 @@ int TLS_Record_Number_Seq_Map::set_size(uint start_seq, int record_size_with_hea
             lock();
             if (first_max_frag_seq == 0){
                 first_max_frag_seq = start_seq;
-                if(TLS_DEBUG)
+                if(tls_debug)
                     printf("TLS_Record_Number_Seq_Map::set_size: set first_max_frag_seq to %u\n", start_seq);
             }
             unlock();
@@ -546,7 +561,7 @@ int TLS_Record_Number_Seq_Map::set_size(uint start_seq, int record_size_with_hea
         if(start_seq > first_max_frag_seq){ //Final piece
             last_piece_start_seq = start_seq;
             tls_seq_map[start_seq] = new TLS_Record_Seq_Info(get_record_num(start_seq), record_size_with_header, start_seq, start_seq+record_size_with_header);
-            if(TLS_DEBUG)
+            if(tls_debug)
                 printf("TLS_Record_Number_Seq_Map::set_size: set the final piece length to %d\n", record_size_with_header);
         }
     }
@@ -601,13 +616,13 @@ int TLS_Record_Number_Seq_Map::get_record_num(uint seq){
 
 
 void TLS_Record_Number_Seq_Map::lock(){
-    if(TLS_DEBUG)
+    if(tls_debug && lock_debug)
         printf("TLS_Record_Number_Seq_Map: try lock\n");
     pthread_mutex_lock(&mutex);
 }
 
 void TLS_Record_Number_Seq_Map::unlock(){
-    if(TLS_DEBUG)
+    if(tls_debug && lock_debug)
         printf("TLS_Record_Number_Seq_Map: try unlock\n");
     pthread_mutex_unlock(&mutex);
 }
@@ -745,7 +760,7 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
             continue;
 
 
-        if(TLS_DEBUG)
+        if(tls_debug)
             printf("S%d-%d: Partial: No.%d, Full Record[%u, %u), payload[%u, %u), intersect[%u,%u)\n", subconn->id, subconn->local_port, record_num, record_intvl.start, record_intvl.end, payload_intvl.start, payload_intvl.end, intersect.start, intersect.end);
 
 
@@ -768,9 +783,10 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
         memset(plaintext, 0, plaintext_full_size + 1);
         memcpy(ciphertext + ciphertext_partial_start_index, payload + payload_partial_start_index, partial_len);
         int ret = subconn->crypto_coder->decrypt_record(record_num, ciphertext, record_full_size, plaintext);
-        // printf("partial decrypt: ciphertext_seq %u, offset %u\n", record_start_seq, intersect.start - record_start_seq);
-        // print_hexdump(ciphertext, MAX_FULL_GCM_RECORD_LEN+1);
-    
+        if(tls_debug > 2){
+            printf("partial decrypt: ciphertext_seq %u, offset %u\n", record_start_seq, intersect.start - record_start_seq);
+            print_hexdump(ciphertext+ciphertext_partial_start_index, partial_len+1);
+        }
 
         uint plaintext_start_seq = record_start_seq + TLSHDR_SIZE + 8,
              plaintext_end_seq = record_end_seq - 16;
@@ -781,24 +797,27 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
         if(plaintext_partial_len > 0){
             plaintext_partial_start_index = plaintext_intersect.start - plaintext_start_seq;
             plaintext_partial_buf = plaintext + plaintext_partial_start_index;
-            if(TLS_DEBUG)
+            if(tls_debug)
                 printf("S%d-%d: Partial: No.%d, seq %u, Full plaintext[%u, %u), payload[%u, %u), intersect[%u,%u)\n", 
                         subconn->id, subconn->local_port, record_num, plaintext_partial_start_index, plaintext_start_seq, plaintext_end_seq, payload_intvl.start, payload_intvl.end, plaintext_intersect.start, plaintext_intersect.end);
+            if(tls_debug > 2){
+                printf("partial decrypt: plaintext_seq %u, offset %u\n", plaintext_start_seq, plaintext_partial_start_index);
+                print_hexdump(plaintext_partial_buf, plaintext_partial_len+1);
+            }
         }
 
         uint tag_start_seq = plaintext_end_seq,
              tag_end_seq = record_end_seq;
         Interval tag_intersect = intersect.intersect(Interval(tag_start_seq, tag_end_seq));
         int tag_partial_len = tag_intersect.length();
-        uint tag_partial_start_index = 0;
+        uint tag_partial_start_offset = 0;
         u_char* tag;
         if(tag_partial_len > 0){
-            tag_partial_start_index = tag_intersect.start - tag_start_seq;
-            tag = ciphertext + record_full_size - 16;
-            if(TLS_DEBUG)
+            tag_partial_start_offset = tag_intersect.start - tag_start_seq;
+            tag = ciphertext + record_full_size - 16 + tag_partial_start_offset;
+            if(tls_debug)
                 printf("S%d-%d: Partial: No.%d, seq %u, Full tag[%u, %u), payload[%u, %u), intersect[%u,%u)\n", 
-                        subconn->id, subconn->local_port, record_num, plaintext_partial_start_index, intersect.start, intersect.end, payload_intvl.start, payload_intvl.end, tag_intersect.start, tag_intersect.end);
-
+                        subconn->id, subconn->local_port, record_num, plaintext_partial_start_index, tag_start_seq, tag_end_seq, payload_intvl.start, payload_intvl.end, tag_intersect.start, tag_intersect.end);
         }
 
 
@@ -808,20 +827,20 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
             int participated_ports_num = 0;
             int complete_ciphertext_len = decrypted_records_map->insert(record_num, plaintext_full_size, subconn->crypto_coder, 
                                                                         plaintext_partial_start_index, plaintext_partial_buf , plaintext_partial_len,
-                                                                        tag_partial_start_index, tag, tag_partial_len, 
+                                                                        tag_partial_start_offset, tag, tag_partial_len, 
                                                                         complete_ciphertext, participated_ports, participated_ports_num);
-            if(TLS_DEBUG)
+            if(tls_debug)
                 if(complete_ciphertext_len > 0)
                     printf("S%d-%d: Partial: TLS Record No.%d, seq %u: plaintext[%u, %u)([%u, %u)) inserted, tag[%u, %u)([%u, %u))\n", 
                             subconn->id, subconn->local_port, record_num, plaintext_partial_start_index, plaintext_intersect.start, plaintext_intersect.end, plaintext_partial_start_index, plaintext_partial_start_index + plaintext_partial_len,
-                                                                        tag_intersect.start, tag_intersect.end, tag_partial_start_index, tag_partial_start_index + tag_partial_len -1);
+                                                                        tag_intersect.start, tag_intersect.end, tag_partial_start_offset, tag_partial_start_offset + tag_partial_len -1);
                 else
                     printf("S%d-%d: Partial: TLS Record No.%d, seq %u: plaintext[%u, %u)([%u, %u)) not inserted, tag[%u, %u)([%u, %u))\n", 
                             subconn->id, subconn->local_port, record_num, plaintext_partial_start_index, plaintext_intersect.start, plaintext_intersect.end, plaintext_partial_start_index, plaintext_partial_start_index + plaintext_partial_len,
-                                                                        tag_intersect.start, tag_intersect.end, tag_partial_start_index, tag_partial_start_index + tag_partial_len -1);
+                                                                        tag_intersect.start, tag_intersect.end, tag_partial_start_offset, tag_partial_start_offset + tag_partial_len -1);
 
             if(complete_ciphertext_len > 0 && complete_ciphertext){
-                if(TLS_DEBUG)
+                if(tls_debug)
                     printf("S%d-%d: Partial: TLS Record No.%d, seq %u: found complete record, u_char* %p, len %d.\n", subconn->id, subconn->local_port, record_num, payload_partial_start_index, complete_ciphertext, complete_ciphertext_len);
                 insert_to_rcvbuf(return_buffer, record_start_seq, complete_ciphertext, complete_ciphertext_len);
                 delete [] complete_ciphertext;
@@ -831,7 +850,7 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
                 }
             }
         }
-        if(TLS_DEBUG)
+        if(tls_debug)
             printf("\n");
 
         delete [] ciphertext;
