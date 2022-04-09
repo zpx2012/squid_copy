@@ -5,7 +5,7 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-const int tls_debug = 3;
+const int tls_debug = 1;
 const int lock_debug = 0;
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -63,21 +63,22 @@ int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_
 
     unsigned char iv[13] = {0};
     memcpy(iv, iv_salt, 4);
-    unsigned long long iv_num = *((unsigned long long*)appdata);
-    if(iv_num){
-        memcpy(iv+4, appdata, 8);
-        if(tls_debug){
-            printf("decrypt_record: Record No.%lu, iv_num exists ", record_num);
-            print_hexdump(appdata, 8);
-        }
-    }
-    else{
-        iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
-        iv_num = htobe64(iv_num+record_num-1);
-        memcpy(iv+4, &iv_num, 8);
-        if(tls_debug)
-            printf("decrypt_record: Record No.%lu, iv_num not exists %x\n", record_num, iv_num);
-    }
+    
+    // unsigned long long iv_num = *((unsigned long long*)appdata); //bug: iv could be break into two packets and the iv got from this will be wrong 
+    // if(iv_num){
+    //     memcpy(iv+4, appdata, 8);
+    //     if(tls_debug){
+    //         printf("decrypt_record: Record No.%lu, iv_num exists ", record_num);
+    //         print_hexdump(appdata, 8);
+    //     }
+    // }
+    // else{
+    unsigned long long iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
+    iv_num = htobe64(iv_num+record_num-1);
+    memcpy(iv+4, &iv_num, 8);
+    if(tls_debug)
+        printf("decrypt_record: Record No.%lu, iv_num not exists, calculated iv_num is %lx\n", record_num, htobe64(iv_num));
+    // }
     iv[12] = 0;
 
     unsigned char aad[14] = {0};
@@ -785,7 +786,7 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
         int ret = subconn->crypto_coder->decrypt_record(record_num, ciphertext, record_full_size, plaintext);
         if(tls_debug > 2){
             printf("partial decrypt: ciphertext_seq %u, offset %u\n", record_start_seq, intersect.start - record_start_seq);
-            print_hexdump(ciphertext+ciphertext_partial_start_index, partial_len+1);
+            print_hexdump(ciphertext+ciphertext_partial_start_index, partial_len);
         }
 
         uint plaintext_start_seq = record_start_seq + TLSHDR_SIZE + 8,
@@ -802,7 +803,7 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
                         subconn->id, subconn->local_port, record_num, plaintext_partial_start_index, plaintext_start_seq, plaintext_end_seq, payload_intvl.start, payload_intvl.end, plaintext_intersect.start, plaintext_intersect.end);
             if(tls_debug > 2){
                 printf("partial decrypt: plaintext_seq %u, offset %u\n", plaintext_start_seq, plaintext_partial_start_index);
-                print_hexdump(plaintext_partial_buf, plaintext_partial_len+1);
+                print_hexdump(plaintext_partial_buf, plaintext_partial_len);
             }
         }
 

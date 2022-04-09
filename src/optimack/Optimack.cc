@@ -84,6 +84,7 @@ using namespace std;
 
 #define LOG_SQUID_ACK 1
 
+const int multithread = 0;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -826,7 +827,7 @@ full_optimistic_ack_altogether(void* arg)
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
          last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
-    unsigned int opa_ack_start = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
+    unsigned int opa_ack_start = 1,  last_opa_ack = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
@@ -857,6 +858,8 @@ full_optimistic_ack_altogether(void* arg)
                     if ((opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS))){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
                         if (obj->ack_end > 1 && opa_ack_start >= obj->ack_end)
                             continue;
+                        if(opa_ack_start == last_opa_ack)
+                            continue;
                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
@@ -879,6 +882,7 @@ full_optimistic_ack_altogether(void* arg)
                 // }
             }
             else {
+                last_opa_ack = opa_ack_start;
                 if(obj->ack_end > 1 && obj->cur_ack_rel == obj->ack_end && opa_ack_start == obj->ack_end){
                     log_info("S%d: [Optimack]: cur_ack_rel(%u) == ack_end(%u), mission completed, continue", obj->squid_port, obj->cur_ack_rel, obj->ack_end);
                     continue;
@@ -999,8 +1003,8 @@ full_optimistic_ack_altogether(void* arg)
                     continue;
                 }
 
-                if(opa_ack_start == obj->ack_end)
-                    continue;
+                // if(opa_ack_start == obj->ack_end)
+                //     continue;
 
                 // else{
                 //     if(SPEEDUP_CONFIG)
@@ -1726,10 +1730,13 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     // printf("packet:\n");
     // hex_dump(packet, packet_len);
 
-    // pool_handler((void *)thr_data);
-    if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-        // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
-        return -1;
+    if(multithread == 0)
+        pool_handler((void *)thr_data);
+    else{
+        if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
+            // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
+            return -1;
+        }
     }
     return 0;
 }
