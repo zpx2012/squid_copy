@@ -84,7 +84,7 @@ using namespace std;
 
 #define LOG_SQUID_ACK 1
 
-const int multithread = 0;
+const int multithread = 1;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -2299,7 +2299,7 @@ int Optimack::process_tcp_plaintext_packet(
                             // log_info(recved_seq.Intervals2str().c_str());
                         }
                         // pthread_mutex_unlock(sack_list.getMutex());
-                        printf("P%d-Squid-out: squid ack %u, th_win %u, win_scale %d, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s, SACK: %s\n", pkt_id, cur_ack_rel, ntohs(tcphdr->th_win), win_scale, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str), sack_list.Intervals2str().c_str());
+                        log_info("P%d-Squid-out: squid ack %u, th_win %u, win_scale %d, win_size %d, max win_size %d, win_end %u, update last_ack_time to %s, SACK: %s", pkt_id, cur_ack_rel, ntohs(tcphdr->th_win), win_scale, rwnd, max_win_size, cur_ack_rel+rwnd, print_chrono_time(last_ack_time, time_str), sack_list.Intervals2str().c_str());
 
                         if (cur_ack_rel == last_ack_rel){
                             if(cur_ack_rel < recved_seq.getFirstEnd())

@@ -5,7 +5,7 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-const int tls_debug = 1;
+const int tls_debug = 0;
 const int lock_debug = 0;
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -264,7 +264,9 @@ int TLS_Decrypted_Record_Reassembler::check_complete(u_char* &buf, int &buf_len,
         }
     }
     if(verdict > 0){
-        printf("TLS_Decrypted_Record_Reassembler(%p):No.%d, inserted: plaintext is complete, tag verified. run cleanup\n", this, record_num);
+        if(tls_debug)
+            printf("TLS_Decrypted_Record_Reassembler(%p):No.%d, inserted: plaintext is complete, tag verified. run cleanup\n", this, record_num);
+
         participated_ports_len = tags.size();
         participated_ports = new u_short[participated_ports_len];
         int i = 0;
