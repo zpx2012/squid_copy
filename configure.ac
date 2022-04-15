@@ -33,7 +33,7 @@ PRESET_LDFLAGS="$LDFLAGS"
 
 dnl Set default LDFLAGS
 if test "x$LDFLAGS" = "x" ; then
-  LDFLAGS="-g"
+  LDFLAGS="-pg"
 fi
 
 # Check for GNU cc

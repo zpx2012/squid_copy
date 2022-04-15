@@ -34,6 +34,10 @@ liboptim_la_SOURCES = \
 	waitpacket.cc \
 	interval.h \
 	interval.cc \
+	interval_geeks.h \
+	interval_geeks.cc \
+	interval_boost.h \
+	interval_boost.cc \
 	ssl_local.h \
 	evp.h \
 	modes_local.h \

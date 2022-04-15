@@ -13,6 +13,7 @@
 #include "logging.h"
 #include "Optimack.h"
 
+
 // range
 #define MAX_REQUEST_LEN 1024
 #define MAX_RANGE_REQ_LEN 1536
@@ -345,7 +346,7 @@ void Optimack::try_for_gaps_and_request(){
 
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
-    // uint seq_recved_global = recved_seq.getFirstEnd_withLock();//TODO: Or ?  cur_ack_rel
+    
     if (recved_seq.size() < 2)
         return false;
 
@@ -555,7 +556,7 @@ int Optimack::get_lost_range(Interval* intvl)
     
 
     // check if the range has already been sent
-    IntervalList lost_range;
+    IntervalListWithTime lost_range;
     lost_range.clear();
     lost_range.insertNewInterval(start, end);
     lost_range.substract(&ranges_sent);

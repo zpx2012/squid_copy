@@ -8,7 +8,8 @@
 #include <chrono>
 #include <ctime>
 #include <sys/time.h>
-#include "interval.h"
+#include "interval_boost.h"
+#include "interval_geeks.h"
 #include <netinet/in.h>
 #include "autoconf.h"
 
@@ -246,7 +247,7 @@ public:
     pthread_t range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
-    IntervalList ranges_sent;
+    IntervalListWithTime ranges_sent;
     uint response_header_len = 0, requested_bytes = 0, file_size = 0, ack_end = 1;
 
     //receive buffer
@@ -287,5 +288,16 @@ public:
 double get_current_epoch_time_second();
 double get_current_epoch_time_nanosecond();
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start);
+
+auto funcTime = 
+    [](auto&& func, auto&&... params) {
+        // get time before function invocation
+        const auto& start = std::chrono::high_resolution_clock::now();
+        // function invocation using perfect forwarding
+        std::forward<decltype(func)>(func)(std::forward<decltype(params)>(params)...);
+        // get time after function invocation
+        const auto& stop = std::chrono::high_resolution_clock::now();
+        return stop - start;
+     };
 
 #endif

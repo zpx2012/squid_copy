@@ -361,16 +361,16 @@ int TLS_Decrypted_Records_Map::inserted(int record_num, TLS_Decrypted_Record_Rea
 void TLS_Decrypted_Records_Map::print_result(){
     int incompleted_counter = 0;
     printf("Print TLS_Decrypted_Record_Reassembler:\n");
-    // for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); it++){
-    //     // if(it->second == nullptr){
-    //     //     printf("%d:1, ", it->first);
-    //     //     completed_counter++;
-    //     // }
-    //     if(it->second){
-    //         incompleted_counter++;
-    //         printf("%d:%d(%d), ", it->first, it->second->plntxt_buffer->TotalSize(), it->second->expected_size);
-    //     }
-    // }
+    for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); it++){
+        // if(it->second == nullptr){
+        //     printf("%d:1, ", it->first);
+        //     completed_counter++;
+        // }
+        if(it->second){
+            incompleted_counter++;
+            printf("%d:%d(%d), ", it->first, it->second->plntxt_buffer->TotalSize(), it->second->expected_size);
+        }
+    }
     printf("\nSuccessful, Failed, Incompleted/Total: %d, %d, %d/%d.\n", successful, failed, decrypted_record_reassembler_map.size() - successful - failed, decrypted_record_reassembler_map.size());
 }
 
