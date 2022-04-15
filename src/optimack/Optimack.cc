@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 6
 #endif
 
 #ifndef ACKPACING
@@ -2661,13 +2661,13 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
     IntervalList temp_range;
     temp_range.clear();
     temp_range.insertNewInterval(seq_rel, seq_rel+payload_len);
-    pthread_mutex_lock(recved_seq.getMutex());
+    // pthread_mutex_lock(recved_seq.getMutex());
     temp_range.substract(&recved_seq);
     auto temp_range_list = temp_range.getIntervalList();
     if(temp_range.size()){
         for(auto it = temp_range_list.rbegin(); it != temp_range_list.rend(); it++){
         // for(auto& intvl: temp_range.getIntervalList()){
-            is_new_segment = recved_seq.checkAndinsertNewInterval(it->lower(), it->upper(), order_flag);
+            is_new_segment = recved_seq.checkAndinsertNewInterval_withLock(it->lower(), it->upper(), order_flag);
             seq_next_global = recved_seq.getLastEnd();
             // is_new_segment = recved_seq.checkAndinsertNewInterval(intvl.start, intvl.end, order_flag);
             if(is_new_segment){//change to Interval
@@ -2695,7 +2695,7 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
                 printf("Error! process incoming packet: is_new_segment is false!!!\n");
         }
     }
-    pthread_mutex_unlock(recved_seq.getMutex());
+    // pthread_mutex_unlock(recved_seq.getMutex());
 
     update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags & TH_FIN);
 

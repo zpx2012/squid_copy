@@ -216,11 +216,7 @@ void IntervalList::removeInterval(unsigned int start, unsigned int end)
 
 void IntervalList::substract(IntervalList* other){
     // std::vector<Interval> other_intervals = other->getIntervalList();
-    for(auto& intvl: other->Intervals){
-        Intervals.subtract(interval_type::right_open(intvl.lower(), intvl.upper()));
-        if(Intervals.empty())
-            return;
-    }
+    Intervals -= other->Intervals;
 }
 
 
