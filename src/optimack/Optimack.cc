@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 4
 #endif
 
 #ifndef ACKPACING
@@ -3261,18 +3261,36 @@ void Optimack::send_data_to_server_and_update_seq(struct subconn_info* conn, uns
 int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
-    pthread_mutex_lock(&mutex_subconn_infos);
     is_ssl = true;
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
     tls_record_seq_map = new TLS_Record_Number_Seq_Map();
+
+    /*** bug: if we combine three blocks into one for loop, 
+       * previous connections are set to be handshake finished, 
+       * when retranx of previous connections' handshake packets arrive,
+       * it will block at obtaining mutex_subconn_infos, which is in use by current for loop,
+       * because not all ssl connnections have been opened, which caused all threads in deadlock,
+       * preventing the handshake packets of current opening connections to pass
+    ***/
+    pthread_mutex_lock(&mutex_subconn_infos);
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         it->second->handshake_finished = false;
+    }
+    pthread_mutex_unlock(&mutex_subconn_infos);
+
+    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         SSL* ssl = open_ssl_conn(it->second->sockfd, false);
         set_subconn_ssl_credentials(it->second, ssl);
     }
+
+    pthread_mutex_lock(&mutex_subconn_infos);
+    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+        it->second->handshake_finished = true;
+    }
     pthread_mutex_unlock(&mutex_subconn_infos);
+
     return 0;
 }
 
@@ -3283,29 +3301,29 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     unsigned char client_random[100];
     unsigned char server_random[100];
     size_t master_key_len = SSL_SESSION_get_master_key(SSL_get_session(ssl), master_key, sizeof(master_key));
-    printf("master_key_len: %ld\n", master_key_len);
+    // printf("master_key_len: %ld\n", master_key_len);
     size_t client_random_len = SSL_get_client_random(ssl, client_random, SSL3_RANDOM_SIZE);
-    printf("client_random_len: %ld\n", client_random_len);
+    // printf("client_random_len: %ld\n", client_random_len);
     size_t server_random_len = SSL_get_server_random(ssl, server_random, SSL3_RANDOM_SIZE);
-    printf("server_random_len: %ld\n", server_random_len);
+    // printf("server_random_len: %ld\n", server_random_len);
     const EVP_MD *digest_algorithm = SSL_CIPHER_get_handshake_digest(SSL_SESSION_get0_cipher(SSL_get_session(ssl)));
     const SSL_CIPHER *cipher = SSL_SESSION_get0_cipher(SSL_get_session(ssl));
-    printf("current session cipher name: %s\n", SSL_CIPHER_standard_name(cipher));
+    // printf("current session cipher name: %s\n", SSL_CIPHER_standard_name(cipher));
     const EVP_CIPHER *evp_cipher = EVP_get_cipherbyname("AES-128-GCM"); // Temporary Ugly hack here for Baidu.
-    printf("evp_cipher: %p\n", evp_cipher);
+    // printf("evp_cipher: %p\n", evp_cipher);
     ssize_t key_length = EVP_CIPHER_key_length(evp_cipher);
-    printf("key_length: %ld\n", key_length);
+    // printf("key_length: %ld\n", key_length);
 
     get_write_key(ssl, digest_algorithm, evp_cipher, iv_salt, write_key_buffer);
-    printf("iv_salt: ");
-    for(int i = 0; i < 4; i++)
-        printf("%02x", iv_salt[i]);
-    printf("\n");
+    // printf("iv_salt: ");
+    // for(int i = 0; i < 4; i++)
+    //     printf("%02x", iv_salt[i]);
+    // printf("\n");
 
     subconn->ssl = ssl;
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
 
-    subconn->handshake_finished = true;
+    // subconn->handshake_finished = true;
     subconn->record_size = MAX_FULL_GCM_RECORD_LEN;
     if(subconn->record_size < subconn->payload_len)
         subconn->payload_len = subconn->record_size;

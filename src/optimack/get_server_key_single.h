@@ -3449,10 +3449,10 @@ static int tls1_generate_key_block(SSL *s, unsigned char *km, size_t num, const 
 
     // printf("server random %s\n", s->s3->server_random);
     // printf("client random %s\n", s->s3->client_random);
-    printf("masterkey %s\n", s->session->master_key); // TLS 1.2 only
+    // printf("masterkey %s\n", s->session->master_key); // TLS 1.2 only
     unsigned char out[100];
-    printf("masterkey2 size: %ld\n", SSL_SESSION_get_master_key(s->session, out, 100));  // TLS 1.2 only
-    printf("masterkey2 %s\n", out);
+    // printf("masterkey2 size: %ld\n", SSL_SESSION_get_master_key(s->session, out, 100));  // TLS 1.2 only
+    // printf("masterkey2 %s\n", out);
 
     /* Calls SSLfatal() as required */
     ret = tls1_PRF(s,
@@ -3462,11 +3462,11 @@ static int tls1_generate_key_block(SSL *s, unsigned char *km, size_t num, const 
                    NULL, 0, NULL, 0, s->session->master_key,
                    s->session->master_key_length, km, num, 1, md);
     // printf("ret: %d\n", ret);
-    printf("client_random:");
-    for (int i = 0; i < 10; i++)
-        printf("%02X", s->s3->client_random[i]);
-    printf("\n");
-    printf("tls1_generate_key_block: ret: %d\n", ret);
+    // printf("client_random:");
+    // for (int i = 0; i < 10; i++)
+    //     printf("%02X", s->s3->client_random[i]);
+    // printf("\n");
+    // printf("tls1_generate_key_block: ret: %d\n", ret);
     // printf("TLS_MD_KEY_EXPANSION_CONST: %s\n", TLS_MD_KEY_EXPANSION_CONST);
     return ret;
 }
@@ -3532,9 +3532,9 @@ static size_t get_server_write_key(SSL *ssl, unsigned char *buffer, const EVP_MD
     key_length = 16; // Hard-coded fix for TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
     iv_salt_length = 4; // Hard-coded fix for TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
     mac_secret_size = 0; // Hard-coded fix for TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-    printf("mac_secret_size: %ld\n", mac_secret_size);
-    printf("key_length: %ld\n", key_length);
-    printf("iv_salt_length: %ld\n", iv_salt_length);
+    // printf("mac_secret_size: %ld\n", mac_secret_size);
+    // printf("key_length: %ld\n", key_length);
+    // printf("iv_salt_length: %ld\n", iv_salt_length);
     
     key_block_buffer_length = key_length + mac_secret_size + iv_salt_length;
     key_block_buffer_length *= 2;
@@ -3542,16 +3542,16 @@ static size_t get_server_write_key(SSL *ssl, unsigned char *buffer, const EVP_MD
     key_block_buffer = (unsigned char*) malloc(key_block_buffer_length);
     memset(key_block_buffer, 0, key_block_buffer_length);
     tls1_generate_key_block(ssl, key_block_buffer, key_block_buffer_length, md);
-    printf("key_block_buffer: \n");
-    for (unsigned int i = 0; i < key_block_buffer_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
-    printf("\n");
+    // printf("key_block_buffer: \n");
+    // for (unsigned int i = 0; i < key_block_buffer_length; i++)
+    //     printf("\\x%02X", key_block_buffer[i]);
+    // printf("\n");
 
     size_t n = mac_secret_size + mac_secret_size + key_length;
-    printf("server_write_key: \n");
-    for (size_t i = n; i < n + key_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
-    printf("\n");
+    // printf("server_write_key: \n");
+    // for (size_t i = n; i < n + key_length; i++)
+    //     printf("\\x%02X", key_block_buffer[i]);
+    // printf("\n");
 
     memcpy(buffer, key_block_buffer + n, key_length);
     free(key_block_buffer);
@@ -3576,34 +3576,29 @@ static size_t get_server_write_iv_salt(SSL *ssl, unsigned char *buffer, const EV
     key_length = 16; // Hard-coded fix
     iv_salt_length = 4; // Hard-coded fix
     mac_secret_size = 0;
-    printf("mac_secret_size: %ld\n", mac_secret_size);
-    printf("key_length: %ld\n", key_length);
-    printf("iv_salt_length: %ld\n", iv_salt_length);
+    // printf("mac_secret_size: %ld\n", mac_secret_size);
+    // printf("key_length: %ld\n", key_length);
+    // printf("iv_salt_length: %ld\n", iv_salt_length);
     key_block_buffer_length = key_length + mac_secret_size + iv_salt_length;
     key_block_buffer_length *= 2;
 
     key_block_buffer = (unsigned char*) malloc(key_block_buffer_length);
     memset(key_block_buffer, 0, key_block_buffer_length);
     tls1_generate_key_block(ssl, key_block_buffer, key_block_buffer_length, md);
-    printf("key_block_buffer: \n");
-    for (unsigned int i = 0; i < key_block_buffer_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
-    printf("\n");
+    // printf("key_block_buffer: \n");
+    // for (unsigned int i = 0; i < key_block_buffer_length; i++)
+    //     printf("\\x%02X", key_block_buffer[i]);
+    // printf("\n");
 
     size_t n = mac_secret_size + mac_secret_size + key_length + key_length + iv_salt_length;
-    printf("server_write_iv (iv_salt): \n");
-    for (size_t i = n; i < n + iv_salt_length; i++)
-        printf("\\x%02X", key_block_buffer[i]);
-    printf("\n");
+    // printf("server_write_iv (iv_salt): \n");
+    // for (size_t i = n; i < n + iv_salt_length; i++)
+    //     printf("\\x%02X", key_block_buffer[i]);
+    // printf("\n");
 
     memcpy(buffer, key_block_buffer + n, iv_salt_length);
     free(key_block_buffer);
     return iv_salt_length;
-}
-
-int test_include() {
-    printf("Hello from openssl-bio-fetch!!!\n");
-    return 1;
 }
 
 void handleErrors(){

@@ -923,19 +923,19 @@ void get_write_key(SSL *s, const EVP_MD *md, const EVP_CIPHER *evp_cipher, unsig
     int write_key_buffer_len;
     // get_server_session_key_and_iv_salt(s, iv_salt, session_key); // This function is obsolete.
     iv_len = get_server_write_iv_salt(s, iv_salt, md, evp_cipher);
-    printf("iv_len: %ld\n", iv_len);
+    // printf("iv_len: %ld\n", iv_len);
     write_key_buffer_len = get_server_write_key(s, write_key_buffer, md, evp_cipher);
-    printf("write_key_buffer_len: %ld\n", write_key_buffer_len);
+    // printf("write_key_buffer_len: %ld\n", write_key_buffer_len);
     
-    printf("get_server_write_key: ");
-    for (int i = 0; i < write_key_buffer_len; i++)
-        printf("%02x", write_key_buffer[i]);
-    printf("\n");
+    // printf("get_server_write_key: ");
+    // for (int i = 0; i < write_key_buffer_len; i++)
+    //     printf("%02x", write_key_buffer[i]);
+    // printf("\n");
 
-    printf("get_server_write_iv_salt: ");
-    for(int i = 0; i < 4; i++)
-        printf("%02x", iv_salt[i]);
-    printf("\n");
+    // printf("get_server_write_iv_salt: ");
+    // for(int i = 0; i < 4; i++)
+    //     printf("%02x", iv_salt[i]);
+    // printf("\n");
     return;
 }
 
@@ -944,6 +944,8 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
         printf("open_ssl_conn: sockfd can't be 0!Q\n");
     }
     
+    printf("open_ssl_conn: for fd %d\n", sockfd);
+
     SSL_library_init();
     SSLeay_add_ssl_algorithms();
     SSL_load_error_strings();
@@ -985,7 +987,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
         fprintf(stderr, "SSL_connect failed with SSL_get_error code %d\n", status);
         return nullptr;
     }
-    printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
+    printf("open_ssl_conn: fd %d Connected with %s encryption\n", sockfd, SSL_get_cipher(ssl));
 
     STACK_OF(SSL_CIPHER)* sk = SSL_get1_supported_ciphers(ssl);
     for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {

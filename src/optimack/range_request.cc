@@ -289,12 +289,13 @@ opensocket:
         return -1;
     }
 
-    printf("establish_tcp_connection: connect sockfd %d\n", sockfd);
-
-    if(get_localport(sockfd) < 0){
+    int port = get_localport(sockfd);
+    if(port < 0){
         sockfd = 0;
         goto opensocket;
     }
+
+    printf("establish_tcp_connection: connect sockfd %d, port %d\n", sockfd, port);
 
     return sockfd;
 }
