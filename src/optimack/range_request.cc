@@ -321,8 +321,9 @@ void Optimack::try_for_gaps_and_request(){
             
         // }
     }
-
-    if(check_packet_lost_on_all_conns(recved_seq.getFirstEnd())){
+    
+    last_recv_inorder = recved_seq.getFirstEnd();
+    if(check_packet_lost_on_all_conns(last_recv_inorder)){
         // printf("[Range]: lost on all conns\n");
         // lost_range [recved_seq[0].end, recved_seq[1].end]
         // Interval lost_range = get_lost_range();
@@ -350,6 +351,14 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     
     if (recved_seq.size() < 2)
         return false;
+
+    if(is_ssl){
+#ifdef USE_OPENSSL
+        TLS_Record_Seq_Info seq_info;
+        tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
+        last_recv_inorder = seq_info.upper_seq - 1;
+#endif
+    }
 
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // log_info("first: recved_seq.lastend %u, last_recv_inorder %u", it->second->recved_seq.getLastEnd(), last_recv_inorder);
@@ -568,7 +577,7 @@ int Optimack::get_lost_range(Interval* intvl)
 #ifdef USE_OPENSSL
         if(is_ssl)
             if((intvl->end != ack_end) && (intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
-                printf("get_lost_range: len(%u)%%d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
+                printf("get_lost_range: len(%u) mod %d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
                 return -1;
                 uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
                 intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;

@@ -61,7 +61,7 @@ struct subconn_info
     int restart_counter;
 
     std::map<uint, uint> dup_seqs;
-    IntervalList recved_seq;
+    IntervalList* recved_seq;
     // std::vector<Interval> seq_gaps;
     // pthread_mutex_t mutex_seq_gaps;
 

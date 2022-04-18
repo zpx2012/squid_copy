@@ -68,7 +68,7 @@ trap INT_handler SIGINT
 
 screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 80
 screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 >$squid_log"
-sleep 2
+sleep 5
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
