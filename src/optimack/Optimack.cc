@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 8
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -2710,28 +2710,29 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
         log_info("[Backup]: insert [%u, %u], after %s\n", seq_rel, seq_rel+payload_len, subconn->recved_seq->Intervals2str().c_str());
     }
 
-    if( (payload_len != squid_MSS && !subconn->is_backup) || (!is_new_segment) ){
-        sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, squid_MSS);
-        // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
-        // if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
-        if(seq_rel+payload_len <= max_opt_ack ){
-            sprintf(log, "%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
-            // printf("%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
-            int rwnd_tmp = get_adjusted_rwnd(seq_rel+payload_len);
-            if(rwnd_tmp > 0)
-                send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
-        // send_ACK_adjusted_rwnd(subconn, seq_rel + payload_len);
-        // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
-        }
-        else{
-            sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
-        }
-    }
-    else{
-        // int rwnd_tmp = get_adjusted_rwnd(seq_rel+payload_len);
-        // if(rwnd_tmp > 0)
-        //     send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
-    }
+    send_optimistic_ack(subconn, seq_rel+payload_len, get_adjusted_rwnd(seq_rel+payload_len));
+    // if( (payload_len != squid_MSS && !subconn->is_backup) || (!is_new_segment) ){
+    //     sprintf(log, "%s -unusual payload_len!%d-%d,", log, payload_len, squid_MSS);
+    //     // printf("%s - unusual payload_len!%d-%d,", log, payload_len, subconn_infos[squid_port]->payload_len);
+    //     // if(elapsed(subconn->last_data_received) > 1.5 && seq_rel+payload_len == subconn->next_seq_rem && seq_rel+payload_len == get_min_next_seq_rem()){
+    //     if(seq_rel+payload_len <= max_opt_ack ){
+    //         sprintf(log, "%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
+    //         // printf("%s - opt_ack(%u) has passed this point, send ack to unusal len %u", log, max_opt_ack, seq_rel+payload_len);
+    //         int rwnd_tmp = get_adjusted_rwnd(seq_rel+payload_len);
+    //         if(rwnd_tmp > 0)
+    //             send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
+    //     // send_ACK_adjusted_rwnd(subconn, seq_rel + payload_len);
+    //     // send_ACK(g_remote_ip, g_local_ip, g_remote_port, subconn->local_port, empty_payload, subconn->ini_seq_rem + seq_rel + payload_len, ack, (cur_ack_rel + rwnd/2 - seq_rel - payload_len)/subconn->win_scale);
+    //     }
+    //     else{
+    //         sprintf(log, "%s - not window full, elapsed(subconn->last_data_received) = %f < 1.5 || seq_rel+payload_len(%u) != subconn->next_seq_rem(%u) || seq_rel+payload_len(%u) != get_min_next_seq_rem(%u)", log, elapsed(subconn->last_data_received), seq_rel+payload_len, subconn->next_seq_rem, seq_rel+payload_len, get_min_next_seq_rem());
+    //     }
+    // }
+    // else{
+    //     // int rwnd_tmp = get_adjusted_rwnd(seq_rel+payload_len);
+    //     // if(rwnd_tmp > 0)
+    //     //     send_optimistic_ack(subconn, seq_rel+payload_len, rwnd_tmp);
+    // }
 
     // Too many packets forwarded to squid will cause squid to discard right most packets
     if(!is_new_segment && !subconn->is_backup){

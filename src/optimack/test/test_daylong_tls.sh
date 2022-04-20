@@ -41,7 +41,7 @@ while true; do
     then
         echo
         echo ${1}optim+1range_ackpace${2}
-        bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh daylong_${1}optim_ackpace${2} daylong_${1}optim+1range_ackpace${2} $site $url
+        bash ~/squid_copy/src/optimack/test/ABtest_onerun_tls.sh daylong_${1}optim_ackpace${2} daylong_${1}optim+1range_ackpace${2} $site $url
         echo
     else
         sleep 300
