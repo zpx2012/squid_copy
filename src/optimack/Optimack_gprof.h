@@ -1,5 +1,5 @@
-#ifndef OPTIMACK_H
-#define OPTIMACK_H
+#ifndef OPTIMACK_GPROF_H
+#define OPTIMACK_GPROF_H
 
 #include "thr_pool.h"
 #include <set>
@@ -11,12 +11,12 @@
 #include "interval_boost.h"
 #include "interval_geeks.h"
 #include <netinet/in.h>
-#include "autoconf.h"
-// #define USE_OPENSSL 1
+// #include "autoconf.h"
+#define USE_OPENSSL 1
 
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
-#include "tls.h"
+#include "tls_gprof.h"
 
 class TLS_Crypto_Coder;
 class TLS_Decrypted_Records_Map;
@@ -272,7 +272,6 @@ public:
     int send_out_of_order_recv_buffer_withLock(uint seq);
     int send_out_of_order_recv_buffer_withLock(uint start, uint end, int max_count);
     int send_out_of_order_recv_buffer_withLock(uint start, uint end);
-    int send_last_inorder_recv_buffer_withLock(uint end);
     int resend_cnt = 0;
 
     //TLS

@@ -121,8 +121,9 @@ void IntervalListWithTime::printIntervals_withLock()
 std::string IntervalListWithTime::Intervals2str_withLock()
 {
     pthread_mutex_lock(&mutex_intervals);
-    Intervals2str();
+    std::string str = Intervals2str();
     pthread_mutex_unlock(&mutex_intervals);
+    return str;
 }
 
 unsigned int IntervalListWithTime::getFirstEnd_withLock()

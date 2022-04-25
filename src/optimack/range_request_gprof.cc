@@ -5,14 +5,14 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 
-#include "squid.h"
-#include "sbuf/SBuf.h"
-#include "http/one/RequestParser.h"
-#include "http/one/ResponseParser.h"
+// #include "squid.h"
+// #include "sbuf/SBuf.h"
+// #include "http/one/RequestParser.h"
+// #include "http/one/ResponseParser.h"
 
 
 #include "logging.h"
-#include "Optimack.h"
+#include "Optimack_gprof.h"
 
 
 // range
@@ -350,7 +350,7 @@ void Optimack::try_for_gaps_and_request(){
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     
-    if (recved_seq.size() < 1)
+    if (recved_seq.size() < 2)
         return false;
 
     if(is_ssl){
@@ -690,13 +690,13 @@ void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header
 }
 
 int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char* payload, int payload_len){
-    Http1::ResponseParser rp;
-    SBuf headerBuf;
-    pthread_mutex_lock(&mutex_range);
-    headerBuf.assign((char*)payload, payload_len);
-    rp.parse(headerBuf);
-    response_header_len = rp.messageHeaderSize();
-    pthread_mutex_unlock(&mutex_range);
+    // Http1::ResponseParser rp;
+    // SBuf headerBuf;
+    // pthread_mutex_lock(&mutex_range);
+    // headerBuf.assign((char*)payload, payload_len);
+    // rp.parse(headerBuf);
+    // response_header_len = rp.messageHeaderSize();
+    // pthread_mutex_unlock(&mutex_range);
 
     response_header_len = 392;
 

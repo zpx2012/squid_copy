@@ -2,7 +2,7 @@
 #include <bits/stdc++.h>
 
 #include "interval.h"
-#include "tls.h"
+#include "tls_gprof.h"
 #include "get_server_key_single.h"
 
 const int tls_debug = 0;

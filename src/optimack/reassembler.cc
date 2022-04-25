@@ -389,14 +389,14 @@ int Reassembler::InOrderStrs(u_char* &buf, int buf_len){
 			if(b->upper == next->seq){
 				if(copied_len + b->Size() > buf_len){
 					if(DEBUG_reassem)
-						printf("Reassembler::InOrderBytes: copied_len(%d) + b->Size()(%d) > buf_len(%d)\n", copied_len, b->Size(), buf_len);
+						printf("Reassembler::InOrderBytes: copied_len(%d) + b->Size()(%ld) > buf_len(%d)\n", copied_len, b->Size(), buf_len);
 				}
 				memcpy(buf+copied_len, b->block, b->Size());
 				copied_len += b->Size();
 	 		}
 			else if(b->upper < next->seq){
 				if(DEBUG_reassem)
-					printf("Reassembler::InOrderBytes: b->seq(%d) + b->Size()(%d) < next->seq(%d)\n", b->seq, b->Size(), next->seq);
+					printf("Reassembler::InOrderBytes: b->seq(%ld) + b->Size()(%ld) < next->seq(%ld)\n", b->seq, b->Size(), next->seq);
 				break;
 			}
 			else
