@@ -67,13 +67,13 @@ trap INT_handler SIGINT
 
 
 screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 80
-screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 >$squid_log"
-sleep 5
+screen -dmS squid bash -c "sudo ~/squid/sbin/squid -N -d1 2>&1 >$squid_log"
+sleep 10
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
 screen -dmS normal bash -c "while true; do curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}; done"
-curl --cacert ~/squid/etc/ssl_cert/myCA.pem -LJ4vk $url -o /dev/null -x http://127.0.0.1:3129 --speed-time 360 2>&1 | tee -a ${squid_out}
+curl --cacert ~/squid/etc/ssl_cert/myCA.pem -LJ4vk $url -o /dev/null -x 127.0.0.1:3129 --speed-time 360 2>&1 | tee -a ${squid_out}
 cleanup
 
 if grep -q "left intact" $squid_out;

@@ -349,7 +349,7 @@ void Optimack::try_for_gaps_and_request(){
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     
-    if (recved_seq.size() < 2)
+    if (recved_seq.size() < 1)
         return false;
 
     if(is_ssl){
