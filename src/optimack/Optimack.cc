@@ -85,7 +85,7 @@ using namespace std;
 #define LOG_SQUID_ACK 1
 
 const int multithread = 0;
-const int debug_subconn_recvseq = 1;
+const int debug_subconn_recvseq = 0;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -517,6 +517,35 @@ void Optimack::backup_try_fill_gap(){
             pthread_mutex_unlock(conn->recved_seq->getMutex());
         }
     }
+}
+
+void* dummy_recv(void* arg){
+    long sockfd =(long)arg;
+    int rv;
+    u_char recv_buf[10000] = {0};
+    do{
+        rv = recv(sockfd, recv_buf, 10000, 0);
+    } while(rv > 0);
+    return NULL;
+}
+
+void* dummy_recv_ssl(void* arg)
+{
+    SSL* ssl = (SSL*)arg;
+    int len=100;
+    char buf[4001];
+    do {
+        len=SSL_read(ssl, buf, 4000);
+        if(len == 0)
+            break;
+        if(len<0){
+            printf("Receive error\n");
+            usleep(100);
+            continue;
+        }
+        buf[len]=0;
+    } while(true);
+    return NULL;
 }
 
 
@@ -2027,11 +2056,21 @@ void* send_all_requests(void* arg){
         do {
             if(obj->is_ssl){
 #ifdef USE_OPENSSL
+                pthread_t recv_thread;
+                if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
+                    log_error("Fail to create send_all_requests thread.");
+                }
+
                 rv = SSL_write(it->second->ssl, obj->request, obj->request_len);
                 printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, obj->request_len);
 #endif
             }
             else{
+                pthread_t recv_thread;
+                if (pthread_create(&recv_thread, NULL, dummy_recv, (void*)it->second->sockfd) != 0) {
+                    log_error("Fail to create send_all_requests thread.");
+                }
+
                 rv = send(it->second->sockfd, obj->request, obj->request_len, 0);
                 printf("S%d-%d: Push request len=%d to sockfd %d.\n", it->second->id, it->second->local_port, obj->request_len, it->second->sockfd);
                 // printf("S%d-%d: Push request len=%d to sockfd %d. Mainconn is sockfd %d, port %d\nRequest: %s\n", it->second->id, it->second->local_port, obj->request_len, it->second->sockfd, obj->subconn_infos.begin()->second->sockfd, obj->subconn_infos.begin()->second->local_port, obj->request);
@@ -2041,6 +2080,7 @@ void* send_all_requests(void* arg){
                 sleep(1);
             }
         } while(rv < 0);
+
     }
     log_info("send_all_requests: leave...");
     return NULL;
@@ -2611,7 +2651,7 @@ int Optimack::process_tcp_plaintext_packet(
 
                 strcat(log,"\n");
                 log_info(log);
-                if(subconn->is_backup)
+                if(subconn->is_backup || subconn_i > 0)
                     return 0;
                 else
                     return -1;
