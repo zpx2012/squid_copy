@@ -987,7 +987,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     if (status != 1)
     {
         SSL_get_error(ssl, status);
-        fprintf(stderr, "SSL_connect failed with SSL_get_error code %d\n", status);
+        fprintf(stderr, "open_ssl_conn: fd %d SSL_connect failed with SSL_get_error code %d\n", sockfd, status);
         return nullptr;
     }
     printf("open_ssl_conn: fd %d Connected with %s encryption\n", sockfd, SSL_get_cipher(ssl));
