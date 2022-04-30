@@ -40,7 +40,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
@@ -86,6 +86,8 @@ using namespace std;
 
 const int multithread = 0;
 const int debug_subconn_recvseq = 0;
+const int use_optimack = 1;
+const int forward_packet = 1;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -1881,11 +1883,12 @@ void* overrun_detector(void* arg){
     Optimack* obj = (Optimack* )arg;
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
 
-    sleep(2);//Wait for the packets to come
+    // sleep(2);//Wait for the packets to come
     log_info("Start overrun_detector thread");
+    printf("Start overrun_detector thread");
 
 
-    auto last_print_seqs = std::chrono::system_clock::now();
+    // auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
         // if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
@@ -2552,20 +2555,21 @@ int Optimack::process_tcp_plaintext_packet(
                         bool start_optimack = false;
                         if(is_ssl){
 #ifdef USE_OPENSSL
-                            if(it == subconn_infos.end())
+                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1000)
                                 start_optimack = true;
 #endif
                         }
-                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
+                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1000){
                             start_optimack = true;
                         }
                         
                         if(start_optimack){
                         // if(recved_seq.getFirstEnd() > 1){
                             // if(optim_ack_stop){
+                            if(use_optimack){
                                 start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                                 printf("P%d-S%d: Start optimistic_ack_altogether\n", pkt_id, subconn_i);
-                            // }
+                            }
                         }
                     }
                     pthread_mutex_unlock(&mutex_subconn_infos);
@@ -2651,7 +2655,9 @@ int Optimack::process_tcp_plaintext_packet(
 
                 strcat(log,"\n");
                 log_info(log);
-                if(subconn->is_backup || subconn_i > 0)
+                if(forward_packet)
+                    return 0;
+                else if(subconn->is_backup || subconn_i > 0)
                     return 0;
                 else
                     return -1;
