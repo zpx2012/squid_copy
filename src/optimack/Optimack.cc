@@ -36,8 +36,6 @@ using namespace std;
 
 #include "Optimack.h"
 
-
-
 /** Our code **/
 #ifndef CONN_NUM
 #define CONN_NUM 2
@@ -532,6 +530,9 @@ void* dummy_recv(void* arg){
 void* dummy_recv_ssl(void* arg)
 {
     SSL* ssl = (SSL*)arg;
+    if(!ssl)
+        return NULL;
+
     int len=100;
     char buf[4001];
     do {
@@ -541,7 +542,7 @@ void* dummy_recv_ssl(void* arg)
         if(len<0){
             printf("Receive error\n");
             usleep(100);
-            continue;
+            break;
         }
         buf[len]=0;
     } while(true);
@@ -1282,7 +1283,7 @@ void Optimack::log_seq_gaps(){
                 printf("%d: %s\n", it->first, it->second->recved_seq->Intervals2str().c_str());
             }
         }
-        sleep(10);
+        // sleep(10);
 #endif
     }
     // for(size_t k = 0; k < subconn_infos.size(); k++){
@@ -1354,7 +1355,8 @@ void Optimack::log_seq_gaps(){
         is_nfq_full(info_file);
         fprintf(info_file,"\n");
         // fprintf(info_file, "Request: %s\n", request);
-        fprintf(info_file, "Response: %s\n", response);
+        // if(response)
+            // fprintf(info_file, "Response: %s\n", response);
         fclose(info_file);
     }
 
@@ -1376,7 +1378,7 @@ Optimack::cleanup()
 
     if(!overrun_stop){
         overrun_stop++;
-        // pthread_join(overrun_thread, NULL);
+        pthread_join(overrun_thread, NULL);
         log_info("ask overrun_thread to exit");    
         printf("ask overrun_thread to exit\n");    
     }
@@ -1430,6 +1432,11 @@ Optimack::cleanup()
     }
     iptables_rules.clear();
     request_recved = false;
+
+    if(request)
+        free(request);
+    if(response)
+        free(response);
     pthread_mutex_unlock(&mutex_subconn_infos);
 }
 
@@ -1477,7 +1484,7 @@ Optimack::~Optimack()
 
     // fclose(seq_gaps_file);
     // fclose(seq_gaps_count_file);
-    exit(2);
+    // exit(2);
 }
 
 void
@@ -2056,13 +2063,15 @@ void* send_all_requests(void* arg){
         do {
             if(obj->is_ssl){
 #ifdef USE_OPENSSL
-                pthread_t recv_thread;
-                if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
-                    log_error("Fail to create send_all_requests thread.");
-                }
+                if(it->second->ssl){
+                    pthread_t recv_thread;
+                    if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
+                        log_error("Fail to create send_all_requests thread.");
+                    }
 
-                rv = SSL_write(it->second->ssl, obj->request, obj->request_len);
-                printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, obj->request_len);
+                    rv = SSL_write(it->second->ssl, obj->request, obj->request_len);
+                    printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, obj->request_len);
+                }
 #endif
             }
             else{
@@ -2077,7 +2086,7 @@ void* send_all_requests(void* arg){
             }
             if(rv <= 0){
                 printf("S%d-%d: Send request failed, error %d, sockfd %d\n", it->second->id, it->second->local_port, errno, it->second->sockfd);
-                sleep(1);
+                break;
             }
         } while(rv < 0);
 
@@ -2651,10 +2660,10 @@ int Optimack::process_tcp_plaintext_packet(
 
                 strcat(log,"\n");
                 log_info(log);
-                if(subconn->is_backup || subconn_i > 0)
+                // if(subconn->is_backup || subconn_i > 0)
                     return 0;
-                else
-                    return -1;
+                // else
+                    // return -1;
                 break;
             }
 
@@ -3335,6 +3344,9 @@ void Optimack::send_data_to_server_and_update_seq(struct subconn_info* conn, uns
 
 #ifdef USE_OPENSSL
 int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
+    if(is_ssl){
+        return 0;
+    }
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     is_ssl = true;
@@ -3358,7 +3370,8 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
 
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         SSL* ssl = open_ssl_conn(it->second->sockfd, false);
-        set_subconn_ssl_credentials(it->second, ssl);
+        if(ssl)
+            set_subconn_ssl_credentials(it->second, ssl);
     }
 
     pthread_mutex_lock(&mutex_subconn_infos);
@@ -3372,6 +3385,11 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
 
 
 int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl){
+    if(!ssl){
+        printf("Set subconn ssl credentials: S%d-%d, null ssl.\n", subconn->id, subconn->local_port);
+        return -1;
+    }
+
     unsigned char write_key_buffer[100],iv_salt[5];
     unsigned char master_key[100];
     unsigned char client_random[100];

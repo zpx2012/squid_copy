@@ -2266,7 +2266,7 @@ HttpStateData::sendRequest()
     Comm::Write(serverConnection, &mb, requestSender);
 
     /* Our code */
-    printf("http.cc sendRequest URI: %s\n", request->url.path().toStdString().c_str());
+    // printf("http.cc sendRequest URI: %s\n", request->url.path().toStdString().c_str());
 
     if(USE_OPTIMACK){
 #ifdef USE_OPENSSL

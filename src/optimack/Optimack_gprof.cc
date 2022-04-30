@@ -3267,6 +3267,9 @@ void Optimack::send_data_to_server_and_update_seq(struct subconn_info* conn, uns
 
 #ifdef USE_OPENSSL
 int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
+    if(is_ssl){ //already opened
+        return 0;
+    }
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     is_ssl = true;
