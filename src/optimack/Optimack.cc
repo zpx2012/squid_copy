@@ -1451,6 +1451,7 @@ Optimack::Optimack()
     range_stop = -1;
     seq_next_global = 1;
     subconn_count = 0;
+    
 }
 
 Optimack::~Optimack()
@@ -1896,7 +1897,7 @@ void* overrun_detector(void* arg){
     while(!obj->overrun_stop){
         // if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
-            obj->is_nfq_full(stdout);
+            // obj->is_nfq_full(stdout);
             obj->print_ss(stdout);
             printf("\n");
         // }
@@ -3348,6 +3349,12 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
         return 0;
     }
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
+
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+    // ERR_load_crypto_strings();
+
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     is_ssl = true;
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);

@@ -5,7 +5,7 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-const int tls_debug = 0;
+const int tls_debug = 2;
 const int lock_debug = 0;
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -949,10 +949,6 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     
     printf("open_ssl_conn: for fd %d\n", sockfd);
 
-    SSL_library_init();
-    SSLeay_add_ssl_algorithms();
-    SSL_load_error_strings();
-    
     const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
     SSL_CTX *ctx = SSL_CTX_new(method);
     if (ctx == nullptr)
@@ -986,8 +982,10 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     const int status = SSL_connect(ssl);
     if (status != 1)
     {
-        SSL_get_error(ssl, status);
-        fprintf(stderr, "open_ssl_conn: fd %d SSL_connect failed with SSL_get_error code %d\n", sockfd, status);
+        int err = SSL_get_error(ssl, status);
+        char msg[1024];
+        ERR_error_string_n(ERR_get_error(), msg, sizeof(msg));
+        fprintf(stderr, "open_ssl_conn: fd %d SSL_connect failed with SSL_get_error code %d, %s\n", sockfd, err, msg);
         return nullptr;
     }
     printf("open_ssl_conn: fd %d Connected with %s encryption\n", sockfd, SSL_get_cipher(ssl));
