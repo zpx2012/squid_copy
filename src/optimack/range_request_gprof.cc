@@ -304,7 +304,7 @@ opensocket:
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder;
-    if(last_ack_epochtime > last_inorder_data_epochtime && elapsed(last_ack_time) > 1.5){
+    // if(last_ack_epochtime > last_inorder_data_epochtime && elapsed(last_ack_time) > 1.5){
         // if(!resend_cnt){
         //     if(cur_ack_rel < recved_seq.getFirstEnd()){
         //         resend_cnt++;
@@ -321,7 +321,7 @@ void Optimack::try_for_gaps_and_request(){
             // log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             
         // }
-    }
+    // }
     
     last_recv_inorder = recved_seq.getFirstEnd();
     if(check_packet_lost_on_all_conns(last_recv_inorder)){

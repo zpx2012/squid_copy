@@ -64,7 +64,7 @@ int RecvPacket(SSL *ssl)
     do {
         len=SSL_read(ssl, buf, 4000);
         count += len;
-        if(count >= 2000000) // 29980133
+        if(count >= 10000) // 29980133
             break;
         if(len == 0)
             break;
@@ -162,8 +162,8 @@ int main(int argc, char *argv[])
     char request[400];
     sprintf(request, "GET /ubuntu/indices/md5sums.gz HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
     // sprintf(request, "GET /ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
-    SendRequest(ssl, request, strlen(request));
     optimack.send_request(request, strlen(request));
+    SendRequest(ssl, request, strlen(request));
 
     RecvPacket(ssl);
     SSL_free(ssl);

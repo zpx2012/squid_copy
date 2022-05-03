@@ -38,7 +38,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 8
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -1422,6 +1422,13 @@ Optimack::cleanup()
 
     pthread_mutex_lock(&mutex_subconn_infos);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+        if(is_ssl){
+#ifdef USE_OPENSSL
+            SSL_free(it->second->ssl);
+            free(it->second->crypto_coder);  
+#endif
+        }
+        free(it->second->recved_seq);
         free(it->second);
         it->second = NULL;
     }
@@ -1453,6 +1460,7 @@ Optimack::Optimack()
     range_stop = -1;
     seq_next_global = 1;
     subconn_count = 0;
+    request = response = NULL;
 }
 
 Optimack::~Optimack()
@@ -1486,7 +1494,7 @@ Optimack::~Optimack()
 
     // fclose(seq_gaps_file);
     // fclose(seq_gaps_count_file);
-    // exit(2);
+    exit(2);
 }
 
 void
@@ -1531,7 +1539,7 @@ Optimack::init()
             exit(1);                
     }
 
-    char tmp_str[600], time_str[64];
+    char tmp_str[600] = {0}, time_str[64] = {0};
     time_in_YYYY_MM_DD(time_str);
     // home_dir = getenv("HOME");
 
@@ -2232,7 +2240,8 @@ int Optimack::process_tcp_plaintext_packet(
             // compute_checksums(packet, 20, packet_len);
         }
 #endif
-            sprintf(log, "%s - handshake hasn't completed. let it pass.", log);
+            strcat(log, "- handshake hasn't completed. let it pass.");
+            // sprintf(log, "%s ", log);
             log_info(log);
 
             return 0;
@@ -3353,6 +3362,10 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     if(is_ssl){
         return 0;
     }
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+    
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     is_ssl = true;

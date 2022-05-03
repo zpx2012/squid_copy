@@ -5,7 +5,7 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-const int tls_debug = 0;
+const int tls_debug = 1;
 const int lock_debug = 0;
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -948,10 +948,6 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     }
     
     printf("open_ssl_conn: for fd %d\n", sockfd);
-
-    SSL_library_init();
-    SSLeay_add_ssl_algorithms();
-    SSL_load_error_strings();
     
     const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
     SSL_CTX *ctx = SSL_CTX_new(method);
@@ -987,7 +983,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     if (status != 1)
     {
         SSL_get_error(ssl, status);
-        fprintf(stderr, "open_ssl_conn: fd %d SSL_connect failed with SSL_get_error code %d\n", sockfd, status);
+        fprintf(stderr, "SSL_connect failed with SSL_get_error code %d\n", status);
         return nullptr;
     }
     printf("open_ssl_conn: fd %d Connected with %s encryption\n", sockfd, SSL_get_cipher(ssl));
@@ -996,6 +992,8 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
         printf("%s", SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
     }
+    free(sk);
+    SSL_CTX_free(ctx);
 
     return ssl;
 }
