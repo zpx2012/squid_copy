@@ -5,7 +5,7 @@
 #include "tls.h"
 #include "get_server_key_single.h"
 
-const int tls_debug = 2;
+const int tls_debug = 0;
 const int lock_debug = 0;
 
 int print_hexdump(unsigned char* hexdump, int len){
@@ -520,11 +520,21 @@ TLS_Record_Number_Seq_Map::~TLS_Record_Number_Seq_Map(){
 int TLS_Record_Number_Seq_Map::insert(uint start_seq, int record_size_with_header){
     lock();
     if(start_seq == next_record_start_seq){
-        TLS_Record_Seq_Info* seq_info = new TLS_Record_Seq_Info(record_num_count+1, record_size_with_header, start_seq, start_seq+record_size_with_header);
-        tls_seq_map[start_seq] = seq_info;
-        next_record_start_seq = start_seq + record_size_with_header;
-        if(record_size_with_header && record_size_with_header != MAX_FULL_GCM_RECORD_LEN)
-            record_num_count++;
+        if(!tls_seq_map.count(start_seq)){
+            TLS_Record_Seq_Info* seq_info = new TLS_Record_Seq_Info(record_num_count+1, record_size_with_header, start_seq, start_seq+record_size_with_header);
+            tls_seq_map[start_seq] = seq_info;
+            next_record_start_seq = start_seq + record_size_with_header;
+            if(tls_debug > 0)
+                printf("S%d: TLS_Record_Number_Seq_Map: insert No.%d, seq %u, len %d\n", local_port, record_num_count+1, start_seq, record_size_with_header);
+
+            if(record_size_with_header && record_size_with_header != MAX_FULL_GCM_RECORD_LEN)
+                record_num_count++;
+        }
+    }
+    else{
+        if(tls_debug > 0)
+            printf("S%d: TLS_Record_Number_Seq_Map: seq %u != next_record_start_seq %d\n", local_port, start_seq, next_record_start_seq);
+
     }
     unlock();
     return 0;
@@ -532,17 +542,17 @@ int TLS_Record_Number_Seq_Map::insert(uint start_seq, int record_size_with_heade
 
 int TLS_Record_Number_Seq_Map::set_record_seq_info(uint seq, struct mytlshdr* tlshdr){
     if(tlshdr->version != 0x0303 || tlshdr->type != TLS_TYPE_APPLICATION_DATA){
-        if(tls_debug)
-            printf("TLS_Record_Number_Seq_Map: seq %u is not tlshdr\n", seq);
+        if(tls_debug > 0)
+            printf("S%d: TLS_Record_Number_Seq_Map: seq %u is not tlshdr\n", local_port, seq);
         return -1;
     }
 
     int cur_record_size = htons(tlshdr->length) + TLSHDR_SIZE;
     set_size(seq, cur_record_size);
-    if(cur_record_size != MAX_FULL_GCM_RECORD_LEN)
-        printf("TLS_Record_Number_Seq_Map::set_record_seq_info: set record starting at seq %u, length to %d\n", seq, cur_record_size);
-    if(cur_record_size != MAX_FULL_GCM_RECORD_LEN)
+    if(cur_record_size != MAX_FULL_GCM_RECORD_LEN){
+        // printf("S%d: TLS_Record_Number_Seq_Map::set_record_seq_info: set record starting at seq %u, length to %d\n", seq, cur_record_size);
         insert(seq + cur_record_size, 0);
+    }
     return 0;
 }
 
@@ -552,8 +562,8 @@ int TLS_Record_Number_Seq_Map::set_size(uint start_seq, int record_size_with_hea
             lock();
             if (first_max_frag_seq == 0){
                 first_max_frag_seq = start_seq;
-                if(tls_debug)
-                    printf("TLS_Record_Number_Seq_Map::set_size: set first_max_frag_seq to %u\n", start_seq);
+                if(tls_debug > 0)
+                    printf("S%d: TLS_Record_Number_Seq_Map::set_size: set first_max_frag_seq to %u\n", local_port, start_seq);
             }
             unlock();
         }
@@ -562,17 +572,31 @@ int TLS_Record_Number_Seq_Map::set_size(uint start_seq, int record_size_with_hea
     
     lock();
     if(!tls_seq_map.count(start_seq)){
+        if(tls_debug > 0){
+            printf("S%d: TLS_Record_Number_Seq_Map::set_size: seq %u not found, first_max_frag_seq %d\n", local_port, start_seq, first_max_frag_seq);
+            for (const auto& x : tls_seq_map)
+                printf("S%d: start_seq %u, No. %d, length %d\n", local_port, x.first, x.second->record_num, x.second->record_size_with_header); 
+        }
         if(start_seq > first_max_frag_seq){ //Final piece
             last_piece_start_seq = start_seq;
             tls_seq_map[start_seq] = new TLS_Record_Seq_Info(get_record_num(start_seq), record_size_with_header, start_seq, start_seq+record_size_with_header);
-            if(tls_debug)
-                printf("TLS_Record_Number_Seq_Map::set_size: set the final piece length to %d\n", record_size_with_header);
+            if(tls_debug > 0)
+                printf("S%d: TLS_Record_Number_Seq_Map::set_size: seq %u, set the final piece length to %d\n", local_port, start_seq, record_size_with_header);
         }
     }
     else{
         TLS_Record_Seq_Info* seq_info = tls_seq_map[start_seq];
-        seq_info->record_size_with_header = record_size_with_header;
-        seq_info->upper_seq = start_seq + record_size_with_header;
+        if(!seq_info->record_size_with_header){
+            if(tls_debug > 0)
+                printf("S%d: TLS_Record_Number_Seq_Map::set_size: found seq %u, No.%d, update length to %d\n", local_port, start_seq, seq_info->record_num, record_size_with_header);
+
+            seq_info->record_size_with_header = record_size_with_header;
+            seq_info->upper_seq = start_seq + record_size_with_header;
+        }
+        else{
+            if(tls_debug > 0)
+                printf("S%d: TLS_Record_Number_Seq_Map::set_size: found seq %u, No.%d, length is %d\n", local_port, start_seq, seq_info->record_num, seq_info->record_size_with_header);
+        }
         if(start_seq == next_record_start_seq){
             next_record_start_seq = seq_info->upper_seq;
             record_num_count++;
@@ -621,13 +645,13 @@ int TLS_Record_Number_Seq_Map::get_record_num(uint seq){
 
 void TLS_Record_Number_Seq_Map::lock(){
     if(tls_debug && lock_debug)
-        printf("TLS_Record_Number_Seq_Map: try lock\n");
+        printf("S%d: TLS_Record_Number_Seq_Map: try lock\n");
     pthread_mutex_lock(&mutex);
 }
 
 void TLS_Record_Number_Seq_Map::unlock(){
     if(tls_debug && lock_debug)
-        printf("TLS_Record_Number_Seq_Map: try unlock\n");
+        printf("S%d: TLS_Record_Number_Seq_Map: try unlock\n");
     pthread_mutex_unlock(&mutex);
 }
 
@@ -688,9 +712,13 @@ int Optimack::process_incoming_tls_appdata(bool contains_header, unsigned int se
         int record_size = htons(tlshdr->length) + TLSHDR_SIZE;
 
         if(tlshdr->version == subconn->crypto_coder->get_version_reversed()){
-            tls_record_seq_map->insert(1, record_size);
+            subconn->tls_record_seq_map->set_localport(subconn->local_port);
+            subconn->tls_record_seq_map->insert(1, record_size);
             if(record_size != MAX_FULL_GCM_RECORD_LEN)
-                tls_record_seq_map->insert(1 + record_size, 0);
+                subconn->tls_record_seq_map->insert(1 + record_size, 0);
+        }
+        else{
+            printf("S%d-%d: set size failed, version %x, stored version %x\n", subconn->id, subconn->local_port, tlshdr->version, subconn->crypto_coder->get_version_reversed());
         }
     }
     // tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end);
@@ -740,8 +768,8 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
     for(uint payload_index_seq = seq; payload_index_seq + TLSHDR_SIZE < payload_seq_end; payload_index_seq = record_end_seq)
     {
         TLS_Record_Seq_Info seq_info;
-        tls_record_seq_map->set_record_seq_info(payload_index_seq, (struct mytlshdr*)(payload + payload_index_seq - seq));
-        int get_ret = tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
+        subconn->tls_record_seq_map->set_record_seq_info(payload_index_seq, (struct mytlshdr*)(payload + payload_index_seq - seq));
+        int get_ret = subconn->tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
         if(get_ret < 0){
             printf("S%d-%d: Partial: record_seq_info for seq %u not found!\n", subconn->id, subconn->local_port, payload_index_seq);
             return -1;
@@ -946,9 +974,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     if(sockfd == 0){
         printf("open_ssl_conn: sockfd can't be 0!Q\n");
     }
-    
     printf("open_ssl_conn: for fd %d\n", sockfd);
-
     const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
     SSL_CTX *ctx = SSL_CTX_new(method);
     if (ctx == nullptr)
@@ -994,6 +1020,8 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
         printf("%s", SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
     }
+    free(sk);
+    SSL_CTX_free(ctx);
 
     return ssl;
 }

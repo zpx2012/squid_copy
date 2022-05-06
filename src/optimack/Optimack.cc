@@ -82,8 +82,10 @@ using namespace std;
 
 #define LOG_SQUID_ACK 1
 
-const int multithread = 0;
+const int multithread = 1;
 const int debug_subconn_recvseq = 0;
+const int use_optimack = 1;
+const int forward_packet = 1;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -219,63 +221,6 @@ nfq_loop(void *arg)
     //return placeholder;
 }
 
-void* 
-pool_handler(void* arg)
-{
-    //char log[LOGSIZE];
-    struct thread_data* thr_data = (struct thread_data*)arg;
-    Optimack* obj = (Optimack*)(thr_data->obj);
-    u_int32_t id = thr_data->pkt_id;
-    int ret = -1;
-
-    if(obj->cb_stop)
-        return NULL;
-    //debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
-    if(!thr_data->buf)
-        return NULL;
-
-    short protocol = ip_hdr(thr_data->buf)->protocol;
-    if (protocol == 6)
-        ret = obj->process_tcp_packet(thr_data);
-    else{ 
-        printf("Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
-        //debugs(0, DBG_CRITICAL, log);
-        struct myiphdr *iphdr = ip_hdr(thr_data->buf);
-        // struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-
-        //unsigned char *payload = tcp_payload(thr_data->buf);
-        // unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
-        char sip[16], dip[16];
-        ip2str(iphdr->saddr, sip);
-        ip2str(iphdr->daddr, dip);
-
-        //memset(log, 0, LOGSIZE);
-        //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        //debugs(0, DBG_CRITICAL, log);
-        // char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
-        //debugs(0, DBG_CRITICAL, hex_str);
-        // free(hex_str);
-        // hex_str = NULL;
-    }
-
-    if (ret == 0){
-        nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        // log_info("Verdict: Accept");
-        //debugs(0, DBG_CRITICAL, "Verdict: Accept");
-    }
-    else{
-        nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
-        // log_info("Verdict: Drop");
-        //debugs(0, DBG_CRITICAL, "Verdict: Drop");
-    }
-
-    free(thr_data->buf);
-    thr_data->buf = NULL;
-    free(thr_data);
-    thr_data = NULL;
-    // TODO: ret NULL?
-    return NULL;
-}
 
 void adjust_optimack_speed(struct subconn_info* conn, int id, int mode, int offset){
     //mode: 1 - speedup, -1 - slowdown
@@ -1385,14 +1330,14 @@ Optimack::cleanup()
 
     if(!range_stop){
         range_stop++;
-        // pthread_join(range_thread, NULL);
+        pthread_join(range_thread, NULL);
         log_info("ask overrun_thread to exit");    
         printf("ask range_watch_thread to exit\n");    
     }
 
     if(!optim_ack_stop){
         optim_ack_stop++;
-        // pthread_join(optim_ack_thread, NULL);
+        pthread_join(optim_ack_thread, NULL);
         log_info("ask optimack_altogether_thread to exit");    
         printf("ask optimack_altogether_thread to exit\n");    
     }
@@ -1416,10 +1361,20 @@ Optimack::cleanup()
     // log_info("NFQ %d all optimistic threads exited", nfq_queue_num);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    sleep(2);
+    // sleep(2);
 
     pthread_mutex_lock(&mutex_subconn_infos);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+        if(is_ssl){
+#ifdef USE_OPENSSL
+            // if(it->second->ssl)
+            //     SSL_free(it->second->ssl);
+            if(it->second->crypto_coder)
+                free(it->second->crypto_coder);  
+#endif
+        }
+        if(it->second->recved_seq)
+            free(it->second->recved_seq);
         free(it->second);
         it->second = NULL;
     }
@@ -1451,7 +1406,7 @@ Optimack::Optimack()
     range_stop = -1;
     seq_next_global = 1;
     subconn_count = 0;
-    
+    request = response = NULL;
 }
 
 Optimack::~Optimack()
@@ -1472,10 +1427,11 @@ Optimack::~Optimack()
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
      // clear thr_pool
-    if(pool){
-        thr_pool_destroy(pool);
+    // if(pool){
+        pool.wait();
+        // thr_pool_destroy(pool);
         log_info("destroy thr_pool");
-    }
+    // }
     teardown_nfq();
     log_info("teared down nfq");
 
@@ -1524,13 +1480,13 @@ Optimack::init()
         //exit(EXIT_FAILURE);
     //}
 
-    pool = thr_pool_create(4, 16, 300, NULL);
-    if (!pool) {
+    // pool = thr_pool_create(4, 16, 300, NULL);
+    // if (!pool) {
             // debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
-            exit(1);                
-    }
+        // return;             
+    // }
 
-    char tmp_str[600], time_str[64];
+    char tmp_str[600] = {0}, time_str[64] = {0};
     time_in_YYYY_MM_DD(time_str);
     // home_dir = getenv("HOME");
 
@@ -1772,17 +1728,80 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     // hex_dump(thr_data->buf, packet_len);
     // printf("packet:\n");
     // hex_dump(packet, packet_len);
+    nfq_set_verdict(obj->g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
 
-    // if(multithread == 0)
+
+    if(multithread == 0)
         pool_handler((void *)thr_data);
-    // else{
-    //     if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-    //         // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
-    //         return -1;
-    //     }
-    // }
+    else{
+        boost::asio::post(obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        // if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
+            // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
+            // return -1;
+        // }
+    }
     return 0;
 }
+
+
+void* 
+pool_handler(void* arg)
+{
+    //char log[LOGSIZE];
+    struct thread_data* thr_data = (struct thread_data*)arg;
+    Optimack* obj = (Optimack*)(thr_data->obj);
+    u_int32_t id = thr_data->pkt_id;
+    int ret = -1;
+
+    if(obj->cb_stop)
+        return NULL;
+    //debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
+    if(!thr_data->buf)
+        return NULL;
+
+    short protocol = ip_hdr(thr_data->buf)->protocol;
+    if (protocol == 6)
+        ret = obj->process_tcp_packet(thr_data);
+    else{ 
+        printf("Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
+        //debugs(0, DBG_CRITICAL, log);
+        struct myiphdr *iphdr = ip_hdr(thr_data->buf);
+        // struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
+
+        //unsigned char *payload = tcp_payload(thr_data->buf);
+        // unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
+        char sip[16], dip[16];
+        ip2str(iphdr->saddr, sip);
+        ip2str(iphdr->daddr, dip);
+
+        //memset(log, 0, LOGSIZE);
+        //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        //debugs(0, DBG_CRITICAL, log);
+        // char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
+        //debugs(0, DBG_CRITICAL, hex_str);
+        // free(hex_str);
+        // hex_str = NULL;
+    }
+
+    if (ret == 0){
+        nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
+        // log_info("Verdict: Accept");
+        //debugs(0, DBG_CRITICAL, "Verdict: Accept");
+    }
+    else{
+        nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
+        // log_info("Verdict: Drop");
+        //debugs(0, DBG_CRITICAL, "Verdict: Drop");
+    }
+
+    free(thr_data->buf);
+    thr_data->buf = NULL;
+    free(thr_data);
+    thr_data = NULL;
+    // TODO: ret NULL?
+    return NULL;
+}
+
 
 void Optimack::print_seq_table(){
     char time_str[30];
@@ -1889,11 +1908,12 @@ void* overrun_detector(void* arg){
     Optimack* obj = (Optimack* )arg;
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
 
-    sleep(2);//Wait for the packets to come
+    // sleep(2);//Wait for the packets to come
     log_info("Start overrun_detector thread");
+    printf("Start overrun_detector thread");
 
 
-    auto last_print_seqs = std::chrono::system_clock::now();
+    // auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
         // if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
@@ -2230,7 +2250,8 @@ int Optimack::process_tcp_plaintext_packet(
             // compute_checksums(packet, 20, packet_len);
         }
 #endif
-            sprintf(log, "%s - handshake hasn't completed. let it pass.", log);
+            strcat(log, "- handshake hasn't completed. let it pass.");
+            // sprintf(log, "%s ", log);
             log_info(log);
 
             return 0;
@@ -2562,20 +2583,21 @@ int Optimack::process_tcp_plaintext_packet(
                         bool start_optimack = false;
                         if(is_ssl){
 #ifdef USE_OPENSSL
-                            if(it == subconn_infos.end())
+                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1000)
                                 start_optimack = true;
 #endif
                         }
-                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
+                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1000){
                             start_optimack = true;
                         }
                         
                         if(start_optimack){
                         // if(recved_seq.getFirstEnd() > 1){
                             // if(optim_ack_stop){
+                            if(use_optimack){
                                 start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                                 printf("P%d-S%d: Start optimistic_ack_altogether\n", pkt_id, subconn_i);
-                            // }
+                            }
                         }
                     }
                     pthread_mutex_unlock(&mutex_subconn_infos);
@@ -2661,7 +2683,9 @@ int Optimack::process_tcp_plaintext_packet(
 
                 strcat(log,"\n");
                 log_info(log);
-                // if(subconn->is_backup || subconn_i > 0)
+                if(forward_packet)
+                    return 0;
+                else if(subconn->is_backup || subconn_i > 0)
                     return 0;
                 // else
                     // return -1;
@@ -3348,6 +3372,10 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     if(is_ssl){
         return 0;
     }
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+    
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
 
     SSL_library_init();
@@ -3360,7 +3388,6 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
-    tls_record_seq_map = new TLS_Record_Number_Seq_Map();
 
     /*** bug: if we combine three blocks into one for loop, 
        * previous connections are set to be handshake finished, 
@@ -3369,11 +3396,11 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
        * because not all ssl connnections have been opened, which caused all threads in deadlock,
        * preventing the handshake packets of current opening connections to pass
     ***/
-    pthread_mutex_lock(&mutex_subconn_infos);
-    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        it->second->handshake_finished = false;
-    }
-    pthread_mutex_unlock(&mutex_subconn_infos);
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+    //     it->second->handshake_finished = false;
+    // }
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         SSL* ssl = open_ssl_conn(it->second->sockfd, false);
@@ -3423,6 +3450,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
 
     subconn->ssl = ssl;
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
+    subconn->tls_record_seq_map = new TLS_Record_Number_Seq_Map();
 
     // subconn->handshake_finished = true;
     subconn->record_size = MAX_FULL_GCM_RECORD_LEN;

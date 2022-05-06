@@ -214,9 +214,14 @@ public:
     int get_record_seq_info(uint seq, TLS_Record_Seq_Info* return_info);
     int get_record_num(uint seq);
 
+    void set_localport(int lp){
+        local_port = lp;
+    }
+
     void lock();
     void unlock();
 private:
+    int local_port;
     uint next_record_start_seq;
     int record_num_count;
     uint first_max_frag_seq, last_piece_start_seq;

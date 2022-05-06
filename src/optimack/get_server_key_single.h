@@ -3754,7 +3754,7 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len,
      * anything else is a failure - the plaintext is not trustworthy.
      */
     ret = EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
-    ERR_print_errors_fp(stdout);
+    // ERR_print_errors_fp(stdout);
     
     /* Clean up */
     EVP_CIPHER_CTX_free(ctx);

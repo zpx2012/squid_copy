@@ -187,6 +187,10 @@ Security::CreateClientSession(const Security::ContextPointer &ctx, const Comm::C
     // printf("CreateSession here\n");
     SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
     // SSL_CTX_set_tlsext_max_fragment_length(ctx.get(), TLSEXT_max_fragment_length_2048);
+    const char* const PREFERRED_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256";
+    // SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
+    SSL_CTX_set_cipher_list(ctx.get(), PREFERRED_CIPHERS);
+
 #endif
 
     if (!c || !c->getPeer())
@@ -210,7 +214,8 @@ Security::SessionSendGoodbye(const Security::SessionPointer &s)
     debugs(83, 5, "session=" << (void*)s.get());
     if (s) {
 #if USE_OPENSSL
-        SSL_shutdown(s.get());
+        if(SSL_get_shutdown(s.get()) & SSL_SENT_SHUTDOWN)
+            SSL_shutdown(s.get());
 #elif USE_GNUTLS
         gnutls_bye(s.get(), GNUTLS_SHUT_RDWR);
 #endif

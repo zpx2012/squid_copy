@@ -71,15 +71,15 @@ void log_func(int level, const char *fmt, ...)
     char buffer[1024];
     char time_str[64];
     time_t rawtime;
-    struct tm * timeinfo;
+    struct tm timeinfo;
     struct timespec ts;
     double time_ts;
 
     if (level == 99) {
         /* experiment log */
         time(&rawtime);
-        timeinfo = localtime(&rawtime);
-        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+        localtime_r(&rawtime, &timeinfo);
+        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", &timeinfo);
 
         va_start(ap, fmt);
         vsnprintf(buffer, sizeof(buffer), fmt, ap);
@@ -100,8 +100,8 @@ void log_func(int level, const char *fmt, ...)
         return;
 
     time(&rawtime);
-    timeinfo = localtime(&rawtime);
-    strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+    localtime_r(&rawtime, &timeinfo);
+    strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", &timeinfo);
 
     /* a more acurate timestamp */
     clock_gettime(CLOCK_REALTIME, &ts);

@@ -13,6 +13,8 @@
 #include <netinet/in.h>
 #include "autoconf.h"
 // #define USE_OPENSSL 1
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
@@ -72,6 +74,7 @@ struct subconn_info
 #ifdef USE_OPENSSL
     SSL *ssl;
     TLS_Crypto_Coder* crypto_coder;
+    TLS_Record_Number_Seq_Map* tls_record_seq_map;
     int record_size;
     unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     // uint ini_seq_tls_data;
@@ -194,7 +197,9 @@ public:
     const int MARK = 666;
     int nfq_queue_num;
     
-    thr_pool_t* pool;
+    boost::asio::thread_pool pool;
+    // thr_pool_t* pool;
+
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
@@ -227,8 +232,8 @@ public:
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;
     double last_ack_epochtime, last_inorder_data_epochtime;
     FILE *log_file, *rwnd_file, *adjust_rwnd_file, *forward_seq_file, *recv_seq_file, *processed_seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe, *info_file;
-    char output_dir[100];
-    char home_dir[10];
+    char output_dir[100] = {0};
+    char home_dir[10] = {0};
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
@@ -279,7 +284,7 @@ public:
     bool is_ssl = false;
 #ifdef USE_OPENSSL
     TLS_Decrypted_Records_Map* decrypted_records_map;
-    TLS_Record_Number_Seq_Map* tls_record_seq_map;
+
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
     int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, std::map<uint, struct record_fragment> &return_buffer);

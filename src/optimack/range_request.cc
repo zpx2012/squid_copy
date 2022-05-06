@@ -304,7 +304,7 @@ opensocket:
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder;
-    if(last_ack_epochtime > last_inorder_data_epochtime && elapsed(last_ack_time) > 1.5){
+    // if(last_ack_epochtime > last_inorder_data_epochtime && elapsed(last_ack_time) > 1.5){
         // if(!resend_cnt){
         //     if(cur_ack_rel < recved_seq.getFirstEnd()){
         //         resend_cnt++;
@@ -321,7 +321,7 @@ void Optimack::try_for_gaps_and_request(){
             // log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
             
         // }
-    }
+    // }
     
     last_recv_inorder = recved_seq.getFirstEnd();
     if(check_packet_lost_on_all_conns(last_recv_inorder)){
@@ -350,13 +350,13 @@ void Optimack::try_for_gaps_and_request(){
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     
-    if (recved_seq.size() < 1)
+    if (recved_seq.size() < 2)
         return false;
 
     if(is_ssl){
 #ifdef USE_OPENSSL
         TLS_Record_Seq_Info seq_info;
-        tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
+        subconn_infos[squid_port]->tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
         last_recv_inorder = seq_info.upper_seq - 1;
 #endif
     }
@@ -697,8 +697,6 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     rp.parse(headerBuf);
     response_header_len = rp.messageHeaderSize();
     pthread_mutex_unlock(&mutex_range);
-
-    response_header_len = 392;
 
     // response_header_len = 398;
     response = (char*)malloc(response_header_len+1);

@@ -11,7 +11,7 @@
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
-url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
+url='https://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
 site='mirrors.mit.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
@@ -58,7 +58,7 @@ while true; do
             make install
             echo
             echo ackpace${ackpaces[i/2%${#ackpaces[@]}]}_${fix_num}optim+1range
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh ackpace_${fix_num}optim ackpace${ackpaces[i/2%${#ackpaces[@]}]}_${fix_num}optim+1range $site $url
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun_tls.sh ackpace_${fix_num}optim ackpace${ackpaces[i/2%${#ackpaces[@]}]}_${fix_num}optim+1range $site $url
         fi
         i=$((i+1))
     else
