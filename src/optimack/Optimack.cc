@@ -38,11 +38,11 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 1001
 #endif
 
 #define MAX_STALL_TIME 240
@@ -80,12 +80,11 @@ using namespace std;
 #define DEBUG_PRINT_LEVEL 0
 #endif
 
-#define LOG_SQUID_ACK 1
-
 const int multithread = 1;
 const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
 const int forward_packet = 1;
+const int log_squid_ack = 0;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -1533,7 +1532,7 @@ Optimack::init()
     // processed_seq_file = fopen(tmp_str, "w");
     // fprintf(processed_seq_file, "time,port,processed_seq_num\n");
    
-    if(LOG_SQUID_ACK){
+    if(log_squid_ack){
         memset(tmp_str, 0, 600);
         sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
         ack_file = fopen(tmp_str, "w");
@@ -2285,6 +2284,7 @@ int Optimack::process_tcp_plaintext_packet(
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - unlock", pkt_id, subconn_i); 
                     }
 
+
                     unsigned int seq_rel = seq - subconn->ini_seq_loc;
                     log_info(log);
                     // return 0;
@@ -2341,8 +2341,11 @@ int Optimack::process_tcp_plaintext_packet(
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         uint cur_ack_rel_local = ack - subconn->ini_seq_rem;
                         this->win_end = cur_ack_rel + rwnd;
-                        // log_seq(ack_file, cur_ack_rel_local);
-                        fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
+
+                        if(log_squid_ack){
+                            // log_seq(ack_file, cur_ack_rel_local);
+                            fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
+                        }
 
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", pkt_id, cur_ack_rel, rwnd, max_win_size);
@@ -2476,6 +2479,7 @@ int Optimack::process_tcp_plaintext_packet(
             // pthread_mutex_unlock(&subconn->mutex_opa);
         // }
 
+        while(!subconn->seq_init);
         unsigned int seq_rel = seq - subconn->ini_seq_rem;
         // log_info(log);
         // return 0;
@@ -2740,8 +2744,9 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
     IntervalList temp_range;
     temp_range.clear();
     temp_range.insertNewInterval(seq_rel, seq_rel+payload_len);
-    // pthread_mutex_lock(recved_seq.getMutex());
+    pthread_mutex_lock(recved_seq.getMutex());
     temp_range.substract(&recved_seq);
+    pthread_mutex_unlock(recved_seq.getMutex());
     auto temp_range_list = temp_range.getIntervalList();
     if(temp_range.size()){
         for(auto it = temp_range_list.rbegin(); it != temp_range_list.rend(); it++){

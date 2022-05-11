@@ -27,7 +27,7 @@ mkdir -p ~/rs/ABtest_onerun/
 outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/
 mkdir -p $outdir
 stime=$(date +%Y%m%d%H%M%S)
-tag=$(hostname)_${site}_http_${2}_${stime}
+tag=$(hostname)_${site}_https_${2}_${stime}
 squid_out=$outdir/curl_squid_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
@@ -42,19 +42,19 @@ rm /var/optack.log
 function cleanup()
 {
     sleep 2
-    sudo /usr/local/squid/sbin/squid -k interrupt
+    sudo ~/squid/sbin/squid -k interrupt
     sleep 5
     if screen -ls | grep 'squid'; 
     then
         # exit
-        sudo /usr/local/squid/sbin/squid -k kill
+        sudo ~/squid/sbin/squid -k kill
     fi
     sudo killall squid
     bash ~/squid_copy/src/optimack/test/ks.sh normal
     bash ~/squid_copy/src/optimack/test/ks.sh td
     sudo iptables -F
     sudo iptables -t mangle -F
-    rm /usr/local/squid/var/logs/cache.log
+    rm ~/squid/var/logs/cache.log
 }
 
 function INT_handler()
@@ -66,7 +66,7 @@ function INT_handler()
 trap INT_handler SIGINT
 
 
-screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 80
+screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 443
 screen -dmS squid bash -c "sudo ~/squid/sbin/squid -N -d1 2>&1 >$squid_log"
 sleep 10
 
