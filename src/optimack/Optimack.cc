@@ -38,11 +38,11 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 3
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1001
+#define ACKPACING 1000
 #endif
 
 #define MAX_STALL_TIME 240
@@ -364,7 +364,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
     if(adjusted_rwnd < conn->win_scale)
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
-    send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
+    send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled, 128);
     log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
