@@ -218,6 +218,10 @@ public:
         local_port = lp;
     }
 
+    bool empty(){
+        return tls_seq_map.empty();
+    }
+
     void lock();
     void unlock();
 private:
