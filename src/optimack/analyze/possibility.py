@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from interval import remove_interval, intersect_intervals, total_bytes
 from loss_rate_optimack_end2end import pcap2df
 from loss_rate_optimack_client import loss_rate_optimack_client
-from parse_info_files import find_info_file
+# from parse_info_files import find_info_file
 
 def remove_received_intervals(intervals, df_port):
     # print(df_port['tcp_seq_rel'].max())

@@ -5,35 +5,44 @@ from datetime import datetime, timedelta
 def find_info_file(search_dir, input_file, extension, key):
     fname_fields = input_file.split(extension)[0].split('_')
     tshark_time = datetime.strptime(fname_fields[-1], '%Y%m%d%H%M%S')
-    con_num, ackpace = 0,0
+    extract_dict = {}
     for fname_field in fname_fields:
-        if 'optim' in fname_field:
-            con_num = fname_field.split('+')[0].strip('optim')
-            ackpace = fname_field.split('+')[1].strip('ackpace')
-    # print(con_num, ackpace)
+        for k in ['optim', 'ackpace']:
+            if k in fname_field:
+                sub_fields = fname_field.split('+')
+                for sub_field in sub_fields:
+                    if k in sub_field:
+                        extract_dict[k] = sub_field.strip(k)
+    con_num, ackpace = extract_dict['optim'], extract_dict['ackpace']
+    print(con_num, ackpace)
 
-    # print("time_str: %s" % time_str)
+    print("time_str: %s" % tshark_time)
     info_file, info_dict = '', {}
     for root, dirs, files in os.walk(os.path.expanduser(search_dir)): 
         for finfo in sorted(files):
             if finfo.startswith("info_") and finfo.endswith(".txt"):
                 info_file_time = datetime.strptime(finfo.split(".txt")[0].split('_')[-1], '%Y-%m-%dT%H:%M:%S')#.strftime("%Y%m%d%H%M")
-                # print(info_file_time, tshark_time, )
-                if info_file_time >= tshark_time and info_file_time - tshark_time < timedelta(0,10):
+                # print(info_file_time, tshark_time)
+                if info_file_time >= tshark_time and info_file_time - tshark_time < timedelta(0,30):
                     print("Found: %s, validating..." % finfo)
                     info_file = root+'/'+finfo
                     info_dict = read_info_file(info_file)
-                    print(con_num, ackpace, info_dict['Num of Conn'], info_dict['ACK Pacing'])
-                    if info_dict['ACK Pacing'] != ackpace: #info_dict['Num of Conn'] == con_num and
-                        print("ACK Pace doesn't match")
-                        info_file, info_dict = '',{}
-                    elif info_dict.has_key(key):
-                        print("Already written with key %s" % key)
+                    if 'Num of Conn' not in info_dict or 'ACK Pacing' not in info_dict:
+                        print("Empty file")
                         info_file, info_dict = '',{}
                     else:
-                        print("found %s" % info_file)
-                        break
-
+                        print(con_num, ackpace, info_dict['Num of Conn'], info_dict['ACK Pacing'])
+                        if info_dict['ACK Pacing'] != ackpace: #info_dict['Num of Conn'] == con_num and
+                            print("ACK Pace doesn't match")
+                            info_file, info_dict = '',{}
+                        elif info_dict.has_key(key):
+                            print("Already written with key:G %s" % key)
+                            info_file, info_dict = '',{}
+                        else:
+                            print("found %s" % info_file)
+                            break
+                    
+    print
     return info_file, info_dict
 
 def append_to_info_file(info_file, str):
@@ -45,7 +54,8 @@ def append_to_info_file(info_file, str):
 def read_info_file(infile):
     dict_ = {}
     with open(infile, 'r') as inf:
-        for line in inf.read().splitlines():
+        lines = inf.read().replace("\r\n",", ")
+        for line in lines:
             cells = line.split(': ')
             if len(cells) == 2:
                 dict_[cells[0]] = cells[1]
@@ -90,7 +100,7 @@ def parse_curl_squid_file(dir, filename):
         append_to_info_file(info_file, "\n%s: %f\n" % (write_key, duration))
 
 
-def parse_curl_normal_file(dir, filename, df):
+def parse_curl_normal_file(dir, filename):
     fcells = filename.split('.txt')[0].split('_')
     hostname = fcells[2]
 
@@ -137,7 +147,7 @@ if __name__ == '__main__':
     for root, dirs, files in os.walk(os.path.expanduser(sys.argv[1])): 
         for f in sorted(files):
             print(f)
-            if f.startswith('cur_normal') and f.endswith('.txt'):
+            if f.startswith('curl_normal') and f.endswith('.txt'):
                 print("Parse: %s" % f)
                 parse_curl_normal_file(root, f)
             elif f.startswith('curl_squid') and f.endswith('.txt'):
@@ -159,8 +169,8 @@ if __name__ == '__main__':
                     fcells = f.split(extension)[0].split('_')
                     time_str = fcells[-1]
                     hostname = fcells[-2]
-                    dict_ = parse_info_file(root+'/'+f)
-                    if dict_ and dict_['Request']: #and dict_['IP'] in ['142.93.117.107', '138.68.49.206', '67.205.159.15'] '/pub/ubuntu/indices/md5sums.gz' in 
+                    dict_ = read_info_file(root+'/'+f)
+                    if dict_ and 'Request' in dict_: #and dict_['IP'] in ['142.93.117.107', '138.68.49.206', '67.205.159.15'] '/pub/ubuntu/indices/md5sums.gz' in 
                         print(time_str+', '+hostname)
                         outf.writelines(','.join([time_str, hostname, dict_['Num of Conn'], dict_['ACK Pacing'], dict_['IP'], dict_['Duration'].strip('s'), dict_['Overrun count'], dict_['Overrun penalty'], dict_['We2Squid loss count'], dict_['We2Squid loss penalty'], dict_['Range timeout count'], dict_['Range timeout penalty'], ])) #dict_['Packet lost between us and squid'], 
                         if not dict_.has_key('Mode'):
@@ -173,7 +183,7 @@ if __name__ == '__main__':
                             outf.writelines(','.join([dict_['Packet lost on all'], dict_['Range requested'],]))
                         else:
                             outf.writelines(',,')
-                        if dict_.has_key("avg loss rate"):
-                            
+                        if "avg loss rate" in dict_:
+                            outf.writelines(','+dict_['avg_loss_rate'])
                         outf.writelines('\n')
             break
