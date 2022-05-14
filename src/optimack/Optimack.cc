@@ -38,7 +38,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 4
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING

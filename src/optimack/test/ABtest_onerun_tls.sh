@@ -72,8 +72,8 @@ sleep 10
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
-screen -dmS normal bash -c "while true; do curl -LJ4k $url -o /dev/null 2>&1 | tee -a ${normal_out}; done"
-curl --cacert ~/squid/etc/ssl_cert/myCA.pem -LJ4k $url -o /dev/null -x 127.0.0.1:3129 --speed-time 360 2>&1 | tee -a ${squid_out}
+screen -dmS normal bash -c "while true; do curl -4 $url -o /dev/null 2>&1 | tee -a ${normal_out}; done"
+curl --cacert ~/squid/etc/ssl_cert/myCA.pem -4 $url -o /dev/null -x 127.0.0.1:3129 --speed-time 360 2>&1 | tee -a ${squid_out}
 cleanup
 
 if grep -q "left intact" $squid_out;
