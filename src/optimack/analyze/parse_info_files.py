@@ -1,5 +1,5 @@
 import csv, os, pandas as pd, sys, numpy as np, socket
-# from possibility import parse_tshark
+from possibility import parse_tshark
 from datetime import datetime, timedelta
 
 def find_info_file(search_dir, input_file, extension, key):
@@ -36,7 +36,7 @@ def find_info_file(search_dir, input_file, extension, key):
                             print("ACK Pace doesn't match")
                             info_file, info_dict = '',{}
                         elif info_dict.has_key(key):
-                            print("Already written with key:G %s" % key)
+                            print("Already written with key: %s" % key)
                             info_file, info_dict = '',{}
                         else:
                             print("found %s" % info_file)
@@ -55,7 +55,7 @@ def read_info_file(infile):
     dict_ = {}
     with open(infile, 'r') as inf:
         lines = inf.read().replace("\r\n",", ")
-        for line in lines:
+        for line in lines.split("\n"):
             cells = line.split(': ')
             if len(cells) == 2:
                 dict_[cells[0]] = cells[1]
