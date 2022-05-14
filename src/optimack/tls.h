@@ -75,9 +75,14 @@ public:
         return this->key_obtained;
     }
 
+    bool get_iv_xplct_ini_set(){
+        return this->iv_xplct_ini_set;
+    }
+    
     void set_iv_explicit_init(unsigned char* iv_ex){
         memcpy(this->iv_xplct_ini, iv_ex, 8);
         this->iv_xplct_ini[8] = 0;
+        iv_xplct_ini_set = true;
     }
 
     uint get_plaintext_seq(uint ciphertext_seq){
@@ -89,10 +94,10 @@ public:
     }
 
 private:
-    bool key_obtained = false;
+    bool key_obtained = false, iv_xplct_ini_set = false;
     const EVP_CIPHER *evp_cipher;
-    unsigned char iv_salt[5], iv_xplct_ini[9]; // 4 to be modified
-    unsigned char write_key_buffer[100]; // 100 to be modified
+    unsigned char iv_salt[5] = {0}, iv_xplct_ini[9] = {0}; // 4 to be modified
+    unsigned char write_key_buffer[100] = {0}; // 100 to be modified
     // int record_size = 0, record_full_size = 0;
     unsigned short version_rvs;
 

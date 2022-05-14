@@ -711,19 +711,19 @@ int Optimack::process_incoming_tls_appdata(bool contains_header, unsigned int se
         struct mytlshdr *tlshdr = (struct mytlshdr*)(payload);
         int record_size = htons(tlshdr->length) + TLSHDR_SIZE;
 
-        if(tlshdr->version == subconn->crypto_coder->get_version_reversed()){
-            subconn->tls_record_seq_map->set_localport(subconn->local_port);
-            subconn->tls_record_seq_map->insert(1, record_size);
-            if(record_size != MAX_FULL_GCM_RECORD_LEN)
-                subconn->tls_record_seq_map->insert(1 + record_size, 0);
-        }
-        else{
-            printf("S%d-%d: set size failed, version %x, stored version %x\n", subconn->id, subconn->local_port, tlshdr->version, subconn->crypto_coder->get_version_reversed());
-        }
+        // if(tlshdr->version == subconn->crypto_coder->get_version_reversed()){
+            // subconn->tls_record_seq_map->set_localport(subconn->local_port);
+            // subconn->tls_record_seq_map->insert(1, record_size);
+            // if(record_size != MAX_FULL_GCM_RECORD_LEN)
+                // subconn->tls_record_seq_map->insert(1 + record_size, 0);
+        // }
+        // else{
+            // printf("S%d-%d: set size failed, version %x, stored version %x\n", subconn->id, subconn->local_port, tlshdr->version, subconn->crypto_coder->get_version_reversed());
+        // }
     }
     
     int count = 0;
-    while(subconn->tls_record_seq_map->empty() && count < 100){
+    while(!subconn->crypto_coder->get_iv_xplct_ini_set() && count < 100){
         count++;
         usleep(10);
     }
