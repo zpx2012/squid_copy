@@ -54,10 +54,11 @@ def append_to_info_file(info_file, str):
 def read_info_file(infile):
     dict_ = {}
     with open(infile, 'r') as inf:
-        lines = inf.read().replace("\r\n",", ")
-        for line in lines.split("\n"):
+        lines = inf.read().replace("\r\n",", ").splitlines()
+        print(lines)
+        for line in lines:
             cells = line.split(': ')
-            if len(cells) == 2:
+            if len(cells) >= 2:
                 dict_[cells[0]] = cells[1]
     return dict_
 
@@ -170,6 +171,7 @@ if __name__ == '__main__':
                     time_str = fcells[-1]
                     hostname = fcells[-2]
                     dict_ = read_info_file(root+'/'+f)
+                    print(dict_)
                     if dict_ and 'Request' in dict_: #and dict_['IP'] in ['142.93.117.107', '138.68.49.206', '67.205.159.15'] '/pub/ubuntu/indices/md5sums.gz' in 
                         print(time_str+', '+hostname)
                         outf.writelines(','.join([time_str, hostname, dict_['Num of Conn'], dict_['ACK Pacing'], dict_['IP'], dict_['Duration'].strip('s'), dict_['Overrun count'], dict_['Overrun penalty'], dict_['We2Squid loss count'], dict_['We2Squid loss penalty'], dict_['Range timeout count'], dict_['Range timeout penalty'], ])) #dict_['Packet lost between us and squid'], 
@@ -184,6 +186,6 @@ if __name__ == '__main__':
                         else:
                             outf.writelines(',,')
                         if "avg loss rate" in dict_:
-                            outf.writelines(','+dict_['avg_loss_rate'])
+                            outf.writelines(','+dict_['avg loss rate'])
                         outf.writelines('\n')
             break
