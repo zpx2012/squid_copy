@@ -24,7 +24,7 @@ def remove_received_intervals_apply(row, intervals):
 
 def pcap2tshark(input_file, tshark_out, port):
     if not os.path.exists(tshark_out):
-        tshark_cmd = 'tshark -o tcp.calculate_timestamps:TRUE -r %s -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y "tcp.srcport eq %d and tcp.len > 0" > %s' % (pipes.quote(input_file), port, pipes.quote(tshark_out))
+        tshark_cmd = 'tshark -o tcp.calculate_timestamps:TRUE -r %s -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y "tcp.srcport eq %s and tcp.len > 0" > %s' % (pipes.quote(input_file), port, pipes.quote(tshark_out))
         p = sp.Popen(tshark_cmd, stdout=sp.PIPE, shell=True)
         out, err = p.communicate()
         print(out, err)
