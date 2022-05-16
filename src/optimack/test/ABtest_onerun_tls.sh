@@ -80,7 +80,7 @@ if ! grep -q "curl: (" $squid_out;
 then
     # rm $tcpdump_out
     screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 443' > ${tcpdump_out}.tshark; rm $tcpdump_out"
-if grep -q "curl: (28) Operation too slow" $squid_out; 
+elif grep -q "curl: (28) Operation too slow" $squid_out; 
 then
     cat ${squid_log} >> ${squid_log}_e28
     # mv /var/optack.log $outdir/optack_e28_${tag}.log

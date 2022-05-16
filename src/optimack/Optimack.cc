@@ -38,11 +38,11 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1001
+#define ACKPACING 1750
 #endif
 
 #define MAX_STALL_TIME 240
