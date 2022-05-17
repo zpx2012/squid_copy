@@ -185,7 +185,7 @@ if __name__ == '__main__':
                     f = f+'.tshark'
 
                 if f.endswith(".pcap.tshark"):
-                    info_file, info_dict = find_info_file(root, f, ".pcap.tshark", "avg loss rate")
+                    info_file, info_dict = find_info_file(root, f, ".pcap.tshark", "Avg loss rate")
                     if not info_file:
                         print("No info file found for %s\n" % f)
                         continue
@@ -225,26 +225,31 @@ if __name__ == '__main__':
                 #     outf.writelines('\n')
 
         print(df)
-        df.to_csv(root+'/info_files_result_%s_%s.csv' % (socket.gethostname(), sys.argv[2]), index=False)
+        input_file = 'info_files_result_%s_%s.csv' % (socket.gethostname(), sys.argv[2])
+        df.to_csv(root+input_file, index=False)
 
-        df.apply(pd.to_numeric, errors='ignore')
+        df = df.apply(pd.to_numeric, errors='ignore')
         df['Preindex'] = df['Timestamp'] + df['Hostname']
         df = df.set_index('Preindex')
-        df['ACK Speed'] = 10000000.0/df['ACK Pacing']
+        # df['ACK Speed'] = 10000000.0/df['ACK Pacing']
         df.to_csv(root+'/'+input_file.replace('.csv','_validated_raw.csv'), encoding='utf-8', index=False)
-        df = df[df['In slowdown'] == True]
+        print(df['In slowdown'])
+        df = df[df['In slowdown'] == 'True']
         df = df[df['Curl squid duration'].notnull()]
+        df = df[df['Avg loss rate'] > 0.002]
+        print("After validation")
         print df
         df.to_csv(root+'/'+input_file.replace('.csv','_validated.csv'), encoding='utf-8', index=False)
-        df_mean = df.groupby(['Hostname','Num of conn','ACK Pacing','Mode']).mean().reset_index()
-        df_std = df.groupby(['Hostname','Num of conn','ACK Pacing','Mode']).std().reset_index()
-        df_min = df.groupby(['Hostname','Num of conn','ACK Pacing','Mode']).min().reset_index()
+        df_mean = df.groupby(['Hostname','Num of Conn','ACK Pacing','Mode']).mean().reset_index()
+        df_std = df.groupby(['Hostname','Num of Conn','ACK Pacing','Mode']).std().reset_index()
+        df_min = df.groupby(['Hostname','Num of Conn','ACK Pacing','Mode']).min().reset_index()
         df_mean['duration_std'] = df_std['Duration']
-        df_mean['normal_speed_std'] = df_std['normal_speed']
-        df_mean['loss_std'] = df_std['Avg lost rate']
-        df_mean['overall_lost_byte_std'] = df_std['Overall lost byte']
+        df_mean['normal_speed_std'] = df_std['Normal speed']
+        df_mean['loss_std'] = df_std['Avg loss rate']
+        df_mean['overall_lost_byte_std'] = df_std['Overall lost bytes']
+        print df_min
         df_mean['duration_min'] = df_min['Duration']
-        print df_mean['duration(s)'], df_std['Duration']
+        print df_mean['Duration'], df_std['Duration']
         df_mean.to_csv(root+'/'+input_file.replace('.csv','_validated_mean.csv'), encoding='utf-8', index=False)
 
         break
