@@ -736,19 +736,25 @@ int Optimack::process_incoming_tls_appdata(bool contains_header, unsigned int se
         struct mytlshdr *tlshdr = (struct mytlshdr*)(payload);
         int record_size = htons(tlshdr->length) + TLSHDR_SIZE;
 
-        if(tlshdr->version == subconn->crypto_coder->get_version_reversed()){
-            subconn->tls_record_seq_map->set_localport(subconn->local_port);
-            subconn->tls_record_seq_map->insert(1, record_size);
-            if(record_size != MAX_FULL_GCM_RECORD_LEN)
-                subconn->tls_record_seq_map->insert(1 + record_size, 0);
-        }
-        else{
-            printf("S%d-%d: set size failed, version %x, stored version %x\n", subconn->id, subconn->local_port, tlshdr->version, subconn->crypto_coder->get_version_reversed());
-        }
+        // if(tlshdr->version == subconn->crypto_coder->get_version_reversed()){
+            // subconn->tls_record_seq_map->set_localport(subconn->local_port);
+            // subconn->tls_record_seq_map->insert(1, record_size);
+            // if(record_size != MAX_FULL_GCM_RECORD_LEN)
+                // subconn->tls_record_seq_map->insert(1 + record_size, 0);
+        // }
+        // else{
+            // printf("S%d-%d: set size failed, version %x, stored version %x\n", subconn->id, subconn->local_port, tlshdr->version, subconn->crypto_coder->get_version_reversed());
+        // }
+    }
+    
+    int count = 0;
+    while(!subconn->crypto_coder->get_iv_xplct_ini_set() && count < 100){
+        count++;
+        usleep(10);
     }
     // tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end);
     // if(seq >= cur_ack_rel)
-        partial_decrypt_tcp_payload(subconn, seq, payload, payload_len, return_buffer);
+    partial_decrypt_tcp_payload(subconn, seq, payload, payload_len, return_buffer);
 
     // if(decrypt_start != 0 || decrypt_end != payload_len){
     //     tls_rcvbuf.lock();
@@ -794,6 +800,7 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
     {
         TLS_Record_Seq_Info seq_info;
         subconn->tls_record_seq_map->set_record_seq_info(payload_index_seq, (struct mytlshdr*)(payload + payload_index_seq - seq));
+        // while(subconn->tls_record_seq_map->empty());
         int get_ret = subconn->tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
         if(get_ret < 0 || seq_info.seq <= 0){
             printf("S%d-%d: Partial: record_seq_info for seq %u not found!\n", subconn->id, subconn->local_port, payload_index_seq);

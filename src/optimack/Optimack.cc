@@ -39,11 +39,11 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
-#define ACKPACING 1000
+#define ACKPACING 1750
 #endif
 
 #define MAX_STALL_TIME 240
@@ -81,12 +81,11 @@ using namespace std;
 #define DEBUG_PRINT_LEVEL 0
 #endif
 
-#define LOG_SQUID_ACK 1
-
 const int multithread = 1;
 const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
 const int forward_packet = 1;
+const int log_squid_ack = 0;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -368,7 +367,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
     if(adjusted_rwnd < conn->win_scale)
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
-    send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
+    send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled, 63);
     log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
@@ -1566,7 +1565,7 @@ Optimack::init()
     // processed_seq_file = fopen(tmp_str, "w");
     // fprintf(processed_seq_file, "time,port,processed_seq_num\n");
    
-    if(LOG_SQUID_ACK){
+    if(log_squid_ack){
         memset(tmp_str, 0, 600);
         sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
         ack_file = fopen(tmp_str, "w");
@@ -1761,7 +1760,8 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     // hex_dump(thr_data->buf, packet_len);
     // printf("packet:\n");
     // hex_dump(packet, packet_len);
-    nfq_set_verdict(obj->g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
+    if(forward_packet)
+        nfq_set_verdict(obj->g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
 
 
     if(multithread == 0)
@@ -1816,16 +1816,17 @@ pool_handler(void* arg)
         // hex_str = NULL;
     }
 
-    if (ret == 0){
-        nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        // log_info("Verdict: Accept");
-        //debugs(0, DBG_CRITICAL, "Verdict: Accept");
-    }
-    else{
-        nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
-        // log_info("Verdict: Drop");
-        //debugs(0, DBG_CRITICAL, "Verdict: Drop");
-    }
+    if(!forward_packet)
+        if (ret == 0){
+            nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
+            // log_info("Verdict: Accept");
+            //debugs(0, DBG_CRITICAL, "Verdict: Accept");
+        }
+        else{
+            nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
+            // log_info("Verdict: Drop");
+            //debugs(0, DBG_CRITICAL, "Verdict: Drop");
+        }
 
     free(thr_data->buf);
     thr_data->buf = NULL;
@@ -2331,6 +2332,7 @@ int Optimack::process_tcp_plaintext_packet(
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - unlock", pkt_id, subconn_i); 
                     }
 
+
                     unsigned int seq_rel = seq - subconn->ini_seq_loc;
                     log_info(log);
                     // return 0;
@@ -2387,8 +2389,11 @@ int Optimack::process_tcp_plaintext_packet(
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         uint cur_ack_rel_local = ack - subconn->ini_seq_rem;
                         this->win_end = cur_ack_rel + rwnd;
-                        // log_seq(ack_file, cur_ack_rel_local);
-                        fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
+
+                        if(log_squid_ack){
+                            // log_seq(ack_file, cur_ack_rel_local);
+                            fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
+                        }
 
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", pkt_id, cur_ack_rel, rwnd, max_win_size);
@@ -2522,6 +2527,7 @@ int Optimack::process_tcp_plaintext_packet(
             // pthread_mutex_unlock(&subconn->mutex_opa);
         // }
 
+        while(!subconn->seq_init);
         unsigned int seq_rel = seq - subconn->ini_seq_rem;
         // log_info(log);
         // return 0;
@@ -3500,6 +3506,9 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     subconn->ssl = ssl;
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
     subconn->tls_record_seq_map = new TLS_Record_Number_Seq_Map();
+    subconn->tls_record_seq_map->set_localport(subconn->local_port);
+    subconn->tls_record_seq_map->insert(1, MAX_FULL_GCM_RECORD_LEN);
+    subconn->tls_record_seq_map->set_size(1, MAX_FULL_GCM_RECORD_LEN);
 
     // subconn->handshake_finished = true;
     subconn->record_size = MAX_FULL_GCM_RECORD_LEN;

@@ -27,7 +27,7 @@ mkdir -p ~/rs/ABtest_onerun/
 outdir=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/
 mkdir -p $outdir
 stime=$(date +%Y%m%d%H%M%S)
-tag=$(hostname)_${site}_http_${2}_${stime}
+tag=$(hostname)_${site}_https_${2}_${stime}
 squid_out=$outdir/curl_squid_${tag}.txt
 normal_out=$outdir/curl_normal_${tag}.txt
 squid_log=$outdir/squid_log_${tag}.txt
@@ -42,19 +42,19 @@ rm /var/optack.log
 function cleanup()
 {
     sleep 2
-    sudo /usr/local/squid/sbin/squid -k interrupt
+    sudo ~/squid/sbin/squid -k interrupt
     sleep 5
     if screen -ls | grep 'squid'; 
     then
         # exit
-        sudo /usr/local/squid/sbin/squid -k kill
+        sudo ~/squid/sbin/squid -k kill
     fi
     sudo killall squid
     bash ~/squid_copy/src/optimack/test/ks.sh normal
     bash ~/squid_copy/src/optimack/test/ks.sh td
     sudo iptables -F
     sudo iptables -t mangle -F
-    rm /usr/local/squid/var/logs/cache.log
+    rm ~/squid/var/logs/cache.log
 }
 
 function INT_handler()
@@ -66,29 +66,31 @@ function INT_handler()
 trap INT_handler SIGINT
 
 
-screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 80
+screen -dmS td tcpdump -w $tcpdump_out -s 200 host $site and tcp port 443
 screen -dmS squid bash -c "sudo ~/squid/sbin/squid -N -d1 2>&1 >$squid_log"
 sleep 10
 
 echo Start: $(date -Iseconds) >> $normal_out
 echo Start: $(date -Iseconds) >> $squid_out 
-screen -dmS normal bash -c "while true; do curl -LJ4vk $url -o /dev/null 2>&1 | tee -a ${normal_out}; done"
-curl --cacert ~/squid/etc/ssl_cert/myCA.pem -LJ4vk $url -o /dev/null -x 127.0.0.1:3129 --speed-time 360 2>&1 | tee -a ${squid_out}
+screen -dmS normal bash -c "while true; do curl -4 $url -o /dev/null 2>&1 | tee -a ${normal_out}; done"
+curl --cacert ~/squid/etc/ssl_cert/myCA.pem -4 $url -o /dev/null -x 127.0.0.1:3129 --speed-time 360 2>&1 | tee -a ${squid_out}
 cleanup
 
-if grep -q "left intact" $squid_out;
+if ! grep -q "curl: (" $squid_out;
 then
-    rm $tcpdump_out
-    # screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80' > ${tcpdump_out}.tshark; rm $tcpdump_out"
+    # rm $tcpdump_out
+    screen -dmS tshark bash -c "tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 443' > ${tcpdump_out}.tshark; rm $tcpdump_out"
 elif grep -q "curl: (28) Operation too slow" $squid_out; 
 then
     cat ${squid_log} >> ${squid_log}_e28
-    mv /var/optack.log $outdir/optack_e28_${tag}.log
-    mv ${tcpdump_out} ${tcpdump_out}_e28
+    # mv /var/optack.log $outdir/optack_e28_${tag}.log
+    # mv ${tcpdump_out} ${tcpdump_out}_e28
+    rm ${tcpdump_out}
 elif grep -q "curl: (18)" $squid_out ;
 then
     cat ${squid_log} >> ${squid_log}_e18
 #    mv /var/optack.log $outdir/optack_e18_${tag}.log
-    mv ${tcpdump_out} ${tcpdump_out}_e18
+    # mv ${tcpdump_out} ${tcpdump_out}_e18
     mv /usr/local/squid/var/cache/squid/core $outdir/core_e18_${tag}
+    rm ${tcpdump_out}
 fi
