@@ -299,7 +299,7 @@ void send_ip (int type, int ttl, char* src, char *dst, char *data, unsigned int 
         if (close_sockpacket(sockpacket) == -1)
             perror("[ipsender] close(sockpacket)");
 #endif /* ! OSTYPE_LINUX || FORCE_LIBPCAP */
-        exit(1);
+        // exit(1);
     }
 //    printf("success\n");
 

@@ -208,6 +208,7 @@ public:
 
     ~TLS_Record_Number_Seq_Map();
     int insert(uint start_seq, int record_size_with_header);
+    int insert_nolock(uint start_seq, int record_size_with_header);
     // int insert(uint start_seq, TLS_Record_Seq_Info* seq_info);
     int set_record_seq_info(uint seq, struct mytlshdr* tlshdr);
     int set_size(uint start_seq, int record_size_with_header);

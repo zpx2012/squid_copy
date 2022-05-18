@@ -579,7 +579,7 @@ int Optimack::get_lost_range(Interval* intvl)
         if(is_ssl)
             if((intvl->end != ack_end) && (intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
                 printf("get_lost_range: len(%u) mod %d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
-                return -1;
+                // return -1;
                 uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
                 intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
                 printf("change range to [%u, %u]\n", intvl->start, intvl->end);

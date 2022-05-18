@@ -53,8 +53,10 @@ Comm::Connection::~Connection()
     delete tlsHistory;
 
     /* Our code */
-    if(optimack_server)
+    if(optimack_server){
+        optimack_server->cleanup();
         delete optimack_server;
+    }
 }
 
 void Comm::Connection::setOptimack(){

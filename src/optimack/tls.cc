@@ -65,21 +65,21 @@ int TLS_Crypto_Coder::decrypt_record(uint64_t record_num, unsigned char* record_
     unsigned char iv[13] = {0};
     memcpy(iv, iv_salt, 4);
     
-    // unsigned long long iv_num = *((unsigned long long*)appdata); //bug: iv could be break into two packets and the iv got from this will be wrong 
-    // if(iv_num){
-    //     memcpy(iv+4, appdata, 8);
-    //     if(tls_debug){
-    //         printf("decrypt_record: Record No.%lu, iv_num exists ", record_num);
-    //         print_hexdump(appdata, 8);
-    //     }
-    // }
-    // else{
-    unsigned long long iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
-    iv_num = htobe64(iv_num+record_num-1);
-    memcpy(iv+4, &iv_num, 8);
-    if(tls_debug)
-        printf("decrypt_record: Record No.%lu, iv_num not exists, calculated iv_num is %lx\n", record_num, htobe64(iv_num));
-    // }
+    unsigned long long iv_num = *((unsigned long long*)appdata); //bug: iv could be break into two packets and the iv got from this will be wrong 
+    if(iv_num){
+        memcpy(iv+4, appdata, 8);
+        if(tls_debug){
+            printf("decrypt_record: Record No.%lu, iv_num exists ", record_num);
+            print_hexdump(appdata, 8);
+        }
+    }
+    else{
+        unsigned long long iv_num = htobe64(*((unsigned long long*)iv_xplct_ini));
+        iv_num = htobe64(iv_num+record_num-1);
+        memcpy(iv+4, &iv_num, 8);
+        if(tls_debug)
+            printf("decrypt_record: Record No.%lu, iv_num not exists, calculated iv_num is %lx\n", record_num, htobe64(iv_num));
+    }
     iv[12] = 0;
 
     unsigned char aad[14] = {0};
@@ -517,8 +517,7 @@ TLS_Record_Number_Seq_Map::~TLS_Record_Number_Seq_Map(){
     unlock();  
 } 
 
-int TLS_Record_Number_Seq_Map::insert(uint start_seq, int record_size_with_header){
-    lock();
+int TLS_Record_Number_Seq_Map::insert_nolock(uint start_seq, int record_size_with_header){
     if(start_seq == next_record_start_seq){
         if(!tls_seq_map.count(start_seq)){
             TLS_Record_Seq_Info* seq_info = new TLS_Record_Seq_Info(record_num_count+1, record_size_with_header, start_seq, start_seq+record_size_with_header);
@@ -536,8 +535,13 @@ int TLS_Record_Number_Seq_Map::insert(uint start_seq, int record_size_with_heade
             printf("S%d: TLS_Record_Number_Seq_Map: seq %u != next_record_start_seq %d\n", local_port, start_seq, next_record_start_seq);
 
     }
-    unlock();
     return 0;
+}
+
+int TLS_Record_Number_Seq_Map::insert(uint start_seq, int record_size_with_header){
+    lock();
+    insert_nolock(start_seq, record_size_with_header);
+    unlock();
 }
 
 int TLS_Record_Number_Seq_Map::set_record_seq_info(uint seq, struct mytlshdr* tlshdr){
@@ -575,13 +579,32 @@ int TLS_Record_Number_Seq_Map::set_size(uint start_seq, int record_size_with_hea
         if(tls_debug > 0){
             printf("S%d: TLS_Record_Number_Seq_Map::set_size: seq %u not found, first_max_frag_seq %d\n", local_port, start_seq, first_max_frag_seq);
             for (const auto& x : tls_seq_map)
-                printf("S%d: start_seq %u, No. %d, length %d\n", local_port, x.first, x.second->record_num, x.second->record_size_with_header); 
+                printf("S%d: start_seq %u, No.%d, length %d\n", local_port, x.first, x.second->record_num, x.second->record_size_with_header); 
         }
-        if(start_seq > first_max_frag_seq){ //Final piece
-            last_piece_start_seq = start_seq;
-            tls_seq_map[start_seq] = new TLS_Record_Seq_Info(get_record_num(start_seq), record_size_with_header, start_seq, start_seq+record_size_with_header);
-            if(tls_debug > 0)
-                printf("S%d: TLS_Record_Number_Seq_Map::set_size: seq %u, set the final piece length to %d\n", local_port, start_seq, record_size_with_header);
+        if(first_max_frag_seq){ 
+            if(start_seq > first_max_frag_seq){//Final piece
+                last_piece_start_seq = start_seq;
+                tls_seq_map[start_seq] = new TLS_Record_Seq_Info(get_record_num(start_seq), record_size_with_header, start_seq, start_seq+record_size_with_header);
+                if(tls_debug > 0)
+                    printf("S%d: TLS_Record_Number_Seq_Map::set_size: seq %u, set the final piece length to %d\n", local_port, start_seq, record_size_with_header);
+            }
+        }
+        else{
+            //check last segment length is 0
+            auto it = tls_seq_map.upper_bound(start_seq);
+            if(it == tls_seq_map.begin()){
+                printf("S%d: TLS_Record_Number_Seq_Map::set_size: error! previous record not found!\n", local_port);
+            }
+            else{
+                TLS_Record_Seq_Info* seq_info = std::prev(it)->second;
+                if(!seq_info->record_size_with_header){
+                    if(tls_debug > 0)
+                        printf("S%d: TLS_Record_Number_Seq_Map::set_size: last segment(%u, No.%d, %d) is lost, insert new piece(%u, No.%d, %d)\n", 
+                                    local_port, seq_info->seq, seq_info->record_num, seq_info->record_size_with_header, start_seq, seq_info->record_num+1, record_size_with_header);
+                    next_record_start_seq = start_seq;
+                    insert_nolock(start_seq, record_size_with_header);
+                }
+            }
         }
     }
     else{
@@ -612,6 +635,8 @@ int TLS_Record_Number_Seq_Map::get_record_seq_info(uint seq, TLS_Record_Seq_Info
 
     if(first_max_frag_seq == 0 || (seq < first_max_frag_seq) || (last_piece_start_seq > 0 && seq > last_piece_start_seq)){
         auto it = tls_seq_map.upper_bound(seq);
+        if(it == tls_seq_map.begin())
+            return -1;
         TLS_Record_Seq_Info* seq_info = std::prev(it)->second;
         if(seq_info->seq <= seq && seq < seq_info->upper_seq)//Later part comes first?
         {
@@ -770,7 +795,7 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
         TLS_Record_Seq_Info seq_info;
         subconn->tls_record_seq_map->set_record_seq_info(payload_index_seq, (struct mytlshdr*)(payload + payload_index_seq - seq));
         int get_ret = subconn->tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
-        if(get_ret < 0){
+        if(get_ret < 0 || seq_info.seq <= 0){
             printf("S%d-%d: Partial: record_seq_info for seq %u not found!\n", subconn->id, subconn->local_port, payload_index_seq);
             return -1;
         }
@@ -786,6 +811,8 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
         Interval record_intvl(record_start_seq, record_end_seq), 
                  payload_intvl(payload_index_seq, payload_seq_end), 
                  intersect = record_intvl.intersect(payload_intvl);
+        if(intersect.start > record_start_seq+TLSHDR_SIZE && intersect.start < record_start_seq+TLSHDR_SIZE+8)
+            intersect.start = record_start_seq + TLSHDR_SIZE + 8;
         int partial_len = intersect.length();
 
         if(partial_len <= 0)
@@ -1021,7 +1048,7 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
         printf("%s", SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
     }
     free(sk);
-    SSL_CTX_free(ctx);
+    // SSL_CTX_free(ctx);
 
     return ssl;
 }

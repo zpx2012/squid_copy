@@ -32,7 +32,8 @@ using namespace std;
 // #include <cstring>
 // #include <algorithm>
 // #include "squid.h" //otherwise open_ssl_conns is undefined
-
+#include <sys/select.h>
+#include <sys/time.h>
 
 #include "Optimack.h"
 
@@ -115,7 +116,9 @@ string exec(const char* cmd) {
     char buffer[128];
     std::string result = "";
     FILE* pipe = popen(cmd, "r");
-    if (!pipe) throw std::runtime_error("popen() failed!");
+    if (!pipe)
+        return ""; 
+        // throw std::runtime_error("popen() failed!");
     try {
         while (fgets(buffer, sizeof buffer, pipe) != NULL) {
             result += buffer;
@@ -469,28 +472,32 @@ void* dummy_recv(void* arg){
     do{
         rv = recv(sockfd, recv_buf, 10000, 0);
     } while(rv > 0);
+    printf("dummy recv exits...");
     return NULL;
 }
 
 void* dummy_recv_ssl(void* arg)
 {
-    SSL* ssl = (SSL*)arg;
-    if(!ssl)
-        return NULL;
+    Optimack* obj = (Optimack*)arg;
+    obj->dummy_recv_tls();
+    // SSL* ssl = (SSL*)arg;
+    // if(!ssl)
+    //     return NULL;
 
-    int len=100;
-    char buf[4001];
-    do {
-        len=SSL_read(ssl, buf, 4000);
-        if(len == 0)
-            break;
-        if(len<0){
-            printf("Receive error\n");
-            usleep(100);
-            break;
-        }
-        buf[len]=0;
-    } while(true);
+    // int len=100;
+    // char buf[4001];
+    // do {
+    //     len=SSL_read(ssl, buf, 4000);
+    //     if(len == 0)
+    //         break;
+    //     if(len<0){
+    //         printf("Receive error\n");
+    //         usleep(100);
+    //         break;
+    //     }
+    //     buf[len]=0;
+    // } while(ssl);
+    log_info("Dummy recv ssl ends");
     return NULL;
 }
 
@@ -1214,7 +1221,7 @@ void Optimack::log_seq_gaps(){
     int counts_len = seq_next_global_copy/1460+1;
     int* counts = (int*)malloc(counts_len*sizeof(int));
     memset(counts, 0, counts_len);
-    map<string, int> lost_per_second;
+
     for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
         counts[j/1460] = 0;
     }
@@ -1231,6 +1238,7 @@ void Optimack::log_seq_gaps(){
         // sleep(10);
 #endif
     }
+    // map<string, int> lost_per_second;
     // for(size_t k = 0; k < subconn_infos.size(); k++){
     //     size_t n = 1;
     //     pthread_mutex_lock(&subconn_infos[k].mutex_opa);
@@ -1319,7 +1327,11 @@ Optimack::cleanup()
 
     cb_stop = 1;
 
-    log_seq_gaps();
+    if(!nfq_stop){
+        nfq_stop = 1;
+        pthread_join(nfq_thread, NULL);
+        log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+    }
 
     if(!overrun_stop){
         overrun_stop++;
@@ -1347,6 +1359,22 @@ Optimack::cleanup()
         log_info("ask selective_optimack_thread to exit");
     }
 
+    if(!recv_tls_stop){
+        recv_tls_stop++;
+        log_info("ask dummy_recv_tls to exit");
+        printf("ask dummy_recv_tls to exit\n");
+        pthread_join(recv_thread, NULL);
+    }
+
+        // pool.destroy();
+    // pool.shutdown();
+    pool.stop();
+    // thr_pool_destroy(pool);
+    log_info("destroy thr_pool");
+
+
+    log_seq_gaps();
+
     // stop other optimistic_ack threads and close fd
     // pthread_mutex_lock(&mutex_subconn_infos);
     // for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
@@ -1367,12 +1395,18 @@ Optimack::cleanup()
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         if(is_ssl){
 #ifdef USE_OPENSSL
-            // if(it->second->ssl)
-            //     SSL_free(it->second->ssl);
             if(it->second->crypto_coder)
                 free(it->second->crypto_coder);  
+            // if(it != subconn_infos.begin())
+            //     if(it->second->ssl){
+            //         SSL_shutdown(it->second->ssl);
+            //         SSL_free(it->second->ssl);
+            //         sleep(1);
+            //     }
 #endif
         }
+        if(it != subconn_infos.begin())
+            close(it->second->sockfd);
         if(it->second->recved_seq)
             free(it->second->recved_seq);
         free(it->second);
@@ -1392,7 +1426,10 @@ Optimack::cleanup()
         free(request);
     if(response)
         free(response);
+    
     pthread_mutex_unlock(&mutex_subconn_infos);
+
+    printf("S%d: cleanup finished\n", squid_port);
 }
 
 Optimack::Optimack()
@@ -1416,22 +1453,17 @@ Optimack::~Optimack()
 
     // stop nfq_loop thread
     // pthread_mutex_lock(&mutex_subconn_infos);
-    if(nfq_stop)
-        return;
+    // if(nfq_stop)
+    //     return;
 
-    nfq_stop = 1;
-    pthread_join(nfq_thread, NULL);
-    log_info("NFQ %d nfq_thread exited", nfq_queue_num);
 
-    cleanup();
+
+    // cleanup();
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
      // clear thr_pool
     // if(pool){
-        pool.wait();
-        // thr_pool_destroy(pool);
-        log_info("destroy thr_pool");
-    // }
+
     teardown_nfq();
     log_info("teared down nfq");
 
@@ -1442,6 +1474,7 @@ Optimack::~Optimack()
     // fclose(seq_gaps_file);
     // fclose(seq_gaps_count_file);
     // exit(2);
+    printf("S%d: ~Optimack completed.\n", squid_port);
 }
 
 void
@@ -1926,7 +1959,11 @@ void* overrun_detector(void* arg){
         //     // if(is_timeout_and_update(obj->last_ack_time, 2))
         //     obj->try_for_gaps_and_request();
         // }
-        sleep(10);
+        for(int sec = 0; sec < 10; sec++){
+            if(obj->overrun_stop)
+                break;
+            sleep(1);
+        }
     }
     // free(timers);
     log_info("overrun_detector thread ends");
@@ -2085,10 +2122,10 @@ void* send_all_requests(void* arg){
             if(obj->is_ssl){
 #ifdef USE_OPENSSL
                 if(it->second->ssl){
-                    pthread_t recv_thread;
-                    if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
-                        log_error("Fail to create send_all_requests thread.");
-                    }
+                //     pthread_t recv_thread;
+                //     if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
+                //         log_error("Fail to create send_all_requests thread.");
+                //     }
 
                     rv = SSL_write(it->second->ssl, obj->request, obj->request_len);
                     printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, obj->request_len);
@@ -2111,6 +2148,15 @@ void* send_all_requests(void* arg){
             }
         } while(rv < 0);
 
+    }
+
+    if(obj->is_ssl){
+#ifdef USE_OPENSSL
+        obj->recv_tls_stop = 0;
+        if (pthread_create(&obj->recv_thread, NULL, dummy_recv_ssl, (void*)obj) != 0) {
+            log_error("Fail to create dummy_recv_ssl thread.");
+        }
+#endif
     }
     log_info("send_all_requests: leave...");
     return NULL;
@@ -2626,46 +2672,48 @@ int Optimack::process_tcp_plaintext_packet(
 
                 if(is_ssl){
 #ifdef USE_OPENSSL
-                    if(debug_subconn_recvseq)
-                        subconn->recved_seq->insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
-                    // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
-                    std::map<uint, struct record_fragment> plaintext_buf_local;
-                    int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
+                    if(subconn->ssl){
+                        if(debug_subconn_recvseq)
+                            subconn->recved_seq->insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
+                        // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
+                        std::map<uint, struct record_fragment> plaintext_buf_local;
+                        int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
 
-                    for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
-                        
-                        // unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
-                        // subconn_info* subconn_squid = subconn_infos[squid_port];
-                        // int ciphertext_len = subconn_squid->crypto_coder->generate_record(get_record_num(it->first), it->second.data, it->second.data_len, ciphertext);
-                        unsigned char *ciphertext = it->second.data;
-                        int ciphertext_len = it->second.data_len;
-                        if(ciphertext_len > 0){
-                            // printf("Reencrypt:\n");
-                            // for(int i = 0; i < ciphertext_len; i++){
-                            //     printf("%02x", *(payload+it->first-seq_rel+i));
-                            //     printf("%02x ", ciphertext[i]);
-                            //     if(i % 16 == 15)
-                            //         printf("\n");
-                            // }
-                            // printf("\n\n");
-                            // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
-                            log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
-                            // for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
-                            //     try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
-                            // if(rand() % 5 == 0){
-                                // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
-                                // print_hexdump(it->second.data, it->second.data_len);
-                                // printf("Original ciphertext: seq %u\n", it->first);
-                                // print_hexdump(ciphertext, ciphertext_len);
-                                // plaintext_buf_local.erase(it++);
-                                // continue;
-                            // }
-                            process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
-                            plaintext_buf_local.erase(it++);
+                        for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
+                            
+                            // unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
+                            // subconn_info* subconn_squid = subconn_infos[squid_port];
+                            // int ciphertext_len = subconn_squid->crypto_coder->generate_record(get_record_num(it->first), it->second.data, it->second.data_len, ciphertext);
+                            unsigned char *ciphertext = it->second.data;
+                            int ciphertext_len = it->second.data_len;
+                            if(ciphertext_len > 0){
+                                // printf("Reencrypt:\n");
+                                // for(int i = 0; i < ciphertext_len; i++){
+                                //     printf("%02x", *(payload+it->first-seq_rel+i));
+                                //     printf("%02x ", ciphertext[i]);
+                                //     if(i % 16 == 15)
+                                //         printf("\n");
+                                // }
+                                // printf("\n\n");
+                                // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
+                                log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
+                                // for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
+                                //     try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
+                                // if(rand() % 5 == 0){
+                                    // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
+                                    // print_hexdump(it->second.data, it->second.data_len);
+                                    // printf("Original ciphertext: seq %u\n", it->first);
+                                    // print_hexdump(ciphertext, ciphertext_len);
+                                    // plaintext_buf_local.erase(it++);
+                                    // continue;
+                                // }
+                                process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
+                                plaintext_buf_local.erase(it++);
+                            }
                         }
+                        update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
+                        // try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
                     }
-                    update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
-                    // try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
 #endif
                 }
                 else
@@ -2740,8 +2788,9 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
     IntervalList temp_range;
     temp_range.clear();
     temp_range.insertNewInterval(seq_rel, seq_rel+payload_len);
-    // pthread_mutex_lock(recved_seq.getMutex());
+    pthread_mutex_lock(recved_seq.getMutex());
     temp_range.substract(&recved_seq);
+    pthread_mutex_unlock(recved_seq.getMutex());
     auto temp_range_list = temp_range.getIntervalList();
     if(temp_range.size()){
         for(auto it = temp_range_list.rbegin(); it != temp_range_list.rend(); it++){
@@ -3460,6 +3509,76 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     return 0;
 }
 
+
+void Optimack::dummy_recv_tls(){
+    fd_set readfds;
+    int ret = 0;
+    int maxfdp1 = -1;
+#define BUFSIZE 4001
+    char buf[BUFSIZE] = {0};
+    struct timeval timeout = {1,0};
+
+    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+        fcntl(it->second->sockfd, F_SETFL, O_NONBLOCK);
+    }
+
+    while(recv_tls_stop == 0){
+        FD_ZERO(&readfds);
+        for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+            if(it->second->ssl){
+                FD_SET(it->second->sockfd, &readfds);
+                maxfdp1 = max(it->second->sockfd, maxfdp1);
+            }
+        }
+        maxfdp1++;
+
+        ret = select(maxfdp1, &readfds, NULL, NULL, &timeout);
+        // printf("return from select: ret %d, recv_tls_stop %d\n", ret, recv_tls_stop);
+        if(ret == 0)
+            continue;
+        
+        for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+            if(FD_ISSET(it->second->sockfd, &readfds)){
+                SSL* ssl = it->second->ssl;
+                if(ssl){
+                    do {
+                        ret = SSL_read(ssl, buf, BUFSIZE);
+                        switch(SSL_get_error(ssl, ret)){
+                            case SSL_ERROR_NONE:
+                                break;
+                            case SSL_ERROR_ZERO_RETURN:
+                                /* End of data */
+                                // SSL_shutdown(ssl);
+                                break;
+                            case SSL_ERROR_WANT_READ:
+                                break;
+                            
+                            case SSL_ERROR_WANT_WRITE:
+                                break;
+                            default:
+                                // printf("dummy_recv_tls: SSL read problem!\n");
+                                break;
+
+                        }
+                        if(ret <= 0)
+                            break;
+                    }while (SSL_pending(ssl));
+                }
+            }
+        }
+    }
+    
+    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+        if(it->second->ssl){
+            SSL_shutdown(it->second->ssl);
+            SSL_free(it->second->ssl);
+            it->second->ssl = NULL;
+        }
+    }
+
+    printf("dummy_recv_tls exits...\n");
+    return;
+}
 
 #endif
 

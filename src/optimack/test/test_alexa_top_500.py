@@ -11,7 +11,7 @@ import time, traceback, subprocess as sp, re, shlex, os, psutil, signal
 
 def get_onload_time(driver, domain):
     try:
-        url = 'https://' + domain
+        url = 'http://' + domain
         driver.get(url)
 
         with open(out_dir+domain+".html", 'w') as douf:
@@ -64,9 +64,9 @@ def open_proxy_webdriver(domain, proxy_addr):
     
     prox = Proxy()
     prox.proxy_type = ProxyType.MANUAL
-    # prox.http_proxy = proxy_addr
+    prox.http_proxy = proxy_addr
     # prox.socks_proxy = "ip_addr:port"
-    prox.ssl_proxy = proxy_addr
+    # prox.ssl_proxy = proxy_addr
 
     capabilities = webdriver.DesiredCapabilities.CHROME
     prox.add_to_capabilities(capabilities)
@@ -167,12 +167,12 @@ def test_proxy(domain, out_dir, outfile):
 
             # tcpdump_outfile = out_dir + "pktdump_%s.pcap.%s" % (domain, start_time)
             # tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
-            squid_p = 0
-            # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
-            # p = sp.Popen(shlex.split(squid_path+" -N | tee ~/rs/squid_output_%s_%s.log" % (domain, start_time)), stdout=sp.PIPE, encoding='utf8')
-            # time.sleep(5)
+            # squid_p = 0
+            squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
+            p = sp.Popen(shlex.split(squid_path+" -N | tee ~/rs/squid_output_%s_%s.log" % (domain, start_time)), stdout=sp.PIPE, encoding='utf8')
+            time.sleep(5)
 
-            proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3129")
+            proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
             timing, err = get_onload_time(proxy_driver, domain)
             cleanup(0, squid_p, proxy_driver)
 
@@ -208,15 +208,15 @@ os.system("sudo mkdir -p "  + out_dir)
 squid_path = home_dir + "squid/sbin/squid"
 # test_normal("www.baidu.com")
 with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % time.strftime("%Y-%m-%dT%H:%M:%S"), "w") as outfile:
-    test_proxy("www.twitch.tv", out_dir, outfile)
-
+    # test_proxy(domain, out_dir, outfile)
+    # test_proxy("www.twitch.tv", out_dir, outfile)
     # test_proxy("www.baidu.com", out_dir, outfile)
 
-#     outfile.writelines(','.join(timing_keys) + "\n")
-#     for line_num, line in enumerate(filter(None,infile.read().splitlines())):
-#         domain = line.strip().split(",")[0]
-#         print("Test: " + domain)
-#         test_proxy(domain, out_dir, outfile)
-#         print("\n")
+    outfile.writelines(','.join(timing_keys) + "\n")
+    for line_num, line in enumerate(filter(None,infile.read().splitlines())):
+        domain = line.strip().split(",")[0]
+        print("Test: " + domain)
+        test_proxy(domain, out_dir, outfile)
+        print("\n")
 
 

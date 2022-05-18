@@ -289,6 +289,10 @@ public:
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
     int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, std::map<uint, struct record_fragment> &return_buffer);
     int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len, std::map<uint, struct record_fragment> &return_buffer);
+    void dummy_recv_tls();
+    int recv_tls_stop = -1;
+    pthread_t recv_thread;
+
 #endif
 };
 
