@@ -39,7 +39,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 8
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -368,7 +368,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled, 63);
-    log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
+    // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
 
@@ -1367,7 +1367,8 @@ Optimack::cleanup()
 
         // pool.destroy();
     // pool.shutdown();
-    pool.stop();
+    pool->stop();
+    delete pool;
     // thr_pool_destroy(pool);
     log_info("destroy thr_pool");
 
@@ -1443,6 +1444,7 @@ Optimack::Optimack()
     seq_next_global = 1;
     subconn_count = 0;
     request = response = NULL;
+    pool = new boost::asio::thread_pool(2);
 }
 
 Optimack::~Optimack()
@@ -1767,7 +1769,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     if(multithread == 0)
         pool_handler((void *)thr_data);
     else{
-        boost::asio::post(obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
         // if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
             // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
             // return -1;
@@ -2151,14 +2153,6 @@ void* send_all_requests(void* arg){
 
     }
 
-    if(obj->is_ssl){
-#ifdef USE_OPENSSL
-        obj->recv_tls_stop = 0;
-        if (pthread_create(&obj->recv_thread, NULL, dummy_recv_ssl, (void*)obj) != 0) {
-            log_error("Fail to create dummy_recv_ssl thread.");
-        }
-#endif
-    }
     log_info("send_all_requests: leave...");
     return NULL;
 }
@@ -2527,7 +2521,15 @@ int Optimack::process_tcp_plaintext_packet(
             // pthread_mutex_unlock(&subconn->mutex_opa);
         // }
 
-        while(!subconn->seq_init);
+        for(int s = 0; !subconn->seq_init && s < 10; s++) 
+            usleep(10);
+            
+        if(!subconn->seq_init)
+            return -1;
+
+        if(seq < subconn->ini_seq_rem)
+            return -1;
+
         unsigned int seq_rel = seq - subconn->ini_seq_rem;
         // log_info(log);
         // return 0;
@@ -3468,6 +3470,11 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
         it->second->handshake_finished = true;
     }
     pthread_mutex_unlock(&mutex_subconn_infos);
+
+    recv_tls_stop = 0;
+    if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)this) != 0) {
+        log_error("Fail to create dummy_recv_ssl thread.");
+    }
 
     return 0;
 }

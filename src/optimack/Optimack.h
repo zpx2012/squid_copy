@@ -29,7 +29,7 @@ class TLS_Record_Number_Seq_Map;
 // #include <bits/stdc++.h>
 // using namespace std;
 
-#define USE_OPTIMACK 1
+#define USE_OPTIMACK 0
 
 
 class Optimack;
@@ -197,7 +197,7 @@ public:
     const int MARK = 666;
     int nfq_queue_num;
     
-    boost::asio::thread_pool pool;
+    boost::asio::thread_pool* pool;
     // thr_pool_t* pool;
 
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
