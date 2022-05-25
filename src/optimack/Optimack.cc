@@ -84,7 +84,7 @@ using namespace std;
 const int multithread = 1;
 const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
-const int forward_packet = 1;
+const int forward_packet = 0;
 const int log_squid_ack = 0;
 
 // Utility
@@ -2741,7 +2741,7 @@ int Optimack::process_tcp_plaintext_packet(
                 log_info(log);
                 if(forward_packet)
                     return 0;
-                else if(subconn->is_backup || subconn_i > 0)
+                else if(subconn->is_backup)
                     return 0;
                 // else
                     // return -1;
@@ -3514,8 +3514,8 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
     subconn->tls_record_seq_map = new TLS_Record_Number_Seq_Map();
     subconn->tls_record_seq_map->set_localport(subconn->local_port);
-    subconn->tls_record_seq_map->insert(1, MAX_FULL_GCM_RECORD_LEN);
-    subconn->tls_record_seq_map->set_size(1, MAX_FULL_GCM_RECORD_LEN);
+    // subconn->tls_record_seq_map->insert(1, MAX_FULL_GCM_RECORD_LEN);
+    // subconn->tls_record_seq_map->set_size(1, MAX_FULL_GCM_RECORD_LEN);
 
     // subconn->handshake_finished = true;
     subconn->record_size = MAX_FULL_GCM_RECORD_LEN;

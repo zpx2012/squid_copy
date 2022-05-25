@@ -45,21 +45,7 @@ class TLS_Decrypted_Records_Map;
 
 class TLS_Crypto_Coder{
 public:
-    TLS_Crypto_Coder(const EVP_CIPHER * ec, unsigned char* salt, unsigned char* key, unsigned int vs_rvs, unsigned short lp){
-        this->evp_cipher = ec;
-        
-        memcpy(this->iv_salt, salt, 4);
-        this->iv_salt[4] = 0;
-
-        memcpy(this->write_key_buffer, key, 100);//100 to be modified
-        this->write_key_buffer[99] = 0;
-
-        this->key_obtained = true;
-
-        this->version_rvs = vs_rvs;
-
-        this->local_port = lp;
-    }
+    TLS_Crypto_Coder(const EVP_CIPHER * ec, unsigned char* salt, unsigned char* key, unsigned int vs_rvs, unsigned short lp);
 
     int partial_decrypt_record();
     int decrypt_record(uint64_t record_num, unsigned char* record_data, int record_len, unsigned char* plaintext);
@@ -79,11 +65,9 @@ public:
         return this->iv_xplct_ini_set;
     }
     
-    void set_iv_explicit_init(unsigned char* iv_ex){
-        memcpy(this->iv_xplct_ini, iv_ex, 8);
-        this->iv_xplct_ini[8] = 0;
-        iv_xplct_ini_set = true;
-    }
+    void set_iv_explicit_init(unsigned char* iv_ex);
+
+    int get_record_num_from_iv_explicit(unsigned char* iv_ex);
 
     uint get_plaintext_seq(uint ciphertext_seq){
         return ciphertext_seq / MAX_FULL_GCM_RECORD_LEN * (TLSHDR_SIZE + 8 + 16);
@@ -97,10 +81,10 @@ private:
     bool key_obtained = false, iv_xplct_ini_set = false;
     const EVP_CIPHER *evp_cipher;
     unsigned char iv_salt[5] = {0}, iv_xplct_ini[9] = {0}; // 4 to be modified
+    unsigned long long iv_num_ini;
     unsigned char write_key_buffer[100] = {0}; // 100 to be modified
     // int record_size = 0, record_full_size = 0;
     unsigned short version_rvs;
-
     unsigned short local_port;
     // TLS_Decrypted_Records_Map* decrypted_records_map;
     friend TLS_Decrypted_Record_Reassembler;
@@ -212,10 +196,10 @@ public:
     TLS_Record_Number_Seq_Map();
 
     ~TLS_Record_Number_Seq_Map();
-    int insert(uint start_seq, int record_size_with_header);
-    int insert_nolock(uint start_seq, int record_size_with_header);
+    int insert(uint start_seq, int record_num, int record_size_with_header);
+    int insert_nolock(uint start_seq, int record_num, int record_size_with_header);
     // int insert(uint start_seq, TLS_Record_Seq_Info* seq_info);
-    int set_record_seq_info(uint seq, struct mytlshdr* tlshdr);
+    int set_record_seq_info(uint seq, struct mytlshdr* tlshdr, int record_num);
     int set_size(uint start_seq, int record_size_with_header);
     int get_record_seq_info(uint seq, TLS_Record_Seq_Info* return_info);
     int get_record_num(uint seq);
