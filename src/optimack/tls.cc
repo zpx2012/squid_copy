@@ -737,6 +737,14 @@ int TLS_Record_Number_Seq_Map::get_record_num(uint seq){
 }
 
 
+void TLS_Record_Number_Seq_Map::print_record_seq_map(){
+    printf("S%d: ", local_port);
+    for (const auto& x : tls_seq_map)
+        printf("[No.%d, %u, %d], ", x.second->record_num, x.first, x.second->record_size_with_header); 
+    printf("\n");
+}
+
+
 void TLS_Record_Number_Seq_Map::lock(){
     if(tls_debug && lock_debug)
         printf("S%d: TLS_Record_Number_Seq_Map: try lock\n");
@@ -806,8 +814,8 @@ int Optimack::process_incoming_tls_appdata(bool contains_header, unsigned int se
         int record_size = htons(tlshdr->length) + TLSHDR_SIZE;
 
         if(tlshdr->version == subconn->crypto_coder->get_version_reversed()){
-            subconn->tls_record_seq_map->set_localport(subconn->local_port);
-            subconn->tls_record_seq_map->insert(1, 1, record_size);
+            tls_record_seq_map->set_localport(subconn->local_port);
+            tls_record_seq_map->insert(1, 1, record_size);
         }
         else{
             printf("S%d-%d: set size failed, version %x, stored version %x\n", subconn->id, subconn->local_port, tlshdr->version, subconn->crypto_coder->get_version_reversed());
@@ -815,13 +823,13 @@ int Optimack::process_incoming_tls_appdata(bool contains_header, unsigned int se
     }
     
     int count = 0;
-    while(!subconn->crypto_coder->get_iv_xplct_ini_set() && !subconn->tls_record_seq_map->empty() && count < 100){
+    while(!subconn->crypto_coder->get_iv_xplct_ini_set() && !tls_record_seq_map->empty() && count < 100){
         count++;
         usleep(10);
     }
     // tls_rcvbuf.decrypt_one_payload(seq, payload, payload_len, decrypt_start, decrypt_end);
     // if(seq >= cur_ack_rel)
-    partial_decrypt_tcp_payload(subconn, seq, payload, payload_len, return_buffer);
+    return partial_decrypt_tcp_payload(subconn, seq, payload, payload_len, return_buffer);
 
     // if(decrypt_start != 0 || decrypt_end != payload_len){
     //     tls_rcvbuf.lock();
@@ -837,7 +845,7 @@ int Optimack::process_incoming_tls_appdata(bool contains_header, unsigned int se
     //     }
     //     tls_rcvbuf.unlock();
     // }
-    return 1;
+    // return 1;
 }
 
 // int process_incoming_tls_payload(unsigned int seq, unsigned int ack, unsigned char* payload, int payload_len, TLS_rcvbuf& tls_rcvbuf, std::map<uint, struct record_fragment> &plaintext_buf_local){
@@ -866,12 +874,13 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
     for(uint payload_index_seq = seq; payload_index_seq + TLSHDR_SIZE < payload_seq_end; payload_index_seq = record_end_seq)
     {
         TLS_Record_Seq_Info seq_info;
-        subconn->tls_record_seq_map->set_record_seq_info(payload_index_seq, (struct mytlshdr*)(payload + payload_index_seq - seq), subconn->crypto_coder->get_record_num_from_iv_explicit(payload + payload_index_seq - seq + TLSHDR_SIZE));
+        tls_record_seq_map->set_record_seq_info(payload_index_seq, (struct mytlshdr*)(payload + payload_index_seq - seq), subconn->crypto_coder->get_record_num_from_iv_explicit(payload + payload_index_seq - seq + TLSHDR_SIZE));
         // while(subconn->tls_record_seq_map->empty());
-        int get_ret = subconn->tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
+        int get_ret = tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
         if(get_ret < 0 || seq_info.seq <= 0){
             printf("S%d-%d: Partial: record_seq_info for seq %u not found!\n", subconn->id, subconn->local_port, payload_index_seq);
-            return -1;
+            tls_record_seq_map->print_record_seq_map();
+            return -5;
         }
         record_start_seq = seq_info.seq;
         record_num = seq_info.record_num;

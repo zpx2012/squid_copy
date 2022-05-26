@@ -1719,6 +1719,15 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     if(obj->cb_stop)
         return -1;
 
+    // sanity check, could be abbr later
+    struct nfqnl_msg_packet_hdr *ph;
+    ph = nfq_get_msg_packet_hdr(nfa);
+    // printf("P%d: hook %d\n", ph->packet_id, ph->hook);
+    if (!ph) {
+        // debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+        return -1;
+    }
+
     struct myiphdr *iphdr = ip_hdr(packet);
     // struct mytcphdr *tcphdr = tcp_hdr(packet);
     //unsigned char *payload = tcp_payload(thr_data->buf);
@@ -1738,16 +1747,6 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
         return -1;
     }
     memset(thr_data, 0, sizeof(struct thread_data));
-
-    // sanity check, could be abbr later
-    struct nfqnl_msg_packet_hdr *ph;
-    ph = nfq_get_msg_packet_hdr(nfa);
-    // printf("P%d: hook %d\n", ph->packet_id, ph->hook);
-    if (!ph) {
-        // debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
-        return -1;
-    }
-
     thr_data->pkt_id = htonl(ph->packet_id);
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len+1);
@@ -1798,7 +1797,7 @@ pool_handler(void* arg)
     if (protocol == 6)
         ret = obj->process_tcp_packet(thr_data);
     else{ 
-        printf("Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
+        printf("pool_handler: Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
         //debugs(0, DBG_CRITICAL, log);
         struct myiphdr *iphdr = ip_hdr(thr_data->buf);
         // struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
@@ -1829,6 +1828,12 @@ pool_handler(void* arg)
             // log_info("Verdict: Drop");
             //debugs(0, DBG_CRITICAL, "Verdict: Drop");
         }
+
+    if(ret == -5 && multithread){
+        printf("pool_handler: Seq info not found: reshuffle to work pool\n");
+        boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        return NULL;
+    }
 
     free(thr_data->buf);
     thr_data->buf = NULL;
@@ -2637,7 +2642,7 @@ int Optimack::process_tcp_plaintext_packet(
                         bool start_optimack = false;
                         if(is_ssl){
 #ifdef USE_OPENSSL
-                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1000)
+                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1)
                                 start_optimack = true;
 #endif
                         }
@@ -2686,6 +2691,8 @@ int Optimack::process_tcp_plaintext_packet(
                         // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
                         std::map<uint, struct record_fragment> plaintext_buf_local;
                         int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
+                        if(verdict == -5)
+                            return verdict;
 
                         for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
                             
@@ -3512,8 +3519,8 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
 
     subconn->ssl = ssl;
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
-    subconn->tls_record_seq_map = new TLS_Record_Number_Seq_Map();
-    subconn->tls_record_seq_map->set_localport(subconn->local_port);
+    tls_record_seq_map = new TLS_Record_Number_Seq_Map();
+    tls_record_seq_map->set_localport(subconn->local_port);
     // subconn->tls_record_seq_map->insert(1, MAX_FULL_GCM_RECORD_LEN);
     // subconn->tls_record_seq_map->set_size(1, MAX_FULL_GCM_RECORD_LEN);
 

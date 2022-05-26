@@ -356,7 +356,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     if(is_ssl){
 #ifdef USE_OPENSSL
         TLS_Record_Seq_Info seq_info;
-        subconn_infos[squid_port]->tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
+        tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
         last_recv_inorder = seq_info.upper_seq - 1;
 #endif
     }

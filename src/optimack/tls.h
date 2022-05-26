@@ -204,6 +204,8 @@ public:
     int get_record_seq_info(uint seq, TLS_Record_Seq_Info* return_info);
     int get_record_num(uint seq);
 
+    void print_record_seq_map();
+    
     void set_localport(int lp){
         local_port = lp;
     }

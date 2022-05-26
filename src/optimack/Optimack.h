@@ -74,7 +74,7 @@ struct subconn_info
 #ifdef USE_OPENSSL
     SSL *ssl;
     TLS_Crypto_Coder* crypto_coder;
-    TLS_Record_Number_Seq_Map* tls_record_seq_map;
+    // TLS_Record_Number_Seq_Map* tls_record_seq_map;
     int record_size;
     unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     // uint ini_seq_tls_data;
@@ -284,6 +284,7 @@ public:
     bool is_ssl = false;
 #ifdef USE_OPENSSL
     TLS_Decrypted_Records_Map* decrypted_records_map;
+    TLS_Record_Number_Seq_Map* tls_record_seq_map;
 
     int open_duplicate_ssl_conns(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
