@@ -1412,8 +1412,8 @@ Optimack::cleanup()
         printf("dummy_recv_tls exited\n");
     }
 
-        // pool.destroy();
-    // pool.shutdown();
+    pool->destroy();
+    pool->shutdown();
     pool->stop();
     delete pool;
     // thr_pool_destroy(pool);
