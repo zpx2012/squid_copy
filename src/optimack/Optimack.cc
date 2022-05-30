@@ -86,6 +86,7 @@ const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
 const int forward_packet = 1;
 const int log_squid_ack = 0;
+const int log_result = 0;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -1418,8 +1419,8 @@ Optimack::cleanup()
     // thr_pool_destroy(pool);
     log_info("destroy thr_pool");
 
-
-    log_seq_gaps();
+    if(log_result)
+        log_seq_gaps();
 
     // stop other optimistic_ack threads and close fd
     // pthread_mutex_lock(&mutex_subconn_infos);
