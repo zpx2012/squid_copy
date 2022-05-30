@@ -87,6 +87,7 @@ struct thread_data {
     unsigned int  pkt_id;
     unsigned int  len;
     unsigned char *buf;
+    int ttl;
     Optimack* obj;
 };
 
@@ -229,7 +230,7 @@ public:
     float overrun_penalty = 0, we2squid_penalty = 0, range_timeout_penalty = 0;
 
     float last_off_packet = 0.0;
-    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;
+    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp, seq_ini_time;
     double last_ack_epochtime, last_inorder_data_epochtime;
     FILE *log_file, *rwnd_file, *adjust_rwnd_file, *forward_seq_file, *recv_seq_file, *processed_seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe, *info_file;
     char output_dir[100] = {0};

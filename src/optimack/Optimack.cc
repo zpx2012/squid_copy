@@ -84,7 +84,7 @@ using namespace std;
 const int multithread = 1;
 const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
-const int forward_packet = 0;
+const int forward_packet = 1;
 const int log_squid_ack = 0;
 
 // Utility
@@ -367,7 +367,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
     if(adjusted_rwnd < conn->win_scale)
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
-    send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled, 63);
+    send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
     // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
@@ -477,6 +477,8 @@ void* dummy_recv(void* arg){
 
 void* dummy_recv_ssl(void* arg)
 {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
     Optimack* obj = (Optimack*)arg;
     obj->dummy_recv_tls();
     // SSL* ssl = (SSL*)arg;
@@ -798,6 +800,8 @@ void* selective_optimistic_ack(void* arg){
 void* 
 full_optimistic_ack_altogether(void* arg)
 {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
     struct int_thread* ack_thr = (struct int_thread*)arg;
     // uint id = ack_thr->thread_id;
     Optimack* obj = ack_thr->obj;
@@ -817,6 +821,8 @@ full_optimistic_ack_altogether(void* arg)
     int adjusted_rwnd = 0;
     char log[2000] = {0};
     bool is_in_overrun = false;
+
+    struct timespec deadline;
 
     while (!obj->optim_ack_stop) {
         if (elapsed(last_send_ack) >= send_ack_pace){
@@ -1078,7 +1084,14 @@ full_optimistic_ack_altogether(void* arg)
         }
         log[0] = '\0';
 
-        usleep(ACKPACING/4);
+        clock_gettime(CLOCK_MONOTONIC, &deadline);
+        deadline.tv_nsec += ACKPACING*100/4;
+        if(deadline.tv_nsec >= 1000000000) {
+            deadline.tv_nsec -= 1000000000;
+            deadline.tv_sec++;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
+        // usleep(ACKPACING/4);
     }
  
     // conn->optim_ack_stop = 0;
@@ -1212,18 +1225,18 @@ void Optimack::log_seq_gaps(){
     // system("bash /root/squid_copy/src/optimack/test/ks.sh mtr");
     // pclose(tcpdump_pipe);
 
-    pthread_mutex_lock(&mutex_seq_next_global);
-    uint seq_next_global_copy = seq_next_global;
-    pthread_mutex_unlock(&mutex_seq_next_global);
+    // pthread_mutex_lock(&mutex_seq_next_global);
+    // uint seq_next_global_copy = seq_next_global;
+    // pthread_mutex_unlock(&mutex_seq_next_global);
     
-    pthread_mutex_lock(&mutex_subconn_infos);
-    int counts_len = seq_next_global_copy/1460+1;
-    int* counts = (int*)malloc(counts_len*sizeof(int));
-    memset(counts, 0, counts_len);
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // int counts_len = seq_next_global_copy/1460+1;
+    // int* counts = (int*)malloc(counts_len*sizeof(int));
+    // memset(counts, 0, counts_len);
 
-    for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
-        counts[j/1460] = 0;
-    }
+    // for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
+    //     counts[j/1460] = 0;
+    // }
 
 
     if(is_ssl){
@@ -1312,10 +1325,10 @@ void Optimack::log_seq_gaps(){
         fclose(info_file);
     }
 
-    free(counts);
-    counts = NULL;
+    // free(counts);
+    // counts = NULL;
     printf("Finished writing seq_gaps.\n");
-    pthread_mutex_unlock(&mutex_subconn_infos);
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 }
 
 void
@@ -1325,32 +1338,40 @@ Optimack::cleanup()
     log_info("S%d: enter cleanup", squid_port);
 
     cb_stop = 1;
-
+    bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
     if(!nfq_stop){
         nfq_stop = 1;
-        pthread_join(nfq_thread, NULL);
-        log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+        ask_nfq_stop = true;
+        
     }
 
     if(!overrun_stop){
         overrun_stop++;
-        pthread_join(overrun_thread, NULL);
+        ask_overrun_stop = true;
         log_info("ask overrun_thread to exit");    
         printf("ask overrun_thread to exit\n");    
     }
 
     if(!range_stop){
         range_stop++;
-        pthread_join(range_thread, NULL);
+        ask_range_stop = true;
         log_info("ask overrun_thread to exit");    
-        printf("ask range_watch_thread to exit\n");    
+        printf("ask range_watch_thread to exit\n");
     }
+
 
     if(!optim_ack_stop){
         optim_ack_stop++;
-        pthread_join(optim_ack_thread, NULL);
+        ask_optim_stop = true;
         log_info("ask optimack_altogether_thread to exit");    
-        printf("ask optimack_altogether_thread to exit\n");    
+        printf("ask optimack_altogether_thread to exit\n");
+    }
+
+    if(!recv_tls_stop){
+        recv_tls_stop++;
+        ask_recv_tls_stop = true;
+        log_info("ask dummy_recv_tls to exit");
+        printf("ask dummy_recv_tls to exit\n");
     }
 
     if(BACKUP_MODE && backup_port && !subconn_infos[backup_port]->optim_ack_stop){
@@ -1358,11 +1379,36 @@ Optimack::cleanup()
         log_info("ask selective_optimack_thread to exit");
     }
 
-    if(!recv_tls_stop){
-        recv_tls_stop++;
-        log_info("ask dummy_recv_tls to exit");
-        printf("ask dummy_recv_tls to exit\n");
+    if(ask_nfq_stop){
+        pthread_cancel(nfq_thread);
+        pthread_join(nfq_thread, NULL);
+        log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+        printf("NFQ %d nfq_thread exited", nfq_queue_num);
+    }
+
+    if(ask_overrun_stop){
+        pthread_cancel(overrun_thread);
+        pthread_join(overrun_thread, NULL);
+        printf("Overrun_thread exit\n");    
+    }
+
+    if(ask_range_stop){
+        pthread_cancel(range_thread);
+        pthread_join(range_thread, NULL);
+        printf("Range_watch_thread exit\n");
+    }
+
+    if(ask_optim_stop){
+        pthread_cancel(optim_ack_thread);
+        pthread_join(optim_ack_thread, NULL);
+        printf("Optimack_altogether_thread exit\n");
+    }
+
+
+    if(ask_recv_tls_stop){
+        pthread_cancel(recv_thread);
         pthread_join(recv_thread, NULL);
+        printf("dummy_recv_tls exited\n");
     }
 
         // pool.destroy();
@@ -1391,7 +1437,7 @@ Optimack::cleanup()
 
     // sleep(2);
 
-    pthread_mutex_lock(&mutex_subconn_infos);
+    // pthread_mutex_lock(&mutex_subconn_infos);
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         if(is_ssl){
 #ifdef USE_OPENSSL
@@ -1427,7 +1473,7 @@ Optimack::cleanup()
     if(response)
         free(response);
     
-    pthread_mutex_unlock(&mutex_subconn_infos);
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 
     printf("S%d: cleanup finished\n", squid_port);
 }
@@ -1751,6 +1797,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len+1);
     thr_data->obj = obj;
+    thr_data->ttl = 10;
     if (!thr_data->buf){
             // debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
@@ -1830,8 +1877,15 @@ pool_handler(void* arg)
         }
 
     if(ret == -5 && multithread){
-        printf("pool_handler: Seq info not found: reshuffle to work pool\n");
-        boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        thr_data->ttl--;
+        if(thr_data->ttl > 0){
+            if(thr_data->ttl == 9){
+                printf("P%d: record_seq_info for seq not found!\n", id);
+                obj->tls_record_seq_map->print_record_seq_map();
+            }
+            printf("pool_handler: Seq info not found: reshuffle to work pool, ttl %d\n", thr_data->ttl);
+            boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        }
         return NULL;
     }
 
@@ -1945,9 +1999,19 @@ void Optimack::print_seq_table(){
 void* overrun_detector(void* arg){
 
     // return NULL;
-
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+    
     Optimack* obj = (Optimack* )arg;
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
+
+    bool is_all_seq_ini = true;
+    do {
+        is_all_seq_ini = true;
+        for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+            is_all_seq_ini &= it->second->seq_init;     
+        }
+        usleep(10);
+    } while(!is_all_seq_ini && !obj->overrun_stop);
 
     // sleep(2);//Wait for the packets to come
     log_info("Start overrun_detector thread");
@@ -1967,10 +2031,11 @@ void* overrun_detector(void* arg){
         //     // if(is_timeout_and_update(obj->last_ack_time, 2))
         //     obj->try_for_gaps_and_request();
         // }
-        for(int sec = 0; sec < 10; sec++){
-            if(obj->overrun_stop)
-                break;
-            sleep(1);
+        struct timespec deadline;
+        for(int sec = 0; sec < 1000 && !obj->overrun_stop; sec++){
+            clock_gettime(CLOCK_MONOTONIC, &deadline);
+            deadline.tv_sec++;
+            clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
         }
     }
     // free(timers);
@@ -2324,6 +2389,7 @@ int Optimack::process_tcp_plaintext_packet(
                             subconn->ini_seq_loc = seq - 1;
                             subconn->next_seq_loc = 1 + payload_len;
                             subconn->seq_init = true;
+                            seq_ini_time = std::chrono::system_clock::now();
                             printf("S%d: seq_init done - ini_seq_rem 0x%x(%u), ini_seq_loc 0x%x(%u)\n", local_port, subconn->ini_seq_rem, subconn->ini_seq_rem, subconn->ini_seq_loc, subconn->ini_seq_loc);
                             log_info("S%d: seq_init done - ini_seq_rem 0x%x(%u), ini_seq_loc 0x%x(%u)\n", local_port, subconn->ini_seq_rem, subconn->ini_seq_rem, subconn->ini_seq_loc, subconn->ini_seq_loc);
                         }
@@ -2501,7 +2567,7 @@ int Optimack::process_tcp_plaintext_packet(
                 printf("S%d: received FIN from squid.\n", local_port);
                 log_info("%s, received FIN from squid.\n", log);
                 send_ACK(g_local_ip, g_remote_ip, local_port, g_remote_port, "", seq+1, ack);
-                return 0;
+                return -1;
             }
 
             default://Could be FIN
@@ -2642,11 +2708,11 @@ int Optimack::process_tcp_plaintext_packet(
                         bool start_optimack = false;
                         if(is_ssl){
 #ifdef USE_OPENSSL
-                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1)
+                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1 && elapsed(seq_ini_time) >= 2)
                                 start_optimack = true;
 #endif
                         }
-                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1000){
+                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1 && elapsed(seq_ini_time) > 2){
                             start_optimack = true;
                         }
                         
@@ -2663,25 +2729,19 @@ int Optimack::process_tcp_plaintext_packet(
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - unlock", pkt_id, subconn_i); 
                 }
 
-                if(overrun_stop == -1) {
-                    // log_info("P%d-S%d-%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", pkt_id, subconn_i); 
-                    pthread_mutex_lock(&mutex_subconn_infos);
-                    std::map<uint, struct subconn_info*>::iterator it;
-                    for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
-                        if (subconn->optim_ack_stop == 1) {
-                            break;
-                        }
-                    if (it == subconn_infos.end()){
-                        if(overrun_stop == -1){
-                            overrun_stop++;
-                            if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
-                                log_error("Fail to create overrun_detector thread.");
-                            }
-                        }
-                    }
-                    pthread_mutex_unlock(&mutex_subconn_infos);
+                // if(overrun_stop == -1) {
+                //     // log_info("P%d-S%d-%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", pkt_id, subconn_i); 
+                //     pthread_mutex_lock(&mutex_subconn_infos);
+                //     std::map<uint, struct subconn_info*>::iterator it;
+                //     for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
+                //         if (subconn->optim_ack_stop == 1) {
+                //             break;
+                //         }
+                //     if (it == subconn_infos.end()){
+                //     }
+                //     pthread_mutex_unlock(&mutex_subconn_infos);
                     // log_info("P%d-S%d-%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", pkt_id, subconn_i); 
-                }
+                // }
 
                 if(is_ssl){
 #ifdef USE_OPENSSL
@@ -3111,6 +3171,14 @@ Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short r
         }
     }
     log_info("[Squid Conn] port: %d, win_scale %d", local_port, squid_conn->win_scale);
+
+    if(overrun_stop == -1){
+        overrun_stop++;
+        if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
+            log_error("Fail to create overrun_detector thread.");
+        }
+        printf("S%d: overrun thread created\n", squid_port);
+    }
 
 
 }

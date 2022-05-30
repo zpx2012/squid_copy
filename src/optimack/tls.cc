@@ -403,7 +403,7 @@ int TLS_Decrypted_Records_Map::inserted(int record_num, TLS_Decrypted_Record_Rea
 
 void TLS_Decrypted_Records_Map::print_result(){
     int incompleted_counter = 0;
-    printf("Print TLS_Decrypted_Record_Reassembler:\n");
+    printf("Print TLS_Decrypted_Record_Reassembler: ");
     for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); it++){
         // if(it->second == nullptr){
         //     printf("%d:1, ", it->first);
@@ -878,8 +878,6 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
         // while(subconn->tls_record_seq_map->empty());
         int get_ret = tls_record_seq_map->get_record_seq_info(payload_index_seq, &seq_info);
         if(get_ret < 0 || seq_info.seq <= 0){
-            printf("S%d-%d: Partial: record_seq_info for seq %u not found!\n", subconn->id, subconn->local_port, payload_index_seq);
-            tls_record_seq_map->print_record_seq_map();
             return -5;
         }
         record_start_seq = seq_info.seq;

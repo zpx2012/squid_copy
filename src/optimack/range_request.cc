@@ -79,6 +79,8 @@ int parse_response(http_header *head, char *response, int unread)
 void*
 range_watch(void* arg)
 {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
     printf("[Range]: range_watch thread starts\n");
 
 #ifdef USE_OPENSSL
@@ -262,7 +264,7 @@ int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short rem
 
     // Open socket
 opensocket:
-    while(sockfd == 0 || sockfd == old_sockfd){ //
+    while(sockfd == 0){ //|| sockfd == old_sockfd
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
             return -1;
@@ -580,9 +582,9 @@ int Optimack::get_lost_range(Interval* intvl)
             if((intvl->end != ack_end) && (intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
                 printf("get_lost_range: len(%u) mod %d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
                 // return -1;
-                uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
-                intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
-                printf("change range to [%u, %u]\n", intvl->start, intvl->end);
+                // uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
+                // intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
+                // printf("change range to [%u, %u]\n", intvl->start, intvl->end);
                 recved_seq.printIntervals();
             }
 #endif
