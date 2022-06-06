@@ -1342,13 +1342,14 @@ Optimack::cleanup()
     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
     if(!nfq_stop){
         nfq_stop = 1;
-        ask_nfq_stop = true;
-        
+        ask_nfq_stop = true;        
+        pthread_cancel(nfq_thread);
     }
 
     if(!overrun_stop){
         overrun_stop++;
         ask_overrun_stop = true;
+        pthread_cancel(overrun_thread);
         log_info("ask overrun_thread to exit");    
         printf("ask overrun_thread to exit\n");    
     }
@@ -1356,6 +1357,7 @@ Optimack::cleanup()
     if(!range_stop){
         range_stop++;
         ask_range_stop = true;
+        pthread_cancel(range_thread);
         log_info("ask overrun_thread to exit");    
         printf("ask range_watch_thread to exit\n");
     }
@@ -1364,6 +1366,7 @@ Optimack::cleanup()
     if(!optim_ack_stop){
         optim_ack_stop++;
         ask_optim_stop = true;
+        pthread_cancel(optim_ack_thread);
         log_info("ask optimack_altogether_thread to exit");    
         printf("ask optimack_altogether_thread to exit\n");
     }
@@ -1371,6 +1374,7 @@ Optimack::cleanup()
     if(!recv_tls_stop){
         recv_tls_stop++;
         ask_recv_tls_stop = true;
+        pthread_cancel(recv_thread);
         log_info("ask dummy_recv_tls to exit");
         printf("ask dummy_recv_tls to exit\n");
     }
@@ -1380,43 +1384,38 @@ Optimack::cleanup()
         log_info("ask selective_optimack_thread to exit");
     }
 
-    if(ask_nfq_stop){
-        pthread_cancel(nfq_thread);
-        pthread_join(nfq_thread, NULL);
-        log_info("NFQ %d nfq_thread exited", nfq_queue_num);
-        printf("NFQ %d nfq_thread exited", nfq_queue_num);
-    }
+    // if(ask_nfq_stop){
+    //     pthread_join(nfq_thread, NULL);
+    //     log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+    //     printf("NFQ %d nfq_thread exited", nfq_queue_num);
+    // }
 
-    if(ask_overrun_stop){
-        pthread_cancel(overrun_thread);
-        pthread_join(overrun_thread, NULL);
-        printf("Overrun_thread exit\n");    
-    }
+    // if(ask_overrun_stop){
+    //     pthread_join(overrun_thread, NULL);
+    //     printf("Overrun_thread exit\n");    
+    // }
 
-    if(ask_range_stop){
-        pthread_cancel(range_thread);
-        pthread_join(range_thread, NULL);
-        printf("Range_watch_thread exit\n");
-    }
+    // if(ask_range_stop){
+    //     pthread_join(range_thread, NULL);
+    //     printf("Range_watch_thread exit\n");
+    // }
 
-    if(ask_optim_stop){
-        pthread_cancel(optim_ack_thread);
-        pthread_join(optim_ack_thread, NULL);
-        printf("Optimack_altogether_thread exit\n");
-    }
+    // if(ask_optim_stop){
+    //     pthread_join(optim_ack_thread, NULL);
+    //     printf("Optimack_altogether_thread exit\n");
+    // }
 
 
-    if(ask_recv_tls_stop){
-        pthread_cancel(recv_thread);
-        pthread_join(recv_thread, NULL);
-        printf("dummy_recv_tls exited\n");
-    }
+    // if(ask_recv_tls_stop){
+    //     pthread_join(recv_thread, NULL);
+    //     printf("dummy_recv_tls exited\n");
+    // }
 
-    pool->destroy();
-    pool->shutdown();
-    pool->stop();
-    delete pool;
-    // thr_pool_destroy(pool);
+    // pool->destroy();
+    // pool->shutdown();
+    // pool->stop();
+    // delete pool;
+    thr_pool_destroy(pool);
     log_info("destroy thr_pool");
 
     if(log_result)
@@ -1439,27 +1438,27 @@ Optimack::cleanup()
     // sleep(2);
 
     // pthread_mutex_lock(&mutex_subconn_infos);
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        if(is_ssl){
-#ifdef USE_OPENSSL
-            if(it->second->crypto_coder)
-                free(it->second->crypto_coder);  
-            // if(it != subconn_infos.begin())
-            //     if(it->second->ssl){
-            //         SSL_shutdown(it->second->ssl);
-            //         SSL_free(it->second->ssl);
-            //         sleep(1);
-            //     }
-#endif
-        }
-        if(it != subconn_infos.begin())
-            close(it->second->sockfd);
-        if(it->second->recved_seq)
-            free(it->second->recved_seq);
-        free(it->second);
-        it->second = NULL;
-    }
-    subconn_infos.clear();
+//     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+//         if(is_ssl){
+// #ifdef USE_OPENSSL
+//             if(it->second->crypto_coder)
+//                 free(it->second->crypto_coder);  
+//             // if(it != subconn_infos.begin())
+//             //     if(it->second->ssl){
+//             //         SSL_shutdown(it->second->ssl);
+//             //         SSL_free(it->second->ssl);
+//             //         sleep(1);
+//             //     }
+// #endif
+//         }
+//         if(it != subconn_infos.begin())
+//             close(it->second->sockfd);
+//         if(it->second->recved_seq)
+//             free(it->second->recved_seq);
+//         free(it->second);
+//         it->second = NULL;
+//     }
+//     subconn_infos.clear();
     // clear iptables rules
     for (size_t i=0; i<iptables_rules.size(); i++) {
         exec_iptables('D', iptables_rules[i]);
@@ -1491,7 +1490,14 @@ Optimack::Optimack()
     seq_next_global = 1;
     subconn_count = 0;
     request = response = NULL;
-    pool = new boost::asio::thread_pool(2);
+    
+    pool = thr_pool_create(1, 8, 300, NULL);
+    if (!pool) {
+        printf("couldn't create thr_pool");
+        return;             
+    }
+
+    // pool = new boost::asio::thread_pool(2);
 }
 
 Optimack::~Optimack()
@@ -1561,11 +1567,6 @@ Optimack::init()
         //exit(EXIT_FAILURE);
     //}
 
-    // pool = thr_pool_create(4, 16, 300, NULL);
-    // if (!pool) {
-            // debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
-        // return;             
-    // }
 
     char tmp_str[600] = {0}, time_str[64] = {0};
     time_in_YYYY_MM_DD(time_str);
@@ -1816,11 +1817,11 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     if(multithread == 0)
         pool_handler((void *)thr_data);
     else{
-        boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
-        // if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-            // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
-            // return -1;
-        // }
+        // boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
+            printf("cb: error during thr_pool_queue");
+            return -1;
+        }
     }
     return 0;
 }
@@ -1885,7 +1886,7 @@ pool_handler(void* arg)
                 obj->tls_record_seq_map->print_record_seq_map();
             }
             printf("pool_handler: Seq info not found: reshuffle to work pool, ttl %d\n", thr_data->ttl);
-            boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+            // boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
         }
         return NULL;
     }
@@ -3588,6 +3589,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
 
     subconn->ssl = ssl;
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
+    subconn->tls_rcvbuf = new TLS_Encrypted_Record_Reassembler(MAX_FULL_GCM_RECORD_LEN, 0x0303, subconn->crypto_coder);
     tls_record_seq_map = new TLS_Record_Number_Seq_Map();
     tls_record_seq_map->set_localport(subconn->local_port);
     // subconn->tls_record_seq_map->insert(1, MAX_FULL_GCM_RECORD_LEN);
@@ -3650,7 +3652,6 @@ void Optimack::dummy_recv_tls(){
                             default:
                                 // printf("dummy_recv_tls: SSL read problem!\n");
                                 break;
-
                         }
                         if(ret <= 0)
                             break;

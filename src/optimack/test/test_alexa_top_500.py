@@ -66,7 +66,7 @@ def open_proxy_webdriver(domain, proxy_addr):
     prox.proxy_type = ProxyType.MANUAL
     prox.http_proxy = proxy_addr
     # prox.socks_proxy = "ip_addr:port"
-    # prox.ssl_proxy = proxy_addr
+    prox.ssl_proxy = "127.0.0.1:3129"
 
     capabilities = webdriver.DesiredCapabilities.CHROME
     prox.add_to_capabilities(capabilities)
@@ -116,7 +116,7 @@ def stop_tcpdump(p):
 
 def test_normal(domain):
     normal_driver = open_normal_webdriver(domain)
-    timing = get_onload_time(normal_driver)
+    timing = get_onload_time(normal_driver, domain)
     normal_driver.quit()
     print("Normal: " + str(timing))
     return normal_driver
@@ -216,6 +216,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
     for line_num, line in enumerate(filter(None,infile.read().splitlines())):
         domain = line.strip().split(",")[0]
         print("Test: " + domain)
+        test_normal(domain)
         test_proxy(domain, out_dir, outfile)
         print("\n")
 

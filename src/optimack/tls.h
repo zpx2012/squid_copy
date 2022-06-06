@@ -91,6 +91,36 @@ private:
 };
 
 
+class TLS_Encrypted_Record_Reassembler{
+public:
+    TLS_Encrypted_Record_Reassembler(int rs, int vs, TLS_Crypto_Coder* cc) { 
+        record_full_size = rs;
+        version_rvs = vs;
+        crypto_coder = cc;
+        tls_ciphertext_rcvbuf.clear(); 
+    }
+    int insert_to_record_fragment(uint seq, unsigned char* ciphertext, int ciphertext_len);
+    int merge_record_fragment();
+    int merge_two_record_fragment(struct record_fragment* frag, unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len);
+    int decrypt_record_fragment(std::map<uint, struct record_fragment> &plaintext_rcvbuf);
+    int decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf);
+
+    bool empty(){
+        return tls_ciphertext_rcvbuf.empty();
+    }
+
+    void lock();
+    void unlock();
+    // std::map<uint, struct record_fragment> tls_plaintext_rcvbuf;
+
+private:
+    int record_full_size, version_rvs;
+    TLS_Crypto_Coder* crypto_coder;
+    std::map<uint, struct record_fragment, std::less<uint>> tls_ciphertext_rcvbuf;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+};
+
+
 class TLS_Decrypted_Record_Reassembler{
     // receive_buffer
     // tag_buffer

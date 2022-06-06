@@ -21,6 +21,7 @@
 #include "tls.h"
 
 class TLS_Crypto_Coder;
+class TLS_Encrypted_Record_Reassembler;
 class TLS_Decrypted_Records_Map;
 class TLS_Record_Number_Seq_Map;
 #endif
@@ -74,6 +75,7 @@ struct subconn_info
 #ifdef USE_OPENSSL
     SSL *ssl;
     TLS_Crypto_Coder* crypto_coder;
+    TLS_Encrypted_Record_Reassembler* tls_rcvbuf;
     // TLS_Record_Number_Seq_Map* tls_record_seq_map;
     int record_size;
     unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
@@ -198,8 +200,8 @@ public:
     const int MARK = 666;
     int nfq_queue_num;
     
-    boost::asio::thread_pool* pool;
-    // thr_pool_t* pool;
+    // boost::asio::thread_pool* pool;
+    thr_pool_t* pool;
 
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
