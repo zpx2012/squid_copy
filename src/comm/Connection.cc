@@ -70,7 +70,7 @@ void Comm::Connection::setOptimack(){
         char remote_ip[16], local_ip[16];
         remote.toStr(remote_ip, 16);
         local.toStr(local_ip, 16);
-        optimack_server->open_duplicate_conns(remote_ip, local_ip, remote.port(), local.port(), fd);
+        optimack_server->set_main_subconn(remote_ip, local_ip, remote.port(), local.port(), fd);
     }
 }
 

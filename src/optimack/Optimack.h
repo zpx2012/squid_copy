@@ -71,8 +71,10 @@ struct subconn_info
 
     bool is_backup;
     bool fin_or_rst_recved;
-    bool handshake_finished;
+    bool tcp_handshake_finished;
 #ifdef USE_OPENSSL
+    bool tls_handshake_finished;
+
     SSL *ssl;
     TLS_Crypto_Coder* crypto_coder;
     TLS_Encrypted_Record_Reassembler* tls_rcvbuf;
@@ -82,6 +84,13 @@ struct subconn_info
     // uint ini_seq_tls_data;
     // unsigned char *iv_salt, *session_key;
 #endif
+    void lock(){
+        pthread_mutex_lock(&mutex_opa);
+    }
+
+    void unlock(){
+        pthread_mutex_unlock(&mutex_opa);
+    }
 };
 
 // Multithread
@@ -104,6 +113,8 @@ void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
 void* send_all_requests(void* arg);
+void* open_duplicate_conns_handler(void* arg);
+void* open_duplicate_ssl_conns_handler(void* arg);
 
 void* range_watch(void* arg);
 // void* range_recv(void* arg);
@@ -120,7 +131,9 @@ public:
     struct subconn_info *create_subconn_info(int sockfd, bool is_backup); 
     int insert_subconn_info(std::map<uint, struct subconn_info*> &subconn_infos, uint& subconn_count, struct subconn_info* new_subconn);
     void open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_list, bool is_backup);
-    void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
+    int open_duplicate_conns();
+    void set_main_subconn(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
+
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
     void cleanup();
@@ -289,7 +302,8 @@ public:
     TLS_Decrypted_Records_Map* decrypted_records_map;
     TLS_Record_Number_Seq_Map* tls_record_seq_map;
 
-    int open_duplicate_ssl_conns(SSL *squid_ssl);
+    int open_duplicate_ssl_conns();
+    int set_main_subconn_ssl(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
     int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, std::map<uint, struct record_fragment> &return_buffer);
     int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len, std::map<uint, struct record_fragment> &return_buffer);
@@ -317,5 +331,8 @@ auto funcTime =
         const auto& stop = std::chrono::high_resolution_clock::now();
         return stop - start;
      };
+
+std::vector<std::string> split(const std::string &s, char delim);
+bool is_static_object(std::string request);
 
 #endif

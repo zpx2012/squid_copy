@@ -148,8 +148,14 @@ restart:
             log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
             if(obj->is_ssl){
 #ifdef USE_OPENSSL
+                range_ssl = NULL;
                 range_ssl = open_ssl_conn(range_sockfd, false);
-                SSL_free(range_ssl_old);
+                if(range_ssl_old)
+                    SSL_free(range_ssl_old);
+                if(!range_ssl){
+                    sleep(1);
+                    goto restart;
+                }
                 fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
 #endif
             }
@@ -352,11 +358,13 @@ void Optimack::try_for_gaps_and_request(){
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     
-    if (recved_seq.size() < 2)
+    if (recved_seq.size() < 1 || recved_seq.getFirstEnd() == 1)
         return false;
 
     if(is_ssl){
 #ifdef USE_OPENSSL
+        if(!tls_record_seq_map)
+            return false;
         TLS_Record_Seq_Info seq_info;
         tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
         last_recv_inorder = seq_info.upper_seq - 1;
@@ -648,7 +656,8 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
     if (start == end || (start == 0 || end == 0))
         return -1;
     
-    char range_request[MAX_RANGE_REQ_LEN];
+    char* range_request = (char *)malloc(request_len+100);
+    memset(range_request, 0 , request_len+100);
     memcpy(range_request, request, request_len);
     sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
 
@@ -664,6 +673,7 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
         int sockfd_ = (long)sockfd;
         rv = send(sockfd_, range_request, strlen(range_request), 0);
     }
+    free(range_request);
     
     if (rv < 0){
         // printf("[Range] bytes [%u, %u] failed\n", start, end);

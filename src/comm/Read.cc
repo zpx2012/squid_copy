@@ -65,6 +65,7 @@ comm_read_base(const Comm::ConnectionPointer &conn, char *buf, int size, AsyncCa
     // Active/passive conflicts are OK and simply cancel passive monitoring.
     if (ccb->active()) {
         // if the assertion below fails, we have an active comm_read conflict
+        printf("comm_read_base: fd %d\n", conn->fd);
         assert(fd_table[conn->fd].halfClosedReader != NULL);
         commStopHalfClosedMonitor(conn->fd);
         assert(!ccb->active());

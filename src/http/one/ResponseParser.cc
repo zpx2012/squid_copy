@@ -195,6 +195,7 @@ Http::One::ResponseParser::parse(const SBuf &aBuf)
 {
     buf_ = aBuf;
     debugs(74, DBG_DATA, "Parse buf={length=" << aBuf.length() << ", data='" << aBuf << "'}");
+    // printf("HTTP Response: %s\n", buf_.c_str());
 
     // stage 1: locate the status-line
     if (parsingStage_ == HTTP_PARSE_NONE) {
