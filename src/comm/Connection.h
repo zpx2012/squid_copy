@@ -135,7 +135,8 @@ private:
 
 public:
     /* Our Code */
-    Optimack *optimack_server;
+    std::shared_ptr<Optimack> optimack_server = std::make_shared<Optimack>();
+    // Optimack *optimack_server;
     void setOptimack();
     
     /** Address/Port for the Squid end of a TCP link. */

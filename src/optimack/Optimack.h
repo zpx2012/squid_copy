@@ -15,6 +15,7 @@
 // #define USE_OPENSSL 1
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <memory> //shared_ptr
 
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
@@ -75,6 +76,7 @@ struct subconn_info
 #ifdef USE_OPENSSL
     bool tls_handshake_finished;
 
+    bool is_ssl;
     SSL *ssl;
     TLS_Crypto_Coder* crypto_coder;
     TLS_Encrypted_Record_Reassembler* tls_rcvbuf;
@@ -116,15 +118,22 @@ void* send_all_requests(void* arg);
 void* open_duplicate_conns_handler(void* arg);
 void* open_duplicate_ssl_conns_handler(void* arg);
 
-void* range_watch(void* arg);
+void* range_watch(std::shared_ptr<Optimack> obj);
 // void* range_recv(void* arg);
 
 
-class Optimack
+class Optimack : public std::enable_shared_from_this<Optimack>
 {
 public:
+    // [[nodiscard]] static std::shared_ptr<Optimack> create() {
+    //     return std::shared_ptr<Optimack>(new Optimack());
+    // }
     Optimack();
     ~Optimack();
+
+    std::shared_ptr<Optimack> getptr(){
+        return shared_from_this();
+    }
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
@@ -186,7 +195,7 @@ public:
     bool try_update_uint_with_lock(pthread_mutex_t* mutex, uint &src, uint target);
 
     struct subconn_info* get_slowest_subconn();
-
+    void remove_iptables_rules();
 
 
     // variables
@@ -202,7 +211,36 @@ public:
     struct sockaddr_in dstAddr;
     uint squid_MSS;
     
-    std::map<uint, struct subconn_info*> subconn_infos;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::make_shared<std::map<uint, struct subconn_info*>>();
+    // std::map<uint, struct subconn_info*>* p = new std::map<uint, struct subconn_info*>();
+    std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::shared_ptr<std::map<uint, struct subconn_info*>>(new std::map<uint, struct subconn_info*>(),
+        [](std::map<uint, struct subconn_info*>* p_subconn_infos){
+            uint port = p_subconn_infos->begin()->second->local_port;
+            printf("S%d: deleting subconn_infos\n", port);
+            for (auto it = p_subconn_infos->begin(); it != p_subconn_infos->end(); it++){
+                if(it->second->is_ssl){
+    #ifdef USE_OPENSSL
+                        if(it->second->crypto_coder)
+                            free(it->second->crypto_coder);  
+                        // if(it != subconn_infos.begin())
+                        //     if(it->second->ssl){
+                        //         SSL_shutdown(it->second->ssl);
+                        //         SSL_free(it->second->ssl);
+                        //         sleep(1);
+                        //     }
+    #endif
+                    }
+                    if(it != p_subconn_infos->begin())
+                        close(it->second->sockfd);
+                    if(it->second->recved_seq)
+                        free(it->second->recved_seq);
+                    free(it->second);
+                    it->second = NULL;            
+            }
+            printf("S%d: deleted subconn_infos\n", port);
+        }
+    );
+    std::map<uint, struct subconn_info*> subconn_infos = *subconn_infos_shared;
     uint subconn_count;
     // std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
 
@@ -213,8 +251,8 @@ public:
     const int MARK = 666;
     int nfq_queue_num;
     
-    // boost::asio::thread_pool* pool;
-    thr_pool_t* pool;
+    boost::asio::thread_pool* pool;
+    // thr_pool_t* pool;
 
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
@@ -243,6 +281,7 @@ public:
         we2squid_lost_cnt = 0,
         range_timeout_cnt = 0;
     float overrun_penalty = 0, we2squid_penalty = 0, range_timeout_penalty = 0;
+    bool cleaned_up = false;
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp, seq_ini_time;
@@ -300,7 +339,8 @@ public:
     bool is_ssl = false;
 #ifdef USE_OPENSSL
     TLS_Decrypted_Records_Map* decrypted_records_map;
-    TLS_Record_Number_Seq_Map* tls_record_seq_map;
+    // TLS_Record_Number_Seq_Map* tls_record_seq_map;
+    std::shared_ptr<TLS_Record_Number_Seq_Map> tls_record_seq_map = std::make_shared<TLS_Record_Number_Seq_Map>();
 
     int open_duplicate_ssl_conns();
     int set_main_subconn_ssl(SSL *squid_ssl);
@@ -334,5 +374,7 @@ auto funcTime =
 
 std::vector<std::string> split(const std::string &s, char delim);
 bool is_static_object(std::string request);
+
+void check_and_free_shared(std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy);
 
 #endif

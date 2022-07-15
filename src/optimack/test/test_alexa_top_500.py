@@ -11,7 +11,7 @@ import time, traceback, subprocess as sp, re, shlex, os, psutil, signal
 
 def get_onload_time(driver, domain):
     try:
-        url = 'http://' + domain
+        url = 'https://' + domain
         driver.get(url)
 
         with open(out_dir+domain+".html", 'w') as douf:
@@ -44,6 +44,12 @@ def get_onload_time(driver, domain):
         return None, 'UNKNOWN_ERROR'
 
 def open_normal_webdriver(domain):
+    opts = webdriver.FirefoxOptions()
+    opts.add_argument("--headless")
+    driver = webdriver.Firefox(options=opts)
+    return driver
+
+def open_normal_webdriver_chrome(domain):
     # Here chrome webdriver is used
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -51,25 +57,50 @@ def open_normal_webdriver(domain):
     chrome_options.add_argument('--disable-dev-shm-usage')
     #caps = DesiredCapabilities().CHROME
     #caps["pageLoadStrategy"] = "none"
+    # driver = webdriver.Firefox()
     driver = webdriver.Chrome(executable_path='/root/https_test/chromedriver',chrome_options=chrome_options)
     driver.set_page_load_timeout(30)
 
     return driver
 
 def open_proxy_webdriver(domain, proxy_addr):
+    opts = webdriver.FirefoxOptions()
+    opts.add_argument("--headless")
+
+    firefox_capabilities = webdriver.DesiredCapabilities.FIREFOX
+    firefox_capabilities['marionette'] = True
+
+    PROXY = "58.216.202.149:8118"
+
+    firefox_capabilities['proxy'] = {
+        "proxyType": "MANUAL",
+        "httpProxy": "127.0.0.1:3128",
+        # "ftpProxy": "127.0.0.1:3129",
+        "sslProxy": "127.0.0.1:3129"
+    }
+
+    driver = webdriver.Firefox(options=opts, capabilities=firefox_capabilities)
+    return driver
+
+
+
+def open_proxy_webdriver_chrome(domain, proxy_addr):
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--proxy-server=127.0.0.1:3129')
+    chrome_options.add_argument("ignore-certificate-errors")
+
     
     prox = Proxy()
     prox.proxy_type = ProxyType.MANUAL
-    prox.http_proxy = proxy_addr
+    # prox.http_proxy = proxy_addr
     # prox.socks_proxy = "ip_addr:port"
     prox.ssl_proxy = "127.0.0.1:3129"
 
     capabilities = webdriver.DesiredCapabilities.CHROME
-    prox.add_to_capabilities(capabilities)
+    # prox.add_to_capabilities(capabilities)
 
     driver = webdriver.Chrome(executable_path='/root/https_test/chromedriver',desired_capabilities=capabilities, chrome_options=chrome_options)
     driver.set_page_load_timeout(300)
@@ -167,10 +198,10 @@ def test_proxy(domain, out_dir, outfile):
 
             # tcpdump_outfile = out_dir + "pktdump_%s.pcap.%s" % (domain, start_time)
             # tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
-            # squid_p = 0
-            squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
-            p = sp.Popen(shlex.split(squid_path+" -N | tee ~/rs/squid_output_%s_%s.log" % (domain, start_time)), stdout=sp.PIPE, encoding='utf8')
-            time.sleep(5)
+            squid_p = 0
+            # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
+            # p = sp.Popen(shlex.split(squid_path+" -N | tee ~/rs/squid_output_%s_%s.log" % (domain, start_time)), stdout=sp.PIPE, encoding='utf8')
+            # time.sleep(5)
 
             proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
             timing, err = get_onload_time(proxy_driver, domain)
@@ -206,18 +237,20 @@ home_dir = os.path.expanduser("~") + "/"
 out_dir = home_dir + "rs/browser/"
 os.system("sudo mkdir -p "  + out_dir)
 squid_path = home_dir + "squid/sbin/squid"
+# test_proxy("www.baidu.com")
 # test_normal("www.baidu.com")
+# os._exit(0)
 with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % time.strftime("%Y-%m-%dT%H:%M:%S"), "w") as outfile:
     # test_proxy(domain, out_dir, outfile)
     # test_proxy("www.twitch.tv", out_dir, outfile)
-    # test_proxy("www.baidu.com", out_dir, outfile)
+    test_proxy("www.youtube.com", out_dir, outfile)
 
-    outfile.writelines(','.join(timing_keys) + "\n")
-    for line_num, line in enumerate(filter(None,infile.read().splitlines())):
-        domain = line.strip().split(",")[0]
-        print("Test: " + domain)
-        test_normal(domain)
-        test_proxy(domain, out_dir, outfile)
-        print("\n")
+    # outfile.writelines(','.join(timing_keys) + "\n")
+    # for line_num, line in enumerate(filter(None,infile.read().splitlines())):
+    #     domain = line.strip().split(",")[0]
+    #     print("Test: " + domain)
+    #     test_normal(domain)
+    #     test_proxy(domain, out_dir, outfile)
+    #     print("\n")
 
 

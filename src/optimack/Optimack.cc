@@ -83,7 +83,7 @@ using namespace std;
 
 const int multithread = 1;
 const int debug_subconn_recvseq = 0;
-const int use_optimack = 1;
+const int use_optimack = 0;
 const int forward_packet = 1;
 const int log_squid_ack = 0;
 const int log_result = 0;
@@ -472,7 +472,7 @@ void* dummy_recv(void* arg){
     do{
         rv = recv(sockfd, recv_buf, 10000, 0);
     } while(rv > 0);
-    printf("dummy recv exits...");
+    printf("Sockfd %d: dummy recv exits...\n", sockfd);
     return NULL;
 }
 
@@ -824,6 +824,7 @@ full_optimistic_ack_altogether(void* arg)
     bool is_in_overrun = false;
 
     struct timespec deadline;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
 
     while (!obj->optim_ack_stop) {
         if (elapsed(last_send_ack) >= send_ack_pace){
@@ -874,18 +875,18 @@ full_optimistic_ack_altogether(void* arg)
             else {
                 last_opa_ack = opa_ack_start;
                 if(obj->ack_end > 1 && obj->cur_ack_rel == obj->ack_end && opa_ack_start == obj->ack_end){
-                    log_info("S%d: [Optimack]: cur_ack_rel(%u) == ack_end(%u), mission completed, continue", obj->squid_port, obj->cur_ack_rel, obj->ack_end);
+                    // log_info("S%d: [Optimack]: cur_ack_rel(%u) == ack_end(%u), mission completed, continue", obj->squid_port, obj->cur_ack_rel, obj->ack_end);
                     continue;
                 }
                 opa_ack_start += mss;
-                if (obj->ack_end > 1 && opa_ack_start > obj->ack_end){
-                    opa_ack_start = obj->ack_end;
-                    for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-                        if(!it->second->is_backup && !it->second->fin_or_rst_recved){
-                            obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
-                        }
-                    }
-                }
+                // if (obj->ack_end > 1 && opa_ack_start > obj->ack_end){
+                //     opa_ack_start = obj->ack_end;
+                //     for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+                //         if(!it->second->is_backup && !it->second->fin_or_rst_recved){
+                //             obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                //         }
+                //     }
+                // }
             }
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
@@ -1335,9 +1336,13 @@ void Optimack::log_seq_gaps(){
 void
 Optimack::cleanup()
 {
+    if(cleaned_up)
+        return;
+
     printf("S%d: enter cleanup. Closed.\n", squid_port);
     // log_info("S%d: enter cleanup", squid_port);
-
+    cleaned_up = true;
+    
     cb_stop = 1;
     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
     if(!nfq_stop){
@@ -1411,13 +1416,17 @@ Optimack::cleanup()
     //     printf("dummy_recv_tls exited\n");
     // }
 
-    // pool->destroy();
-    // pool->shutdown();
-    // pool->stop();
     // delete pool;
     if(pool){
-        thr_pool_destroy(pool);
-        pool = NULL;
+        printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
+        pool->shutdown();
+        // pool->destroy();
+        pool->stop();
+        delete pool;
+        pool = nullptr;
+
+        // thr_pool_destroy(pool);
+        // pool = NULL;
         // log_info("destroy thr_pool");
     }
 
@@ -1463,12 +1472,14 @@ Optimack::cleanup()
 //     }
 //     subconn_infos.clear();
     // clear iptables rules
+    remove_iptables_rules();
     for (size_t i=0; i<iptables_rules.size(); i++) {
-        exec_iptables('D', iptables_rules[i]);
+        // exec_iptables('D', iptables_rules[i]);
         free(iptables_rules[i]);
         iptables_rules[i] = NULL;
     }
     iptables_rules.clear();
+
     request_recved = false;
 
     if(request){
@@ -1484,6 +1495,18 @@ Optimack::cleanup()
     printf("S%d: cleanup finished\n", squid_port);
 }
 
+void Optimack::remove_iptables_rules(){
+    if(iptables_rules.empty())
+        return;
+
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+        iptables_rules[i] = NULL;
+    }
+    iptables_rules.clear();
+}
+
 Optimack::Optimack()
 {
     main_fd = 0;
@@ -1496,14 +1519,24 @@ Optimack::Optimack()
     seq_next_global = 1;
     subconn_count = 0;
     request = response = NULL;
+    g_nfq_qh = NULL;
+    g_nfq_h = NULL;
+    optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
+    subconn_infos.clear();
     
-    pool = thr_pool_create(1, 4, 300, NULL);
+    // pool = thr_pool_create(1, 1, 300, NULL);
+    pool = new boost::asio::thread_pool(2);
     if (!pool) {
         printf("couldn't create thr_pool");
         return;             
     }
 
-    // pool = new boost::asio::thread_pool(2);
+#ifdef USE_OPENSSL
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+#endif
+
 }
 
 Optimack::~Optimack()
@@ -1518,7 +1551,7 @@ Optimack::~Optimack()
 
 
 
-    // cleanup();
+    cleanup();
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
      // clear thr_pool
@@ -1641,7 +1674,6 @@ Optimack::init()
 
     last_speedup_time = last_rwnd_write_time = last_restart_time = last_ack_time = std::chrono::system_clock::now();
 
-    optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
 
     sprintf(tcpdump_file_name, "tcpdump_%s.pcap", start_time);
     sprintf(tmp_str,"tcpdump -w %s/%s -s 96 tcp &", output_dir, tcpdump_file_name);
@@ -1652,7 +1684,6 @@ Optimack::init()
     // sprintf(tcpdump_file_name, "tcpdump_%s.tshark", start_time);
     // sprintf(tmp_str, "tshark -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80 and tcp.len > 0' > %s/%s &", output_dir, tcpdump_file_name);
     // system(tmp_str);
-    subconn_infos.clear();
 }
 
 void log_seq(FILE* file, uint seq){
@@ -1741,7 +1772,7 @@ Optimack::setup_nfqloop()
 int 
 Optimack::teardown_nfq()
 {
-    log_info("unbinding from queue %d", nfq_queue_num);
+    // log_info("unbinding from queue %d", nfq_queue_num);
     if (g_nfq_qh && nfq_destroy_queue(g_nfq_qh) != 0) {
         log_error("error during nfq_destroy_queue()");
         return -1;
@@ -1823,11 +1854,12 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     if(multithread == 0)
         pool_handler((void *)thr_data);
     else{
-        // boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
-        if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-            printf("cb: error during thr_pool_queue");
-            return -1;
-        }
+        if(obj->pool)
+            boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        // if(obj->pool && thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
+            // printf("cb: error during thr_pool_queue");
+            // return -1;
+        // }
     }
     return 0;
 }
@@ -2010,16 +2042,20 @@ void* overrun_detector(void* arg){
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
     
     Optimack* obj = (Optimack* )arg;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
 
-    bool is_all_seq_ini = true;
-    do {
-        is_all_seq_ini = true;
-        for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-            is_all_seq_ini &= it->second->seq_init;     
-        }
-        sleep(1);
-    } while(!is_all_seq_ini && !obj->overrun_stop);
+    // bool is_all_seq_ini = true;
+    // do {
+    //     is_all_seq_ini = true;
+    //     pthread_mutex_lock(&obj->mutex_subconn_infos);
+    //     for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+    //         is_all_seq_ini &= it->second->seq_init;     
+    //     }
+    //     pthread_mutex_unlock(&obj->mutex_subconn_infos);
+    //     sleep(1);
+    // } while(!is_all_seq_ini && !obj->overrun_stop);
 
     // sleep(2);//Wait for the packets to come
     log_info("Start overrun_detector thread");
@@ -2194,6 +2230,16 @@ void* send_all_requests(void* arg){
     Optimack* obj = (Optimack*)arg;
     // for (size_t i=0; i<obj->subconn_infos.size(); i++) {
     int rv = -1;
+
+    bool all_subconns_created = false;
+    while(!all_subconns_created){
+        pthread_mutex_lock(&obj->mutex_subconn_infos);
+        if(obj->subconn_infos.size() == CONN_NUM)
+            all_subconns_created = true;
+        pthread_mutex_unlock(&obj->mutex_subconn_infos);
+        usleep(10);
+    }
+
     for (auto it = ++obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
         // printf("S%d-%d: sockfd %d\n", it->second->local_port, it->second->sockfd);
         do {
@@ -2289,6 +2335,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data){
     else
         sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn->id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_loc, tcphdr->th_ack, ack-subconn->ini_seq_rem, iphdr->ttl, payload_len);
 
+    log_info(log);
     // printf("%s\n", log);
 
 // #ifdef USE_OPENSSL
@@ -2694,9 +2741,10 @@ int Optimack::process_tcp_plaintext_packet(
                         pthread_mutex_lock(&mutex_range);
                         if(seq_rel > 1 && range_stop){
                             range_stop = 0;
-                            if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
-                                log_error("Fail to create range_watch thread.");
-                            }
+                            std::thread range(range_watch, Optimack::getptr());
+                            // if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
+                            //     log_error("Fail to create range_watch thread.");
+                            // }
                         }
                         pthread_mutex_unlock(&mutex_range);
 
@@ -3412,14 +3460,11 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
     int ret;
 
     int sockfd = establish_tcp_connection(0, g_remote_ip, g_remote_port);
-    struct subconn_info* new_subconn = create_subconn_info(sockfd, is_backup);
-    pthread_mutex_lock(&mutex_subconn_infos);
-    insert_subconn_info(subconn_infos, subconn_count, new_subconn);
-    pthread_mutex_unlock(&mutex_subconn_infos);
-
-    if(BACKUP_MODE && is_backup){
-        backup_port = new_subconn->local_port;
+    if(sockfd <= 0){
+        printf("S%d: open_one_duplicate_conn: establish tcp connection failed\n", squid_port);
+        return;
     }
+    struct subconn_info* new_subconn = create_subconn_info(sockfd, is_backup);
 
     //TODO: iptables too broad??
     char *cmd = (char*) malloc(IPTABLESLEN);
@@ -3433,6 +3478,14 @@ void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &sub
     sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
     ret = exec_iptables('A', cmd);
     iptables_rules.push_back(cmd);
+
+    pthread_mutex_lock(&mutex_subconn_infos);
+    insert_subconn_info(subconn_infos, subconn_count, new_subconn);
+    pthread_mutex_unlock(&mutex_subconn_infos);
+
+    if(BACKUP_MODE && is_backup){
+        backup_port = new_subconn->local_port;
+    }
 
 }
 
@@ -3495,10 +3548,11 @@ Optimack::set_main_subconn(char* remote_ip, char* local_ip, unsigned short remot
     squid_MSS = squid_conn->payload_len;
     log_info("[Squid Conn] port: %d, win_scale %d", squid_port, squid_conn->win_scale);
 
-    pthread_t open_thread;
-    if (pthread_create(&open_thread, NULL, open_duplicate_conns_handler, (void*)this) != 0) {
-        log_error("Fail to create open_duplicate_conns thread.");
-    }
+    std::thread open_conns(&Optimack::open_duplicate_conns, Optimack::getptr());
+    // pthread_t open_thread;
+    // if (pthread_create(&open_thread, NULL, open_duplicate_conns_handler, (void*)shared_from_this()) != 0) {
+    //     log_error("Fail to create open_duplicate_conns thread.");
+    // }
     printf("S%d: open_duplicate_conns thread created\n", squid_port);
 }
 
@@ -3512,6 +3566,7 @@ void* open_duplicate_conns_handler(void* arg){
 int Optimack::open_duplicate_conns(){
     // int conn_num = 3;
     // range
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
     if (RANGE_MODE) {
         range_sockfd = 0;
     }
@@ -3527,13 +3582,13 @@ int Optimack::open_duplicate_conns(){
         }
     }
 
-    if(overrun_stop == -1){
-        overrun_stop++;
-        if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
-            log_error("Fail to create overrun_detector thread.");
-        }
-        printf("S%d: overrun thread created\n", squid_port);
-    }
+    // if(overrun_stop == -1){
+    //     overrun_stop++;
+    //     if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
+    //         log_error("Fail to create overrun_detector thread.");
+    //     }
+    //     printf("S%d: overrun thread created\n", squid_port);
+    // }
 
     return 0;
 }
@@ -3562,6 +3617,7 @@ bool is_static_object(std::string request){
     return static_object;
 }
 
+
 #ifdef USE_OPENSSL
 int Optimack::set_main_subconn_ssl(SSL *squid_ssl){
     if(is_ssl){
@@ -3570,35 +3626,33 @@ int Optimack::set_main_subconn_ssl(SSL *squid_ssl){
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
     is_ssl = true;
 
-    SSL_library_init();
-    SSLeay_add_ssl_algorithms();
-    SSL_load_error_strings();
     // ERR_load_crypto_strings();
 
     struct subconn_info* squid_subconn = subconn_infos[squid_port];
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
-    tls_record_seq_map = new TLS_Record_Number_Seq_Map();
+    // tls_record_seq_map = new TLS_Record_Number_Seq_Map();
     tls_record_seq_map->set_localport(squid_port);
     recved_seq.getIntervalList().clear();
     recved_seq.insertNewInterval_withLock(0,1);
 
-    pthread_t open_ssl_thread;
-    if (pthread_create(&open_ssl_thread, NULL, open_duplicate_ssl_conns_handler, (void*)this) != 0) {
-        log_error("Fail to create open_duplicate_conns thread.");
-    }
-    printf("S%d: open_duplicate_conns thread created\n", squid_port);
+    std::thread t(&Optimack::open_duplicate_ssl_conns, Optimack::getptr());
+    // pthread_t open_ssl_thread;
+    // if (pthread_create(&open_ssl_thread, NULL, open_duplicate_ssl_conns_handler, (void*)this) != 0) {
+    //     log_error("Fail to create open_duplicate_conns thread.");
+    // }
+    printf("S%d: open_duplicate_conns thread created. set_main_subconn_ssl exits.\n", squid_port);
 
 
     return 0;
 }
 
-void* open_duplicate_ssl_conns_handler(void* arg){
-    Optimack* obj = (Optimack*)arg;
-    obj->open_duplicate_ssl_conns();
-    return NULL;
-}
+// void* open_duplicate_ssl_conns_handler(void* arg){
+//     std::shared_ptr<Optimack>* obj = static_cast<std::shared_ptr<Optimack>*>(arg);
+//     obj->open_duplicate_ssl_conns();
+//     return NULL;
+// }
 
 int Optimack::open_duplicate_ssl_conns(){
     /*** bug: if we combine three blocks into one for loop, 
@@ -3613,7 +3667,14 @@ int Optimack::open_duplicate_ssl_conns(){
     //     it->second->handshake_finished = false;
     // }
     // pthread_mutex_unlock(&mutex_subconn_infos);
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
 
+    if(subconn_infos.size() < 2){
+        printf("open_duplicate_ssl_conns: subconn_infos.size() < 2\n");
+        return -1;
+    }
+
+    printf("S%d: create open_duplicate_ssl_conns\n", squid_port);
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         if(it->second){
             SSL* ssl = open_ssl_conn(it->second->sockfd, false);
@@ -3626,7 +3687,7 @@ int Optimack::open_duplicate_ssl_conns(){
             }
         }
     }
-
+                             
     // pthread_mutex_lock(&mutex_subconn_infos);
     // for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
     //     it->second->lock();
@@ -3636,9 +3697,11 @@ int Optimack::open_duplicate_ssl_conns(){
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
     recv_tls_stop = 0;
-    if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)this) != 0) {
-        log_error("Fail to create dummy_recv_ssl thread.");
-    }
+    printf("S%d: create dummy_recv_ssl\n", squid_port);
+    std::thread recvt(&Optimack::dummy_recv_tls, Optimack::getptr());
+    // if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)this) != 0) {
+    //     log_error("Fail to create dummy_recv_ssl thread.");
+    // }
     return 0;
 }
 
@@ -3648,6 +3711,8 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
         printf("Set subconn ssl credentials: S%d-%d, null ssl.\n", subconn->id, subconn->local_port);
         return -1;
     }
+
+    printf("S%d-%d: set_subconn_ssl_credentials starts.\n", squid_port, subconn->local_port);
 
     unsigned char write_key_buffer[100],iv_salt[5];
     unsigned char master_key[100];
@@ -3674,6 +3739,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     // printf("\n");
 
     subconn->lock();
+    printf("S%d-%d: set_subconn_ssl_credentials enter lock.\n", squid_port, subconn->local_port);
     subconn->ssl = ssl;
     subconn->seq_init = false;
     subconn->tls_handshake_finished = true;
@@ -3690,6 +3756,8 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
 
     subconn->unlock();
 
+    printf("S%d-%d: set_subconn_ssl_credentials ends.\n", squid_port, subconn->local_port);
+
     return 0;
 }
 
@@ -3702,17 +3770,24 @@ void Optimack::dummy_recv_tls(){
     char buf[BUFSIZE] = {0};
     struct timeval timeout = {1,0};
 
+    printf("S%d: dummy recv tls starts\n", squid_port);
+
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
+
+    std::vector<int> sockfds;
+    std::vector<SSL*> ssls;
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
         fcntl(it->second->sockfd, F_SETFL, O_NONBLOCK);
+        sockfds.push_back(it->second->sockfd);
+        ssls.push_back(it->second->ssl);
     }
+    int sockfd_size = sockfds.size();
 
     while(recv_tls_stop == 0){
         FD_ZERO(&readfds);
-        for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-            if(it->second && it->second->ssl){
-                FD_SET(it->second->sockfd, &readfds);
-                maxfdp1 = max(it->second->sockfd, maxfdp1);
-            }
+        for(int i = 0; i < sockfd_size; i++){
+            FD_SET(sockfds.at(i), &readfds);
+            maxfdp1 = max(sockfds.at(i), maxfdp1);
         }
         maxfdp1++;
 
@@ -3725,9 +3800,10 @@ void Optimack::dummy_recv_tls(){
         if(ret == 0)
             continue;
         
-        for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-            if(FD_ISSET(it->second->sockfd, &readfds)){
-                SSL* ssl = it->second->ssl;
+    
+        for(int i = 0; i < sockfd_size; i++){
+            if(FD_ISSET(sockfds.at(i), &readfds)){
+                SSL* ssl = ssls.at(i);
                 if(ssl){
                     do {
                         ret = SSL_read(ssl, buf, BUFSIZE);
@@ -3754,12 +3830,13 @@ void Optimack::dummy_recv_tls(){
             }
         }
     }
-    
-    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        if(it->second->ssl){
-            SSL_shutdown(it->second->ssl);
-            SSL_free(it->second->ssl);
-            it->second->ssl = NULL;
+
+    for(int i = 0; i < sockfd_size; i++){
+        SSL* ssl = ssls.at(i);
+        if(ssl){
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            ssl = NULL;
         }
     }
 

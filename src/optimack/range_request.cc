@@ -35,7 +35,7 @@ const char tail_field[] = "\r\n\r\n";
 const char keep_alive_field[] = "Keep-Alive: ";
 const char max_field[] = "max=";
 
-int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
+int process_range_rv(char* response, int rv, std::shared_ptr<Optimack> obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 
 
@@ -77,11 +77,11 @@ int parse_response(http_header *head, char *response, int unread)
 
 
 void*
-range_watch(void* arg)
+range_watch(std::shared_ptr<Optimack> obj) //void* arg
 {
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
 
-    printf("[Range]: range_watch thread starts\n");
+    printf("[Range]: range_watch thread starts, ref_count %d\n", obj.use_count());
 
 #ifdef USE_OPENSSL
     SSL *range_ssl, *range_ssl_old;
@@ -90,7 +90,9 @@ range_watch(void* arg)
     int rv, range_sockfd, range_sockfd_old, erase_count = 0;
     char response[MAX_RANGE_SIZE+1];
 
-    Optimack* obj = ((Optimack*)arg);
+    // Optimack* obj = ((Optimack*)arg);
+    std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
     range_sockfd = -1;
 
     pthread_mutex_t *mutex = &(obj->mutex_seq_gaps);
@@ -290,8 +292,13 @@ opensocket:
     setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     // Connect to server
-    if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    int count = 0;
+    while (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0 && count++ < 5) {
+        printf("establish_tcp_connection: sockfd %d connect error\n", sockfd);
         perror("Connect server error");
+    }
+
+    if(count >= 5){
         sockfd = 0;
         goto opensocket;
         close(sockfd);
@@ -300,7 +307,9 @@ opensocket:
 
     int port = get_localport(sockfd);
     if(port < 0){
+        printf("establish_tcp_connection: sockfd %d get_localport error\n", sockfd);
         sockfd = 0;
+        close(sockfd);
         goto opensocket;
     }
 
@@ -405,7 +414,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
 }
 
 
-int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
+int process_range_rv(char* response, int rv, std::shared_ptr<Optimack> obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
     if (rv > MAX_RANGE_SIZE)
         printf("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
 
