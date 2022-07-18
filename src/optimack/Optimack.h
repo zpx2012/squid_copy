@@ -213,34 +213,34 @@ public:
     
     // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::make_shared<std::map<uint, struct subconn_info*>>();
     // std::map<uint, struct subconn_info*>* p = new std::map<uint, struct subconn_info*>();
-    std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::shared_ptr<std::map<uint, struct subconn_info*>>(new std::map<uint, struct subconn_info*>(),
-        [](std::map<uint, struct subconn_info*>* p_subconn_infos){
-            uint port = p_subconn_infos->begin()->second->local_port;
-            printf("S%d: deleting subconn_infos\n", port);
-            for (auto it = p_subconn_infos->begin(); it != p_subconn_infos->end(); it++){
-                if(it->second->is_ssl){
-    #ifdef USE_OPENSSL
-                        if(it->second->crypto_coder)
-                            free(it->second->crypto_coder);  
-                        // if(it != subconn_infos.begin())
-                        //     if(it->second->ssl){
-                        //         SSL_shutdown(it->second->ssl);
-                        //         SSL_free(it->second->ssl);
-                        //         sleep(1);
-                        //     }
-    #endif
-                    }
-                    if(it != p_subconn_infos->begin())
-                        close(it->second->sockfd);
-                    if(it->second->recved_seq)
-                        free(it->second->recved_seq);
-                    free(it->second);
-                    it->second = NULL;            
-            }
-            printf("S%d: deleted subconn_infos\n", port);
-        }
-    );
-    std::map<uint, struct subconn_info*> subconn_infos = *subconn_infos_shared;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::shared_ptr<std::map<uint, struct subconn_info*>>(new std::map<uint, struct subconn_info*>(),
+    //     [](std::map<uint, struct subconn_info*>* p_subconn_infos){
+    //         uint port = p_subconn_infos->begin()->second->local_port;
+    //         printf("S%d: deleting subconn_infos\n", port);
+    //         for (auto it = p_subconn_infos->begin(); it != p_subconn_infos->end(); it++){
+    //             if(it->second->is_ssl){
+    // #ifdef USE_OPENSSL
+    //                     if(it->second->crypto_coder)
+    //                         free(it->second->crypto_coder);  
+    //                     // if(it != subconn_infos.begin())
+    //                     //     if(it->second->ssl){
+    //                     //         SSL_shutdown(it->second->ssl);
+    //                     //         SSL_free(it->second->ssl);
+    //                     //         sleep(1);
+    //                     //     }
+    // #endif
+    //                 }
+    //                 if(it != p_subconn_infos->begin())
+    //                     close(it->second->sockfd);
+    //                 if(it->second->recved_seq)
+    //                     free(it->second->recved_seq);
+    //                 free(it->second);
+    //                 it->second = NULL;            
+    //         }
+    //         printf("S%d: deleted subconn_infos\n", port);
+    //     }
+    // );
+    std::map<uint, struct subconn_info*> subconn_infos;
     uint subconn_count;
     // std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
 
@@ -339,8 +339,8 @@ public:
     bool is_ssl = false;
 #ifdef USE_OPENSSL
     TLS_Decrypted_Records_Map* decrypted_records_map;
-    // TLS_Record_Number_Seq_Map* tls_record_seq_map;
-    std::shared_ptr<TLS_Record_Number_Seq_Map> tls_record_seq_map = std::make_shared<TLS_Record_Number_Seq_Map>();
+    TLS_Record_Number_Seq_Map* tls_record_seq_map;
+    // std::shared_ptr<TLS_Record_Number_Seq_Map> tls_record_seq_map = std::make_shared<TLS_Record_Number_Seq_Map>();
 
     int open_duplicate_ssl_conns();
     int set_main_subconn_ssl(SSL *squid_ssl);

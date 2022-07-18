@@ -3632,7 +3632,7 @@ int Optimack::set_main_subconn_ssl(SSL *squid_ssl){
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
-    // tls_record_seq_map = new TLS_Record_Number_Seq_Map();
+    tls_record_seq_map = new TLS_Record_Number_Seq_Map();
     tls_record_seq_map->set_localport(squid_port);
     recved_seq.getIntervalList().clear();
     recved_seq.insertNewInterval_withLock(0,1);
