@@ -91,7 +91,7 @@ range_watch(std::shared_ptr<Optimack> obj) //void* arg
     char response[MAX_RANGE_SIZE+1];
 
     // Optimack* obj = ((Optimack*)arg);
-    std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
 
     range_sockfd = -1;
 
