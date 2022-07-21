@@ -30,23 +30,32 @@ def get_onload_time(driver, domain):
         print("DomContentLoaded: %fms" % (domContentLoaded - navigationStart))
         print("OnLoad: %fms" % (loadEventEnd - navigationStart))
         # print(timing.keys())
+        # driver.close()
         return timing, 'Success'
     except TimeoutException as ex:
         print("driver.get timeout")
         return None, 'TIMEOUT'
     
     except WebDriverException as ex:
-        print('selenium.common.exceptions.WebDriverException: Message: unknown error: net::ERR_PROXY_CONNECTION_FAILED')
+        print('%s' % traceback.format_exc())
         return None, 'PROXY_CONNECTION_FAILED'
 
     except:
         print('%s' % traceback.format_exc())
         return None, 'UNKNOWN_ERROR'
 
-def open_normal_webdriver(domain):
+def open_normal_webdriver():
     opts = webdriver.FirefoxOptions()
     opts.add_argument("--headless")
-    driver = webdriver.Firefox(options=opts)
+
+    profile = webdriver.FirefoxProfile()
+    profile.set_preference("browser.cache.disk.enable", False)
+    profile.set_preference("browser.cache.memory.enable", False)
+    profile.set_preference("browser.cache.offline.enable", False)
+    profile.set_preference("network.http.use-cache", False)
+    
+    driver = webdriver.Firefox(options=opts, firefox_profile=profile)
+    driver.set_page_load_timeout(90)
     return driver
 
 def open_normal_webdriver_chrome(domain):
@@ -59,18 +68,17 @@ def open_normal_webdriver_chrome(domain):
     #caps["pageLoadStrategy"] = "none"
     # driver = webdriver.Firefox()
     driver = webdriver.Chrome(executable_path='/root/https_test/chromedriver',chrome_options=chrome_options)
-    driver.set_page_load_timeout(30)
+    driver.set_page_load_timeout(90)
 
     return driver
 
-def open_proxy_webdriver(domain, proxy_addr):
+def open_proxy_webdriver(proxy_addr):
     opts = webdriver.FirefoxOptions()
     opts.add_argument("--headless")
 
     firefox_capabilities = webdriver.DesiredCapabilities.FIREFOX
     firefox_capabilities['marionette'] = True
 
-    PROXY = "58.216.202.149:8118"
 
     firefox_capabilities['proxy'] = {
         "proxyType": "MANUAL",
@@ -79,7 +87,29 @@ def open_proxy_webdriver(domain, proxy_addr):
         "sslProxy": "127.0.0.1:3129"
     }
 
-    driver = webdriver.Firefox(options=opts, capabilities=firefox_capabilities)
+    proxy =  Proxy({
+                'proxyType': ProxyType.MANUAL,
+                'httpProxy': "127.0.0.1:3128",
+                #'ftpProxy': myProxy,
+                'sslProxy':  "127.0.0.1:3129",
+                #'noProxy': '' # set this value as desired
+            })
+
+    profile = webdriver.FirefoxProfile()
+    profile.set_preference("browser.cache.disk.enable", False)
+    profile.set_preference("browser.cache.memory.enable", False)
+    profile.set_preference("browser.cache.offline.enable", False)
+    profile.set_preference("network.http.use-cache", False)
+
+    profile.set_preference("network.proxy.type", 1) 
+    profile.set_preference("network.proxy.http", 'localhost') 
+    profile.set_preference("network.proxy.http_port", 3128) 
+    profile.set_preference("network.proxy.ssl", 'localhost') 
+    profile.set_preference("network.proxy.ssl_port", 3129) 
+
+    profile.update_preferences()    
+    driver = webdriver.Firefox(options=opts, firefox_profile=profile) # capabilities=firefox_capabilities)
+    driver.set_page_load_timeout(90)
     return driver
 
 
@@ -145,11 +175,15 @@ def stop_tcpdump(p):
     os.system("sudo kill %d" % p.pid)
 
 
-def test_normal(domain):
-    normal_driver = open_normal_webdriver(domain)
-    timing = get_onload_time(normal_driver, domain)
-    normal_driver.quit()
+def test_normal(normal_driver, domain, out_dir, outfile):
+    timing, err = get_onload_time(normal_driver, domain)
+    #normal_driver.quit()
     print("Normal: " + str(timing))
+    
+    output = [domain, 'Normal', time.strftime("%Y-%m-%d %H:%M:%S"), err]
+    if timing:
+        output += list(map(str,timing.values()))
+        outfile.writelines(','.join(output) + "\n")  
     return normal_driver
 
 def killall_process(process_name):
@@ -175,21 +209,24 @@ def killall_process(process_name):
 def cleanup(tcpdump_p, squid_p, proxy_driver):
     # print("enter cleanup")
     # stop_tcpdump(tcpdump_p)
-    # squid_p.terminate()
-    # squid_p.kill()
-    # os.system("sudo kill -9 %d" % squid_p.pid)
+    if squid_p:
+        # for line in squid_p.stdout:
+        #     print(line)
+        squid_p.terminate()
+        squid_p.kill()
+        os.system("sudo kill -9 %d" % squid_p.pid)
     exec("sudo iptables -F")
     exec("sudo iptables -t mangle -F")
-    proxy_driver.close()
-    proxy_driver.quit()
-    # killall_process('squid')
-    killall_process('chrome')
+    # proxy_driver.close()
+    #proxy_driver.quit()
+    killall_process('squid')
+    # killall_process('firefox')
     # print(psutil.Process(squid_p.pid).children(recursive=True))
     # os.killpg(os.getpid(), signal.SIGTERM)
     time.sleep(2)
 
 
-def test_proxy(domain, out_dir, outfile):
+def test_proxy(proxy_driver, domain, out_dir, outfile):
 
     try:
         count = 0
@@ -200,15 +237,22 @@ def test_proxy(domain, out_dir, outfile):
             # tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
             squid_p = 0
             # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
-            # p = sp.Popen(shlex.split(squid_path+" -N | tee ~/rs/squid_output_%s_%s.log" % (domain, start_time)), stdout=sp.PIPE, encoding='utf8')
-            # time.sleep(5)
+            squid_p = sp.Popen([squid_path, "-N"], stdout=sp.PIPE, encoding='utf8')
+            time.sleep(5)
 
-            proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
+            # proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
             timing, err = get_onload_time(proxy_driver, domain)
             cleanup(0, squid_p, proxy_driver)
 
+            line_count = 0
+            squid_out = open(home_dir + "/rs/squid_output_%s_%s.log" % (domain, time.strftime("%Y%m%d%H%M%S")), "w")
+            for line in squid_p.stdout:
+                squid_out.write(line)
+                line_count += 1
+            print("squid_out line count: %d" % line_count)
+
             output = [domain, 'Proxy', time.strftime("%Y-%m-%d %H:%M:%S"), err]
-            if timing:
+            if timing and line_count:
                 output += list(map(str,timing.values()))
                 outfile.writelines(','.join(output) + "\n")  
                 # print("Proxy: " + str(timing))
@@ -243,14 +287,24 @@ squid_path = home_dir + "squid/sbin/squid"
 with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % time.strftime("%Y-%m-%dT%H:%M:%S"), "w") as outfile:
     # test_proxy(domain, out_dir, outfile)
     # test_proxy("www.twitch.tv", out_dir, outfile)
-    test_proxy("www.youtube.com", out_dir, outfile)
+    # test_normal("www.ebay.com", out_dir, outfile)
+    normal_driver = open_normal_webdriver()
+    # test_normal(normal_driver, "www.ted.com", out_dir, outfile)
 
-    # outfile.writelines(','.join(timing_keys) + "\n")
-    # for line_num, line in enumerate(filter(None,infile.read().splitlines())):
-    #     domain = line.strip().split(",")[0]
-    #     print("Test: " + domain)
-    #     test_normal(domain)
-    #     test_proxy(domain, out_dir, outfile)
-    #     print("\n")
+    proxy_driver = open_proxy_webdriver("127.0.0.1:3128")
+    # test_proxy(proxy_driver, "www.ted.com", out_dir, outfile)
 
+    outfile.writelines(','.join(timing_keys) + "\n")
+    domains = list(filter(None,infile.read().splitlines()))
+    while True:
+        for line_num, line in enumerate(domains):
+            domain = line.strip().split(",")[0]
+            print("Test: " + domain)
+            test_normal(normal_driver, domain, out_dir, outfile)
+            test_proxy(proxy_driver, domain, out_dir, outfile)
+            print("\n")
 
+    # normal_driver.close()
+    normal_driver.quit()
+    # proxy_driver.close()
+    proxy_driver.quit()
