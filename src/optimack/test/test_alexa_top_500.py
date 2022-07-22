@@ -109,7 +109,7 @@ def open_proxy_webdriver(proxy_addr):
 
     profile.update_preferences()    
     driver = webdriver.Firefox(options=opts, firefox_profile=profile) # capabilities=firefox_capabilities)
-    driver.set_page_load_timeout(90)
+    driver.set_page_load_timeout(120)
     return driver
 
 
@@ -215,11 +215,11 @@ def cleanup(tcpdump_p, squid_p, proxy_driver):
         squid_p.terminate()
         squid_p.kill()
         os.system("sudo kill -9 %d" % squid_p.pid)
+        killall_process('squid')
     exec("sudo iptables -F")
     exec("sudo iptables -t mangle -F")
     # proxy_driver.close()
     #proxy_driver.quit()
-    killall_process('squid')
     # killall_process('firefox')
     # print(psutil.Process(squid_p.pid).children(recursive=True))
     # os.killpg(os.getpid(), signal.SIGTERM)
@@ -237,7 +237,7 @@ def test_proxy(proxy_driver, domain, out_dir, outfile):
             # tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
             squid_p = 0
             # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
-            squid_p = sp.Popen([squid_path, "-N"], stdout=sp.PIPE, encoding='utf8')
+            #squid_p = sp.Popen([squid_path, "-N"], stdout=sp.PIPE, encoding='utf8')
             time.sleep(5)
 
             # proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
@@ -246,10 +246,11 @@ def test_proxy(proxy_driver, domain, out_dir, outfile):
 
             line_count = 0
             squid_out = open(home_dir + "/rs/squid_output_%s_%s.log" % (domain, time.strftime("%Y%m%d%H%M%S")), "w")
-            for line in squid_p.stdout:
-                squid_out.write(line)
-                line_count += 1
-            print("squid_out line count: %d" % line_count)
+            if squid_p:
+                for line in squid_p.stdout:
+                    squid_out.write(line)
+                    line_count += 1
+                print("squid_out line count: %d" % line_count)
 
             output = [domain, 'Proxy', time.strftime("%Y-%m-%d %H:%M:%S"), err]
             if timing and line_count:
@@ -292,16 +293,20 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
     # test_normal(normal_driver, "www.ted.com", out_dir, outfile)
 
     proxy_driver = open_proxy_webdriver("127.0.0.1:3128")
-    # test_proxy(proxy_driver, "www.ted.com", out_dir, outfile)
+    #test_proxy(proxy_driver, "www.ted.com", out_dir, outfile)
+    #os._exit(0)
 
     outfile.writelines(','.join(timing_keys) + "\n")
     domains = list(filter(None,infile.read().splitlines()))
     while True:
         for line_num, line in enumerate(domains):
             domain = line.strip().split(",")[0]
-            print("Test: " + domain)
-            test_normal(normal_driver, domain, out_dir, outfile)
-            test_proxy(proxy_driver, domain, out_dir, outfile)
+            print("Test: Normal " + domain)
+            #test_normal(normal_driver, domain, out_dir, outfile)
+            #time.sleep(10)
+            print("Test: Proxy " + domain)
+            test_proxy(proxy_driver, "www.ted.com", out_dir, outfile)
+            time.sleep(10)
             print("\n")
 
     # normal_driver.close()

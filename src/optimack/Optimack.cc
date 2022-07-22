@@ -1419,7 +1419,7 @@ Optimack::cleanup()
     // delete pool;
     if(pool){
         printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
-        pool->shutdown();
+        // pool->shutdown();
         // pool->destroy();
         pool->stop();
         delete pool;
@@ -1525,7 +1525,7 @@ Optimack::Optimack()
     subconn_infos.clear();
     
     // pool = thr_pool_create(1, 1, 300, NULL);
-    pool = new boost::asio::thread_pool(2);
+    pool = new boost::asio::thread_pool(4);
     if (!pool) {
         printf("couldn't create thr_pool");
         return;             
