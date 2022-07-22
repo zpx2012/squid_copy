@@ -72,7 +72,7 @@ def open_normal_webdriver_chrome(domain):
 
     return driver
 
-def open_proxy_webdriver(proxy_addr):
+def open_proxy_webdriver(proxy_addr, http_port, https_port):
     opts = webdriver.FirefoxOptions()
     opts.add_argument("--headless")
 
@@ -103,13 +103,13 @@ def open_proxy_webdriver(proxy_addr):
 
     profile.set_preference("network.proxy.type", 1) 
     profile.set_preference("network.proxy.http", 'localhost') 
-    profile.set_preference("network.proxy.http_port", 3128) 
+    profile.set_preference("network.proxy.http_port", http_port) 
     profile.set_preference("network.proxy.ssl", 'localhost') 
-    profile.set_preference("network.proxy.ssl_port", 3129) 
+    profile.set_preference("network.proxy.ssl_port", https_port) 
 
     profile.update_preferences()    
     driver = webdriver.Firefox(options=opts, firefox_profile=profile) # capabilities=firefox_capabilities)
-    driver.set_page_load_timeout(90)
+    driver.set_page_load_timeout(120)
     return driver
 
 
@@ -226,7 +226,7 @@ def cleanup(tcpdump_p, squid_p, proxy_driver):
     time.sleep(2)
 
 
-def test_proxy(proxy_driver, domain, out_dir, outfile):
+def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label):
 
     try:
         count = 0
@@ -251,7 +251,7 @@ def test_proxy(proxy_driver, domain, out_dir, outfile):
                 line_count += 1
             print("squid_out line count: %d" % line_count)
 
-            output = [domain, 'Proxy', time.strftime("%Y-%m-%d %H:%M:%S"), err]
+            output = [domain, label, time.strftime("%Y-%m-%d %H:%M:%S"), err]
             if timing and line_count:
                 output += list(map(str,timing.values()))
                 outfile.writelines(','.join(output) + "\n")  
@@ -280,7 +280,9 @@ timing_keys = ['domain', 'mode', 'timestamp', 'ErrorCode', 'connectEnd', 'connec
 home_dir = os.path.expanduser("~") + "/"
 out_dir = home_dir + "rs/browser/"
 os.system("sudo mkdir -p "  + out_dir)
-squid_path = home_dir + "squid/sbin/squid"
+proxy_path = home_dir + "squid/sbin/squid"
+squid_path = home_dir + "squid_only/sbin/squid"
+
 # test_proxy("www.baidu.com")
 # test_normal("www.baidu.com")
 # os._exit(0)
@@ -290,8 +292,8 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
     # test_normal("www.ebay.com", out_dir, outfile)
     normal_driver = open_normal_webdriver()
     # test_normal(normal_driver, "www.ted.com", out_dir, outfile)
-
-    proxy_driver = open_proxy_webdriver("127.0.0.1:3128")
+    squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
+    proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
     # test_proxy(proxy_driver, "www.ted.com", out_dir, outfile)
 
     outfile.writelines(','.join(timing_keys) + "\n")
@@ -299,12 +301,21 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
     while True:
         for line_num, line in enumerate(domains):
             domain = line.strip().split(",")[0]
-            print("Test: " + domain)
+            print("Test: Normal " + domain)
             test_normal(normal_driver, domain, out_dir, outfile)
-            test_proxy(proxy_driver, domain, out_dir, outfile)
+            time.sleep(10)
+
+            print("Test: Squid " + domain)
+            test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid")
+            time.sleep(10)
+
+            print("Test: Proxy " + domain)
+            test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy")
+            time.sleep(10)
             print("\n")
 
     # normal_driver.close()
     normal_driver.quit()
+    squid_driver.quit()
     # proxy_driver.close()
     proxy_driver.quit()

@@ -713,10 +713,12 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
     debugs(17, 3, HERE << serverConnection() << ": '" << entry->url() << "'" );
 
     /* Our code */
+#ifdef USE_OPTIMACK
     if(USE_OPTIMACK){
         std::cout << "ConnOpen:" << conn << std::endl;
         conn->setOptimack();
     }
+#endif
     /* end */ 
 
 

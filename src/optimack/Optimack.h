@@ -31,7 +31,7 @@ class TLS_Record_Number_Seq_Map;
 // #include <bits/stdc++.h>
 // using namespace std;
 
-#define USE_OPTIMACK 1
+// #define USE_OPTIMACK 0
 
 
 class Optimack;

@@ -36,7 +36,9 @@ Comm::Connection::Connection() :
     tlsHistory(nullptr)
 {
     *rfc931 = 0; // quick init the head. the rest does not matter.
+#ifdef USE_OPTIMACK
     optimack_server = nullptr;
+#endif
 }
 
 static int64_t lost_conn = 0;
@@ -60,6 +62,7 @@ Comm::Connection::~Connection()
     // }
 }
 
+#ifdef USE_OPTIMACK
 void Comm::Connection::setOptimack(){
     // optimack_server = new Optimack();
     if (optimack_server){
@@ -74,7 +77,7 @@ void Comm::Connection::setOptimack(){
         optimack_server->set_main_subconn(remote_ip, local_ip, remote.port(), local.port(), fd);
     }
 }
-
+#endif
 
 
 Comm::ConnectionPointer

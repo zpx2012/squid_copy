@@ -1339,7 +1339,7 @@ Optimack::cleanup()
     if(cleaned_up)
         return;
 
-    printf("S%d: enter cleanup. Closed.\n", squid_port);
+    // printf("S%d: enter cleanup. Closed.\n", squid_port);
     // log_info("S%d: enter cleanup", squid_port);
     cleaned_up = true;
     
@@ -1418,7 +1418,7 @@ Optimack::cleanup()
 
     // delete pool;
     if(pool){
-        printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
+        // printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
         pool->shutdown();
         // pool->destroy();
         pool->stop();
@@ -1492,7 +1492,7 @@ Optimack::cleanup()
     }
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    printf("S%d: cleanup finished\n", squid_port);
+    // printf("S%d: cleanup finished\n", squid_port);
 }
 
 void Optimack::remove_iptables_rules(){
@@ -1541,7 +1541,7 @@ Optimack::Optimack()
 
 Optimack::~Optimack()
 {
-    printf("S%d: enter destructor. Closed.\n", squid_port);
+    // printf("S%d: enter destructor. Closed.\n", squid_port);
     // log_info("S%d:enter destructor", squid_port);
 
     // stop nfq_loop thread
@@ -1567,7 +1567,7 @@ Optimack::~Optimack()
     // fclose(seq_gaps_file);
     // fclose(seq_gaps_count_file);
     // exit(2);
-    printf("S%d: ~Optimack completed.\n", squid_port);
+    // printf("S%d: ~Optimack completed.\n", squid_port);
 }
 
 void
