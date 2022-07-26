@@ -2264,38 +2264,42 @@ HttpStateData::sendRequest()
     buildRequestPrefix(&mb);
 
     /* Our code */
-    printf("http.cc sendRequest URI: %s\n", request->url.path().toStdString().c_str());
-    printf("Request:\n%s\n", mb.content());
+#ifdef USE_OPTIMACK
+    if(USE_OPTIMACK){
+        printf("http.cc sendRequest URI: %s\n", request->url.path().toStdString().c_str());
+        printf("Request:\n%s\n", mb.content());
 
-    if(serverConnection->optimack_server){
-        bool static_object = is_static_object(std::string(mb.content()));
-        if(!static_object || serverConnection->optimack_server->iptables_rules.empty()){
-            printf("Not static or already cleanup\n");
-            serverConnection->optimack_server->remove_iptables_rules();
-            // serverConnection->optimack_server->cleaned_up = true;
-        }
-        // if(!static_object || serverConnection->optimack_server->cleaned_up){
-        //     printf("Not static or already cleanup\n");
-        //     if(!serverConnection->optimack_server->cleaned_up)
-        //         serverConnection->optimack_server->cleanup();
-        // }
-        else{
+        if(serverConnection->optimack_server){
+            // bool use_whitelist = false;
+            // if(use_whitelist){
+            // bool static_object = is_static_object(std::string(mb.content()));
+            // if(!static_object || serverConnection->optimack_server->iptables_rules.empty()){
+            //     printf("Not static or already cleanup\n");
+            //     serverConnection->optimack_server->remove_iptables_rules();
+            //     // serverConnection->optimack_server->cleaned_up = true;
+            // }
+            // // if(!static_object || serverConnection->optimack_server->cleaned_up){
+            // //     printf("Not static or already cleanup\n");
+            // //     if(!serverConnection->optimack_server->cleaned_up)
+            // //         serverConnection->optimack_server->cleanup();
+            // // }
+            // else{
 #ifdef USE_OPENSSL
-            SSL* ssl = fd_table[serverConnection->fd].ssl.get();
-            if(ssl){
-                if(USE_OPTIMACK){
+                SSL* ssl = fd_table[serverConnection->fd].ssl.get();
+                if(ssl){
                     serverConnection->optimack_server->set_main_subconn_ssl(ssl);
+                    printf("https use sendRequest too\n");
+                    printf("ssl:%p\n", ssl);
+                    // printf("Request:\n%s\n", mb.content());
                 }
-                printf("https use sendRequest too\n");
-                printf("ssl:%p\n", ssl);
-                // printf("Request:\n%s\n", mb.content());
-            }
 #endif
-            if(USE_OPTIMACK)
-                    serverConnection->optimack_server->send_request(mb.content(), mb.contentSize());
-            /* end */
+                serverConnection->optimack_server->send_request(mb.content(), mb.contentSize());
+                /* end */
+            // }
         }
     }
+#endif
+
     Comm::Write(serverConnection, &mb, requestSender);
 
     return true;
