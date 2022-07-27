@@ -307,7 +307,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
             #domain = "www.ted.com"
             print("Test: Normal " + domain)
             err = test_normal(normal_driver, domain, out_dir, outfile)
-            if err != 'TIMEOUT':
+            if err != 'TIMEOUT' and err != 'Success':
                 print("Restart squid_driver")
                 normal_driver.quit()
                 normal_driver = open_normal_webdriver()
@@ -317,7 +317,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
 
             print("Test: Squid " + domain)
             err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid")
-            if err != 'TIMEOUT':
+            if err != 'TIMEOUT' and err != 'Success':
                 print("Restart squid_driver")
                 squid_driver.quit()
                 squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
@@ -325,7 +325,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
             
             print("Test: Proxy " + domain)
             err = test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy")
-            if err != 'TIMEOUT':
+            if err != 'TIMEOUT' and err != 'Success':
                 print("Restart proxy_driver")
                 proxy_driver.quit()
                 proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
