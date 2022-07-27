@@ -76,24 +76,24 @@ def open_proxy_webdriver(proxy_addr, http_port, https_port):
     opts = webdriver.FirefoxOptions()
     opts.add_argument("--headless")
 
-    firefox_capabilities = webdriver.DesiredCapabilities.FIREFOX
-    firefox_capabilities['marionette'] = True
+    # firefox_capabilities = webdriver.DesiredCapabilities.FIREFOX
+    # firefox_capabilities['marionette'] = True
 
 
-    firefox_capabilities['proxy'] = {
-        "proxyType": "MANUAL",
-        "httpProxy": "127.0.0.1:3128",
-        # "ftpProxy": "127.0.0.1:3129",
-        "sslProxy": "127.0.0.1:3129"
-    }
+    # firefox_capabilities['proxy'] = {
+    #     "proxyType": "MANUAL",
+    #     "httpProxy": "127.0.0.1:3128",
+    #     # "ftpProxy": "127.0.0.1:3129",
+    #     "sslProxy": "127.0.0.1:3129"
+    # }
 
-    proxy =  Proxy({
-                'proxyType': ProxyType.MANUAL,
-                'httpProxy': "127.0.0.1:3128",
-                #'ftpProxy': myProxy,
-                'sslProxy':  "127.0.0.1:3129",
-                #'noProxy': '' # set this value as desired
-            })
+    # proxy =  Proxy({
+    #             'proxyType': ProxyType.MANUAL,
+    #             'httpProxy': "127.0.0.1:3128",
+    #             #'ftpProxy': myProxy,
+    #             'sslProxy':  "127.0.0.1:3129",
+    #             #'noProxy': '' # set this value as desired
+    #         })
 
     profile = webdriver.FirefoxProfile()
     profile.set_preference("browser.cache.disk.enable", False)
