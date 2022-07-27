@@ -184,7 +184,7 @@ def test_normal(normal_driver, domain, out_dir, outfile):
     if timing:
         output += list(map(str,timing.values()))
         outfile.writelines(','.join(output) + "\n")  
-    return normal_driver
+    return err
 
 def killall_process(process_name):
     for proc in psutil.process_iter():
@@ -308,11 +308,9 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
             print("Test: Normal " + domain)
             err = test_normal(normal_driver, domain, out_dir, outfile)
             if err != 'TIMEOUT' and err != 'Success':
-                print("Restart squid_driver")
+                print("Restart normal_driver")
                 normal_driver.quit()
                 normal_driver = open_normal_webdriver()
-            time.sleep(10)
-
             time.sleep(10)
 
             print("Test: Squid " + domain)
