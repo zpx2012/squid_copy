@@ -49,13 +49,14 @@ def open_normal_webdriver():
     opts.add_argument("--headless")
 
     profile = webdriver.FirefoxProfile()
+    profile.set_preference("browser.privatebrowsing.autostart", True)
     profile.set_preference("browser.cache.disk.enable", False)
     profile.set_preference("browser.cache.memory.enable", False)
     profile.set_preference("browser.cache.offline.enable", False)
     profile.set_preference("network.http.use-cache", False)
     
     driver = webdriver.Firefox(options=opts, firefox_profile=profile)
-    driver.set_page_load_timeout(90)
+    driver.set_page_load_timeout(300)
     return driver
 
 def open_normal_webdriver_chrome(domain):
@@ -96,6 +97,7 @@ def open_proxy_webdriver(proxy_addr, http_port, https_port):
     #         })
 
     profile = webdriver.FirefoxProfile()
+    profile.set_preference("browser.privatebrowsing.autostart", True)
     profile.set_preference("browser.cache.disk.enable", False)
     profile.set_preference("browser.cache.memory.enable", False)
     profile.set_preference("browser.cache.offline.enable", False)
@@ -109,7 +111,7 @@ def open_proxy_webdriver(proxy_addr, http_port, https_port):
 
     profile.update_preferences()    
     driver = webdriver.Firefox(options=opts, firefox_profile=profile) # capabilities=firefox_capabilities)
-    driver.set_page_load_timeout(200)
+    driver.set_page_load_timeout(300)
     return driver
 
 
@@ -260,6 +262,9 @@ def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label):
                 # os.system("sudo rm " + tcpdump_outfile)        
                 break
             else:
+                if err == 'TIMEOUT':
+                    output += ['300', '300', '300']
+                    outfile.writelines(','.join(output) + "\n")  
                 print("Proxy: failed, " + err)
                 if err == 'UNKNOWN_ERROR' or count == 19:
                     with open(out_dir + "failed.txt", "a") as failf:
@@ -307,6 +312,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
             #domain = "www.ted.com"
             print("Test: Normal " + domain)
             err = test_normal(normal_driver, domain, out_dir, outfile)
+            print(normal_driver.window_handles)
             if err != 'TIMEOUT' and err != 'Success':
                 print("Restart normal_driver")
                 normal_driver.quit()
@@ -323,6 +329,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
             
             print("Test: Proxy " + domain)
             err = test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy")
+            print(proxy_driver.window_handles)
             if err != 'TIMEOUT' and err != 'Success':
                 print("Restart proxy_driver")
                 proxy_driver.quit()
