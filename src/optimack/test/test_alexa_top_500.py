@@ -317,7 +317,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
                 print("Restart normal_driver")
                 normal_driver.quit()
                 normal_driver = open_normal_webdriver()
-            time.sleep(10)
+            time.sleep(5)
 
             print("Test: Proxy " + domain)
             err = test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy")
@@ -326,7 +326,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
                 print("Restart proxy_driver")
                 proxy_driver.quit()
                 proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
-            time.sleep(10)
+            time.sleep(5)
 
             print("Test: Squid " + domain)
             err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid")
@@ -334,7 +334,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
                 print("Restart squid_driver")
                 squid_driver.quit()
                 squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
-            time.sleep(10)            
+            time.sleep(5)            
             print("\n")
 
         # normal_driver.close()
