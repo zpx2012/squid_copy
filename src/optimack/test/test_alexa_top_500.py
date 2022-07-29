@@ -10,6 +10,7 @@ import time, traceback, subprocess as sp, re, shlex, os, psutil, signal, socket
 
 
 def get_onload_time(driver, domain):
+    timing = []
     try:
         url = 'https://' + domain
         driver.get(url)
