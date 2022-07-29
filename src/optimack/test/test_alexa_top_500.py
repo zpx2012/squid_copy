@@ -6,7 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 from selenium.common.exceptions import TimeoutException, WebDriverException
-import time, traceback, subprocess as sp, re, shlex, os, psutil, signal
+import time, traceback, subprocess as sp, re, shlex, os, psutil, signal, socket
 
 
 def get_onload_time(driver, domain):
@@ -34,15 +34,15 @@ def get_onload_time(driver, domain):
         return timing, 'Success'
     except TimeoutException as ex:
         print("driver.get timeout")
-        return None, 'TIMEOUT'
+        return timing, 'TIMEOUT'
     
     except WebDriverException as ex:
         print('%s' % traceback.format_exc())
-        return None, 'PROXY_CONNECTION_FAILED'
+        return timing, 'PROXY_CONNECTION_FAILED'
 
     except:
         print('%s' % traceback.format_exc())
-        return None, 'UNKNOWN_ERROR'
+        return timing, 'UNKNOWN_ERROR'
 
 def open_normal_webdriver():
     opts = webdriver.FirefoxOptions()
@@ -263,7 +263,7 @@ def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label):
                 break
             else:
                 if err == 'TIMEOUT':
-                    output += ['300', '300', '300']
+                    output += ['300000', '300000', '300000']
                     outfile.writelines(','.join(output) + "\n")  
                 print("Proxy: failed, " + err)
                 if err == 'UNKNOWN_ERROR' or count == 19:
@@ -292,7 +292,7 @@ squid_path = home_dir + "squid_only/sbin/squid"
 # test_proxy("www.baidu.com")
 # test_normal("www.baidu.com")
 # os._exit(0)
-with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % time.strftime("%Y-%m-%dT%H:%M:%S"), "w") as outfile:
+with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthreads_%sconns.txt" % (time.strftime("%Y-%m-%dT%H:%M:%S"), socket.gethostname(), sys.argv[2], sys.argv[3]), "w") as outfile:
     # test_proxy(domain, out_dir, outfile)
     # test_proxy("www.twitch.tv", out_dir, outfile)
     # test_normal("www.ebay.com", out_dir, outfile)
@@ -319,14 +319,6 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
                 normal_driver = open_normal_webdriver()
             time.sleep(10)
 
-            print("Test: Squid " + domain)
-            err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid")
-            if err != 'TIMEOUT' and err != 'Success':
-                print("Restart squid_driver")
-                squid_driver.quit()
-                squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
-            time.sleep(10)
-            
             print("Test: Proxy " + domain)
             err = test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy")
             print(proxy_driver.window_handles)
@@ -335,6 +327,14 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s.txt" % t
                 proxy_driver.quit()
                 proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
             time.sleep(10)
+
+            print("Test: Squid " + domain)
+            err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid")
+            if err != 'TIMEOUT' and err != 'Success':
+                print("Restart squid_driver")
+                squid_driver.quit()
+                squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
+            time.sleep(10)            
             print("\n")
 
         # normal_driver.close()
