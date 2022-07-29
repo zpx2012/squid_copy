@@ -1525,7 +1525,7 @@ Optimack::Optimack()
     subconn_infos.clear();
     
     // pool = thr_pool_create(1, 1, 300, NULL);
-    pool = new boost::asio::thread_pool(6);
+    pool = new boost::asio::thread_pool(4);
     if (!pool) {
         printf("couldn't create thr_pool");
         return;             
