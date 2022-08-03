@@ -728,7 +728,7 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     int content_len_field_len = strlen(content_len_field);
     char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
     p_content_len += content_len_field_len;
-    file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
+    file_size = get_content_length((char*)payload, payload_len);
     if(file_size){
         if(is_ssl){
 #ifdef USE_OPENSSL
@@ -747,3 +747,11 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     return 0;
 }
 
+int get_content_length(const char* payload, int payload_len){
+    const char* content_len_field = "Content-Length: ";
+    int content_len_field_len = strlen(content_len_field);
+    const char* p_content_len = std::search(payload, payload+payload_len, content_len_field, content_len_field+content_len_field_len);
+    p_content_len += content_len_field_len;
+    int file_size = (u_int)std::stol(p_content_len);
+    return file_size;
+}

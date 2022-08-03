@@ -718,6 +718,9 @@ HttpStateData::processReplyHeader()
         }
     }
 
+    printf("csv, %d, response, %f, %s, %s, %d\n", serverConnection->local.port(), get_current_epoch_time_nanosecond(), request->url.path().toStdString().c_str(), request->url.host(),  get_content_length(hp->mimeHeader().c_str(), hp->mimeHeader().length()));
+    printf("Response: URI: %s\n%s\n", request->url.path().toStdString().c_str(), hp->mimeHeader().c_str());
+    
     /* We know the whole response is in parser now */
     debugs(11, 2, "HTTP Server " << serverConnection);
     debugs(11, 2, "HTTP Server RESPONSE:\n---------\n" <<
@@ -2263,12 +2266,13 @@ HttpStateData::sendRequest()
     request->peer_host=_peer?_peer->host:NULL;
     buildRequestPrefix(&mb);
 
+    printf("csv, %d, request, %f, %s, %s\n", serverConnection->local.port(), get_current_epoch_time_nanosecond(), request->url.path().toStdString().c_str(), request->url.host());
+    printf("http.cc sendRequest URI: %s\n", request->url.path().toStdString().c_str());
+    printf("Request:\n%s\n", mb.content());
+
     /* Our code */
 #ifdef USE_OPTIMACK
     if(USE_OPTIMACK){
-        printf("http.cc sendRequest URI: %s\n", request->url.path().toStdString().c_str());
-        printf("Request:\n%s\n", mb.content());
-
         if(serverConnection->optimack_server){
             // bool use_whitelist = false;
             // if(use_whitelist){

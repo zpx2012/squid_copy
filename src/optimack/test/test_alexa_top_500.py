@@ -15,9 +15,6 @@ def get_onload_time(driver, domain):
         url = 'https://' + domain
         driver.get(url)
 
-        with open(out_dir+domain+".html", 'w') as douf:
-            douf.writelines(driver.page_source)
-
         timing = driver.execute_script("return window.performance.timing")
         navigationStart = driver.execute_script("return window.performance.timing.navigationStart")
         responseStart = driver.execute_script("return window.performance.timing.responseStart")
@@ -170,12 +167,16 @@ def stop_squid(squid_path):
 
 def start_tcpdump(domain, outfile):
     print("Starting tcpdump...")
-    p = sp.Popen(["sudo", "tcpdump", "-i", "any", "-w", outfile, "tcp port 80"])
+    p = sp.Popen(["sudo", "tcpdump", "-i", "any", "-w", outfile, "tcp"])
     return p
 
 def stop_tcpdump(p):
-    print("Stopping tcpdump...")
-    os.system("sudo kill %d" % p.pid)
+    if p:
+        print("Stopping tcpdump...")
+        p.terminate()
+        p.kill()
+        os.system("sudo kill -9 %d" % p.pid)
+        os.system("sudo killall tcpdump")
 
 
 def test_normal(normal_driver, domain, out_dir, outfile):
@@ -211,7 +212,7 @@ def killall_process(process_name):
 
 def cleanup(tcpdump_p, squid_p, proxy_driver):
     # print("enter cleanup")
-    # stop_tcpdump(tcpdump_p)
+    stop_tcpdump(tcpdump_p)
     if squid_p:
         # for line in squid_p.stdout:
         #     print(line)
@@ -229,26 +230,25 @@ def cleanup(tcpdump_p, squid_p, proxy_driver):
     time.sleep(2)
 
 
-def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label):
+def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label, start_time):
 
     try:
         count = 0
         while(count < 1):
-            start_time = time.strftime("%Y%m%d%H%M%S")
 
-            # tcpdump_outfile = out_dir + "pktdump_%s.pcap.%s" % (domain, start_time)
-            # tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
-            squid_p = 0
+            tcpdump_p, squid_p = 0, 0
+            tcpdump_outfile = out_dir + "/pktdump_%s_%s_%s.pcap" % (start_time, domain.replace('/', ''), label)
+            tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
             # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
             squid_p = sp.Popen([squid_path, "-N"], stdout=sp.PIPE, encoding='utf8')
             time.sleep(5)
 
             # proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
             timing, err = get_onload_time(proxy_driver, domain)
-            cleanup(0, squid_p, proxy_driver)
+            cleanup(tcpdump_p, squid_p, proxy_driver)
 
             line_count = 0
-            squid_out = open(home_dir + "/rs/squid_output_%s_%s.log" % (domain, time.strftime("%Y%m%d%H%M%S")), "w")
+            squid_out = open(out_dir + "/squid_output_%s_%s_%s.log" % (start_time, domain.replace('/', ''), label), "w")
             if squid_p:
                 for line in squid_p.stdout:
                     squid_out.write(line)
@@ -258,12 +258,15 @@ def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label):
             output = [domain, label, time.strftime("%Y-%m-%d %H:%M:%S"), err]
             if timing:
                 output += list(map(str,timing.values()))
-                outfile.writelines(','.join(output) + "\n")  
+                outfile.writelines(','.join(output) + "\n")
                 # print("Proxy: " + str(timing))
-                # os.system("sudo rm " + tcpdump_outfile)        
+                # os.system("sudo rm " + tcpdump_outfile)
+                with open(out_dir+ "/pagesrc_%s_%s_%s.html" % (start_time, domain.replace('/',''), label), 'w') as douf:
+                    douf.writelines(proxy_driver.page_source)        
                 break
             else:
                 if err == 'TIMEOUT':
+                    output += [''] * 21
                     output += ['300000', '300000', '300000']
                     outfile.writelines(','.join(output) + "\n")  
                 print("Proxy: failed, " + err)
@@ -307,22 +310,24 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
         squid_driver = open_proxy_webdriver("127.0.0.1:3130", 3130, 3131)
         # get_onload_time(squid_driver, 'www.ted.com')
         proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
+        time.sleep(5)
 
         for line_num, line in enumerate(domains):
+            start_time = time.strftime("%Y%m%d%H%M%S")
             domain = line.strip().split(",")[0]
             #domain = "www.ted.com"
-            print("Test: Normal " + domain)
-            err = test_normal(normal_driver, domain, out_dir, outfile)
-            print(normal_driver.window_handles)
-            if err != 'TIMEOUT' and err != 'Success':
-                print("Restart normal_driver")
-                normal_driver.quit()
-                normal_driver = open_normal_webdriver()
-            time.sleep(5)
+            # print("Test: Normal " + domain)
+            # err = test_normal(normal_driver, domain, out_dir, outfile)
+            # print(normal_driver.window_handles)
+            # if err != 'TIMEOUT' and err != 'Success':
+            #     print("Restart normal_driver")
+            #     normal_driver.quit()
+            #     normal_driver = open_normal_webdriver()
+            # time.sleep(5)
 
             print("Test: Proxy " + domain)
-            err = test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy")
-            print(proxy_driver.window_handles)
+            err = test_proxy(proxy_driver, domain, out_dir, outfile, proxy_path, "Proxy", start_time)
+            # print(proxy_driver.window_handles)
             if err != 'TIMEOUT' and err != 'Success':
                 print("Restart proxy_driver")
                 proxy_driver.quit()
@@ -330,7 +335,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
             time.sleep(5)
 
             print("Test: Squid " + domain)
-            err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid")
+            err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid", start_time)
             if err != 'TIMEOUT' and err != 'Success':
                 print("Restart squid_driver")
                 squid_driver.quit()

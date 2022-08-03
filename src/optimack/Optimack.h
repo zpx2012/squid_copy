@@ -31,7 +31,7 @@ class TLS_Record_Number_Seq_Map;
 // #include <bits/stdc++.h>
 // using namespace std;
 
-#define USE_OPTIMACK 1
+//#define USE_OPTIMACK 1
 
 
 class Optimack;
@@ -376,5 +376,7 @@ std::vector<std::string> split(const std::string &s, char delim);
 bool is_static_object(std::string request);
 
 void check_and_free_shared(std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy);
+
+int get_content_length(const char* payload, int payload_len);
 
 #endif

@@ -39,7 +39,7 @@ using namespace std;
 
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 3
+#define CONN_NUM 8
 #endif
 
 #ifndef ACKPACING
