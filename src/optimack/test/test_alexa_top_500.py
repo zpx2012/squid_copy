@@ -8,6 +8,133 @@ from selenium.webdriver.common.proxy import Proxy, ProxyType
 from selenium.common.exceptions import TimeoutException, WebDriverException
 import time, traceback, subprocess as sp, re, shlex, os, psutil, signal, socket
 
+errpage_partial = '''
+<html><head>
+<meta type="copyright" content="Copyright (C) 1996-2020 The Squid Software Foundation and contributors">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>ERROR: The requested URL could not be retrieved</title>
+<style type="text/css"><!-- 
+ /*
+ * Copyright (C) 1996-2020 The Squid Software Foundation and contributors
+ *
+ * Squid software is distributed under GPLv2+ license and includes
+ * contributions from numerous individuals and organizations.
+ * Please see the COPYING and CONTRIBUTORS files for details.
+ */
+
+/*
+ Stylesheet for Squid Error pages
+ Adapted from design by Free CSS Templates
+ http://www.freecsstemplates.org
+ Released for free under a Creative Commons Attribution 2.5 License
+*/
+
+/* Page basics */
+* {
+	font-family: verdana, sans-serif;
+}
+
+html body {
+	margin: 0;
+	padding: 0;
+	background: #efefef;
+	font-size: 12px;
+	color: #1e1e1e;
+}
+
+/* Page displayed title area */
+#titles {
+	margin-left: 15px;
+	padding: 10px;
+	padding-left: 100px;
+	background: url('/squid-internal-static/icons/SN.png') no-repeat left;
+}
+
+/* initial title */
+#titles h1 {
+	color: #000000;
+}
+#titles h2 {
+	color: #000000;
+}
+
+/* special event: FTP success page titles */
+#titles ftpsuccess {
+	background-color:#00ff00;
+	width:100%;
+}
+
+/* Page displayed body content area */
+#content {
+	padding: 10px;
+	background: #ffffff;
+}
+
+/* General text */
+p {
+}
+
+/* error brief description */
+#error p {
+}
+
+/* some data which may have caused the problem */
+#data {
+}
+
+/* the error message received from the system or other software */
+#sysmsg {
+}
+
+pre {
+}
+
+/* special event: FTP / Gopher directory listing */
+#dirmsg {
+    font-family: courier, monospace;
+    color: black;
+    font-size: 10pt;
+}
+#dirlisting {
+    margin-left: 2%;
+    margin-right: 2%;
+}
+#dirlisting tr.entry td.icon,td.filename,td.size,td.date {
+    border-bottom: groove;
+}
+#dirlisting td.size {
+    width: 50px;
+    text-align: right;
+    padding-right: 5px;
+}
+
+/* horizontal lines */
+hr {
+	margin: 0;
+}
+
+/* page displayed footer area */
+#footer {
+	font-size: 9px;
+	padding-left: 10px;
+}
+
+
+body
+:lang(fa) { direction: rtl; font-size: 100%; font-family: Tahoma, Roya, sans-serif; float: right; }
+:lang(he) { direction: rtl; }
+ --></style>
+</head><body id="ERR_READ_ERROR">
+<div id="titles">
+<h1>ERROR</h1>
+<h2>The requested URL could not be retrieved</h2>
+</div>
+<hr>
+
+<div id="content">
+<p>The following error was encountered while trying to retrieve the URL: <a href=
+'''
+
 
 def get_onload_time(driver, domain):
     timing = []
@@ -29,6 +156,8 @@ def get_onload_time(driver, domain):
         print("OnLoad: %fms" % (loadEventEnd - navigationStart))
         # print(timing.keys())
         # driver.close()
+        if '<title>ERROR: The requested URL could not be retrieved</title>' in driver.page_source:
+            return timing, 'ERR SQUID'
         return timing, 'Success'
     except TimeoutException as ex:
         print("driver.get timeout")
@@ -235,25 +364,33 @@ def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label, start_
     try:
         count = 0
         while(count < 1):
-
+            tag = '_'.join([domain.replace('/', ''), start_time, label])
             tcpdump_p, squid_p = 0, 0
-            tcpdump_outfile = out_dir + "/pktdump_%s_%s_%s.pcap" % (start_time, domain.replace('/', ''), label)
+            tcpdump_outfile = out_dir + "/pktdump_%s.pcap" % tag
             tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
             # squid_p = sp.Popen(shlex.split(squid_path+" -N"), encoding='utf8', stdout=sp.PIPE)
-            squid_p = sp.Popen([squid_path, "-N"], stdout=sp.PIPE, encoding='utf8')
+            squid_p = sp.Popen([squid_path, "-N"], stdout=sp.PIPE, stderr=sp.PIPE, encoding='utf8') # 
             time.sleep(5)
 
             # proxy_driver = open_proxy_webdriver(domain, "127.0.0.1:3128")
             timing, err = get_onload_time(proxy_driver, domain)
+            print(err)
+            time.sleep(5)
             cleanup(tcpdump_p, squid_p, proxy_driver)
 
-            line_count = 0
-            squid_out = open(out_dir + "/squid_output_%s_%s_%s.log" % (start_time, domain.replace('/', ''), label), "w")
             if squid_p:
+                squid_out = open(out_dir + "/squid_output_%s.log" % tag, "w")
+                line_count = 0
                 for line in squid_p.stdout:
                     squid_out.write(line)
                     line_count += 1
                 print("squid_out line count: %d" % line_count)
+                squid_err = open(out_dir + "/responsetime_%s.csv" % tag, "w")
+                line_count = 0
+                for line in squid_p.stderr:
+                    squid_err.write(line)
+                    line_count += 1
+                print("squid_err line count: %d" % line_count)
 
             output = [domain, label, time.strftime("%Y-%m-%d %H:%M:%S"), err]
             if timing:
@@ -261,7 +398,7 @@ def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label, start_
                 outfile.writelines(','.join(output) + "\n")
                 # print("Proxy: " + str(timing))
                 # os.system("sudo rm " + tcpdump_outfile)
-                with open(out_dir+ "/pagesrc_%s_%s_%s.html" % (start_time, domain.replace('/',''), label), 'w') as douf:
+                with open(out_dir+ "/pagesrc_%s.html" % tag, 'w') as douf:
                     douf.writelines(proxy_driver.page_source)        
                 break
             else:
@@ -288,7 +425,7 @@ def test_proxy(proxy_driver, domain, out_dir, outfile, squid_path, label, start_
 timing_keys = ['domain', 'mode', 'timestamp', 'ErrorCode', 'connectEnd', 'connectStart', 'domComplete', 'domContentLoadedEventEnd', 'domContentLoadedEventStart', 'domInteractive', 'domLoading', 'domainLookupEnd', 'domainLookupStart', 'fetchStart', 'loadEventEnd', 'loadEventStart', 'navigationStart', 'redirectEnd', 'redirectStart', 'requestStart', 'responseEnd', 'responseStart', 'secureConnectionStart', 'unloadEventEnd', 'unloadEventStart', 'backendTime', 'domContentLoadedTime', 'onLoadTime']
 
 home_dir = os.path.expanduser("~") + "/"
-out_dir = home_dir + "rs/browser/"
+out_dir = home_dir + "rs/browser/" + time.strftime("%Y-%m-%d") + "/"
 os.system("sudo mkdir -p "  + out_dir)
 proxy_path = home_dir + "squid/sbin/squid"
 squid_path = home_dir + "squid_only/sbin/squid"
@@ -318,7 +455,7 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
             #domain = "www.ted.com"
             # print("Test: Normal " + domain)
             # err = test_normal(normal_driver, domain, out_dir, outfile)
-            # print(normal_driver.window_handles)
+            # # print(normal_driver.window_handles)
             # if err != 'TIMEOUT' and err != 'Success':
             #     print("Restart normal_driver")
             #     normal_driver.quit()
@@ -334,14 +471,14 @@ with open(sys.argv[1], "r") as infile, open(out_dir + "browser_alexa_%s_%s_%sthr
                 proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
             time.sleep(5)
 
-            print("Test: Squid " + domain)
-            err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid", start_time)
-            if err != 'TIMEOUT' and err != 'Success':
-                print("Restart squid_driver")
-                squid_driver.quit()
-                squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
-            time.sleep(5)            
-            print("\n")
+            # print("Test: Squid " + domain)
+            # err = test_proxy(squid_driver, domain, out_dir, outfile, squid_path, "Squid", start_time)
+            # if err != 'TIMEOUT' and err != 'Success':
+            #     print("Restart squid_driver")
+            #     squid_driver.quit()
+            #     squid_driver = open_proxy_webdriver("127.0.0.1:3128", 3130, 3131)
+            # time.sleep(5)            
+            # print("\n")
 
         # normal_driver.close()
         normal_driver.quit()
