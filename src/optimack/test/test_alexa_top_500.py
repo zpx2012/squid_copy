@@ -295,13 +295,13 @@ def stop_squid(squid_path):
     # exec(squid_path + " -k kill")
 
 def start_tcpdump(domain, outfile):
-    print("Starting tcpdump...")
+    # print("Starting tcpdump...")
     p = sp.Popen(["sudo", "tcpdump", "-i", "any", "-w", outfile, "tcp"])
     return p
 
 def stop_tcpdump(p):
     if p:
-        print("Stopping tcpdump...")
+        # print("Stopping tcpdump...")
         p.terminate()
         p.kill()
         os.system("sudo kill -9 %d" % p.pid)
