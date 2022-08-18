@@ -724,10 +724,12 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     memcpy(response, payload, response_header_len);
     response[response_header_len] = 0;
 
-    const char* content_len_field = "Content-Length: ";
-    int content_len_field_len = strlen(content_len_field);
-    char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
-    p_content_len += content_len_field_len;
+    // const char* content_len_field = "Content-Length: ";
+    // char* payload_end = (char*)payload + payload_len;
+    // int content_len_field_len = strlen(content_len_field);
+    // char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
+    
+    // p_content_len += content_len_field_len;
     file_size = get_content_length((char*)payload, payload_len);
     if(file_size){
         if(is_ssl){
@@ -748,10 +750,14 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
 }
 
 int get_content_length(const char* payload, int payload_len){
-    const char* content_len_field = "Content-Length: ";
-    int content_len_field_len = strlen(content_len_field);
-    const char* p_content_len = std::search(payload, payload+payload_len, content_len_field, content_len_field+content_len_field_len);
-    p_content_len += content_len_field_len;
-    int file_size = (u_int)std::stol(p_content_len);
-    return file_size;
+    const char* contentlen_field = "Content-Length: ";
+    const char* payload_end = payload + payload_len;
+    int contentlen_field_len = strlen(contentlen_field);
+    const char* p_contentlen = std::search(payload, payload+payload_len, contentlen_field, contentlen_field+contentlen_field_len);
+    if(p_contentlen < payload_end){
+        p_contentlen += contentlen_field_len;
+        int file_size = (u_int)std::stol(p_contentlen);
+        return file_size;
+    }
+    return -1;
 }

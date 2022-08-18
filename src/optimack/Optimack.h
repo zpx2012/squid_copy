@@ -31,7 +31,7 @@ class TLS_Record_Number_Seq_Map;
 // #include <bits/stdc++.h>
 // using namespace std;
 
-//#define USE_OPTIMACK 1
+#define USE_OPTIMACK 1
 
 
 class Optimack;
@@ -134,6 +134,7 @@ public:
     std::shared_ptr<Optimack> getptr(){
         return shared_from_this();
     }
+
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
@@ -154,6 +155,7 @@ public:
     int g_nfq_fd;
     int nfq_stop, overrun_stop, cb_stop, optim_ack_stop;
     pthread_t nfq_thread, overrun_thread, optim_ack_thread;
+    std::thread open_conns, open_ssl_thread, recv_ssl_thread;
 
     bool is_nfq_full(FILE* out_file);
     void print_ss(FILE* out_file);
@@ -251,8 +253,8 @@ public:
     const int MARK = 666;
     int nfq_queue_num;
     
-    boost::asio::thread_pool* pool;
-    // thr_pool_t* pool;
+    boost::asio::thread_pool* boost_pool;
+    thr_pool_t* oracle_pool;
 
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
@@ -305,7 +307,7 @@ public:
     void we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_lis);
     void we2squid_loss_and_insert(uint start, uint end);
     uint get_min_next_seq_rem();
-    pthread_t range_thread;
+    std::thread range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
     IntervalListWithTime ranges_sent;

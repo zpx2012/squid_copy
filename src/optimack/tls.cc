@@ -1070,6 +1070,8 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
     //      record_end_seq = record_start_seq + record_full_size - 1; 
 
     // printf("S%d-%d: Partial: record_start_seq %u, seq+payload_len-1 %u\n", subconn->id, subconn->local_port, record_start_seq, seq+payload_len+1);
+    u_char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
+    u_char plaintext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
     uint record_start_seq = 0, record_end_seq = 0;
     int record_full_size = 0;
     int record_num = 0;
@@ -1119,15 +1121,17 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
             continue;
         }
 
-        u_char *ciphertext = new u_char[record_full_size+1],
-               *plaintext = new u_char[plaintext_full_size+1];
-        if(!ciphertext || !plaintext){
-            printf("S%d-%d: Partial: No.%d, new ciphertext(%d) or plaintext(%d) failed.\n", 
-            subconn->id, subconn->local_port, record_num, record_full_size, plaintext_full_size);
-            continue;
-        }
-        memset(ciphertext, 0, record_full_size + 1);
-        memset(plaintext, 0, plaintext_full_size + 1);
+        // u_char *ciphertext = new u_char[record_full_size+1],
+        //        *plaintext = new u_char[plaintext_full_size+1];
+        // if(!ciphertext || !plaintext){
+        //     printf("S%d-%d: Partial: No.%d, new ciphertext(%d) or plaintext(%d) failed.\n", 
+        //     subconn->id, subconn->local_port, record_num, record_full_size, plaintext_full_size);
+        //     continue;
+        // }
+        memset(ciphertext, 0, MAX_FULL_GCM_RECORD_LEN+1);
+        memset(plaintext, 0, MAX_FULL_GCM_RECORD_LEN+1);
+        // memset(ciphertext, 0, record_full_size + 1);
+        // memset(plaintext, 0, plaintext_full_size + 1);
         memcpy(ciphertext + ciphertext_partial_start_index, payload + payload_partial_start_index, partial_len);
         int ret = subconn->crypto_coder->decrypt_record(record_num, ciphertext, record_full_size, plaintext);
         if(tls_debug > 2){
@@ -1201,13 +1205,11 @@ int Optimack::partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq
             printf("\n");
             printf("S%d-%d: Partial: seq %u, delete ciphertext %p, plaintext %p\n", subconn->id, subconn->local_port, payload_index_seq, ciphertext, plaintext);
         }
-        delete [] ciphertext;
-        delete [] plaintext;
+        // delete [] ciphertext;
+        // delete [] plaintext;
     }
     return 0;
 }
-
-
 
 
 int decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf){

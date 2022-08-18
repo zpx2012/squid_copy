@@ -87,6 +87,7 @@ const int use_optimack = 0;
 const int forward_packet = 1;
 const int log_squid_ack = 0;
 const int log_result = 0;
+const int use_boost_pool = 1;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -1343,6 +1344,9 @@ Optimack::cleanup()
     // log_info("S%d: enter cleanup", squid_port);
     cleaned_up = true;
     
+    if(open_conns.joinable())
+        open_conns.join();
+
     cb_stop = 1;
     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
     if(!nfq_stop){
@@ -1362,7 +1366,9 @@ Optimack::cleanup()
     if(!range_stop){
         range_stop++;
         ask_range_stop = true;
-        pthread_cancel(range_thread);
+        // pthread_cancel(range_thread);
+        if(range_thread.joinable())
+            range_thread.join();
         // log_info("ask overrun_thread to exit");    
         printf("ask range_watch_thread to exit\n");
     }
@@ -1417,17 +1423,22 @@ Optimack::cleanup()
     // }
 
     // delete pool;
-    if(pool){
-        // printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
-        //pool->shutdown();
-        // pool->destroy();
-        pool->stop();
-        delete pool;
-        pool = nullptr;
+    if(use_boost_pool){
+        if(boost_pool){
+            // printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
+            //pool->shutdown();
+            // pool->destroy();
+            boost_pool->stop();
+            delete boost_pool;
+            boost_pool = nullptr;
 
-        // thr_pool_destroy(pool);
-        // pool = NULL;
-        // log_info("destroy thr_pool");
+        }
+    }
+    else{
+        thr_pool_destroy(oracle_pool);
+        oracle_pool = NULL;
+        log_info("destroy thr_pool");
+
     }
 
     if(log_result)
@@ -1524,12 +1535,15 @@ Optimack::Optimack()
     optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
     subconn_infos.clear();
     
-    // pool = thr_pool_create(1, 1, 300, NULL);
-    pool = new boost::asio::thread_pool(4);
-    if (!pool) {
-        printf("couldn't create thr_pool");
-        return;             
+    if(use_boost_pool){
+        boost_pool = new boost::asio::thread_pool(4);
+        if (!boost_pool) {
+            printf("couldn't create boost thread pool\n");
+            return;             
+        }
     }
+    else
+        oracle_pool = thr_pool_create(1, 1, 300, NULL);
 
 #ifdef USE_OPENSSL
     SSL_library_init();
@@ -1567,7 +1581,7 @@ Optimack::~Optimack()
     // fclose(seq_gaps_file);
     // fclose(seq_gaps_count_file);
     // exit(2);
-    // printf("S%d: ~Optimack completed.\n", squid_port);
+    printf("S%d: ~Optimack completed.\n", squid_port);
 }
 
 void
@@ -1854,12 +1868,16 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     if(multithread == 0)
         pool_handler((void *)thr_data);
     else{
-        if(obj->pool)
-            boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
-        // if(obj->pool && thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-            // printf("cb: error during thr_pool_queue");
-            // return -1;
-        // }
+        if(use_boost_pool){
+            if(obj->boost_pool)
+                boost::asio::post(*obj->boost_pool, [thr_data]{ pool_handler((void *)thr_data); });
+        }
+        else{
+            if(obj->oracle_pool && thr_pool_queue(obj->oracle_pool, pool_handler, (void *)thr_data) < 0) {
+                printf("cb: error during thr_pool_queue");
+                return -1;
+            }
+        }
     }
     return 0;
 }
@@ -2741,7 +2759,7 @@ int Optimack::process_tcp_plaintext_packet(
                         pthread_mutex_lock(&mutex_range);
                         if(seq_rel > 1 && range_stop){
                             range_stop = 0;
-                            std::thread range(range_watch, Optimack::getptr());
+                            range_thread = std::thread(range_watch, Optimack::getptr());
                             // if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
                             //     log_error("Fail to create range_watch thread.");
                             // }
@@ -3450,7 +3468,7 @@ struct subconn_info* Optimack::create_subconn_info(int sockfd, bool is_backup){
 int Optimack::insert_subconn_info(std::map<uint, struct subconn_info*> &subconn_infos_, uint& subconn_count_, struct subconn_info* new_subconn){
     new_subconn->id = subconn_count_++;
     subconn_infos_.insert(std::pair<uint, struct subconn_info*>(new_subconn->local_port, new_subconn));
-    log_info("New connection %d established: Port %u", subconn_count-1, new_subconn->local_port);
+    printf("S%d-%d: established\n", subconn_count-1, new_subconn->local_port);
     return 0;
 }
 
@@ -3548,12 +3566,12 @@ Optimack::set_main_subconn(char* remote_ip, char* local_ip, unsigned short remot
     squid_MSS = squid_conn->payload_len;
     log_info("[Squid Conn] port: %d, win_scale %d", squid_port, squid_conn->win_scale);
 
-    std::thread open_conns(&Optimack::open_duplicate_conns, Optimack::getptr());
+    open_conns = std::thread(&Optimack::open_duplicate_conns, getptr());
     // pthread_t open_thread;
     // if (pthread_create(&open_thread, NULL, open_duplicate_conns_handler, (void*)shared_from_this()) != 0) {
     //     log_error("Fail to create open_duplicate_conns thread.");
     // }
-    printf("S%d: open_duplicate_conns thread created\n", squid_port);
+    // printf("S%d: open_duplicate_conns thread created\n", squid_port);
 }
 
 void* open_duplicate_conns_handler(void* arg){
@@ -3567,6 +3585,7 @@ int Optimack::open_duplicate_conns(){
     // int conn_num = 3;
     // range
     // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
+    printf("S%d: open_duplicate_conns\n", squid_port);
     if (RANGE_MODE) {
         range_sockfd = 0;
     }
@@ -3589,7 +3608,7 @@ int Optimack::open_duplicate_conns(){
     //     }
     //     printf("S%d: overrun thread created\n", squid_port);
     // }
-
+    printf("open_duplicate_conns: exiting...\n");
     return 0;
 }
 
@@ -3637,7 +3656,7 @@ int Optimack::set_main_subconn_ssl(SSL *squid_ssl){
     recved_seq.getIntervalList().clear();
     recved_seq.insertNewInterval_withLock(0,1);
 
-    std::thread t(&Optimack::open_duplicate_ssl_conns, Optimack::getptr());
+    open_ssl_thread = std::thread(&Optimack::open_duplicate_ssl_conns, Optimack::getptr());
     // pthread_t open_ssl_thread;
     // if (pthread_create(&open_ssl_thread, NULL, open_duplicate_ssl_conns_handler, (void*)this) != 0) {
     //     log_error("Fail to create open_duplicate_conns thread.");
@@ -3698,7 +3717,7 @@ int Optimack::open_duplicate_ssl_conns(){
 
     recv_tls_stop = 0;
     printf("S%d: create dummy_recv_ssl\n", squid_port);
-    std::thread recvt(&Optimack::dummy_recv_tls, Optimack::getptr());
+    recv_ssl_thread = std::thread(&Optimack::dummy_recv_tls, Optimack::getptr());
     // if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)this) != 0) {
     //     log_error("Fail to create dummy_recv_ssl thread.");
     // }
@@ -3712,7 +3731,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
         return -1;
     }
 
-    printf("S%d-%d: set_subconn_ssl_credentials starts.\n", squid_port, subconn->local_port);
+    // printf("S%d-%d: set_subconn_ssl_credentials starts.\n", squid_port, subconn->local_port);
 
     unsigned char write_key_buffer[100],iv_salt[5];
     unsigned char master_key[100];
@@ -3739,7 +3758,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     // printf("\n");
 
     subconn->lock();
-    printf("S%d-%d: set_subconn_ssl_credentials enter lock.\n", squid_port, subconn->local_port);
+    // printf("S%d-%d: set_subconn_ssl_credentials enter lock.\n", squid_port, subconn->local_port);
     subconn->ssl = ssl;
     subconn->seq_init = false;
     subconn->tls_handshake_finished = true;
@@ -3756,7 +3775,7 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
 
     subconn->unlock();
 
-    printf("S%d-%d: set_subconn_ssl_credentials ends.\n", squid_port, subconn->local_port);
+    // printf("S%d-%d: set_subconn_ssl_credentials ends.\n", squid_port, subconn->local_port);
 
     return 0;
 }

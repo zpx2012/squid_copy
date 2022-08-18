@@ -136,7 +136,7 @@ private:
 public:
     /* Our Code */
 #ifdef USE_OPTIMACK
-    std::shared_ptr<Optimack> optimack_server = std::make_shared<Optimack>();
+    std::shared_ptr<Optimack> optimack_server;// = std::make_shared<Optimack>();
     // Optimack *optimack_server;
     void setOptimack();
 #endif

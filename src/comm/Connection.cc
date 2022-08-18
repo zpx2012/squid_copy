@@ -65,6 +65,7 @@ Comm::Connection::~Connection()
 #ifdef USE_OPTIMACK
 void Comm::Connection::setOptimack(){
     // optimack_server = new Optimack();
+    optimack_server = std::make_shared<Optimack>();
     if (optimack_server){
         optimack_server->init();
         optimack_server->setup_nfq(local.port());
