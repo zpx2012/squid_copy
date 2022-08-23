@@ -1334,6 +1334,55 @@ void Optimack::log_seq_gaps(){
     // pthread_mutex_unlock(&mutex_subconn_infos);
 }
 
+
+void Optimack::remove_iptables_rules(){
+    if(iptables_rules.empty())
+        return;
+
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+        iptables_rules[i] = NULL;
+    }
+    iptables_rules.clear();
+}
+
+Optimack::Optimack()
+{
+    main_fd = 0;
+    iptables_rules.clear();
+    subconn_infos.clear();
+    bytes_per_second.clear();
+    recv_buffer.clear();
+    recved_seq.insertNewInterval(0,1);
+    range_stop = -1;
+    seq_next_global = 1;
+    subconn_count = 0;
+    request = response = NULL;
+    g_nfq_qh = NULL;
+    g_nfq_h = NULL;
+    optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
+    subconn_infos.clear();
+    
+    if(use_boost_pool){
+        boost_pool = new boost::asio::thread_pool(4);
+        if (!boost_pool) {
+            printf("couldn't create boost thread pool\n");
+            return;             
+        }
+    }
+    else
+        oracle_pool = thr_pool_create(1, 1, 300, NULL);
+
+#ifdef USE_OPENSSL
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+#endif
+
+}
+
+
 void
 Optimack::cleanup()
 {
@@ -1344,21 +1393,18 @@ Optimack::cleanup()
     // log_info("S%d: enter cleanup", squid_port);
     cleaned_up = true;
     
-    if(open_conns.joinable())
-        open_conns.join();
-
     cb_stop = 1;
     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
     if(!nfq_stop){
         nfq_stop = 1;
         ask_nfq_stop = true;        
-        pthread_cancel(nfq_thread);
+        // pthread_cancel(nfq_thread);
     }
 
     if(!overrun_stop){
         overrun_stop++;
         ask_overrun_stop = true;
-        pthread_cancel(overrun_thread);
+        // pthread_cancel(overrun_thread);
         // log_info("ask overrun_thread to exit");    
         printf("ask overrun_thread to exit\n");    
     }
@@ -1367,8 +1413,6 @@ Optimack::cleanup()
         range_stop++;
         ask_range_stop = true;
         // pthread_cancel(range_thread);
-        if(range_thread.joinable())
-            range_thread.join();
         // log_info("ask overrun_thread to exit");    
         printf("ask range_watch_thread to exit\n");
     }
@@ -1377,7 +1421,7 @@ Optimack::cleanup()
     if(!optim_ack_stop){
         optim_ack_stop++;
         ask_optim_stop = true;
-        pthread_cancel(optim_ack_thread);
+        // pthread_cancel(optim_ack_thread);
         // log_info("ask optimack_altogether_thread to exit");    
         printf("ask optimack_altogether_thread to exit\n");
     }
@@ -1385,7 +1429,7 @@ Optimack::cleanup()
     if(!recv_tls_stop){
         recv_tls_stop++;
         ask_recv_tls_stop = true;
-        pthread_cancel(recv_thread);
+        // pthread_cancel(recv_thread);
         // log_info("ask dummy_recv_tls to exit");
         printf("ask dummy_recv_tls to exit\n");
     }
@@ -1506,53 +1550,6 @@ Optimack::cleanup()
     // printf("S%d: cleanup finished\n", squid_port);
 }
 
-void Optimack::remove_iptables_rules(){
-    if(iptables_rules.empty())
-        return;
-
-    for (size_t i=0; i<iptables_rules.size(); i++) {
-        exec_iptables('D', iptables_rules[i]);
-        free(iptables_rules[i]);
-        iptables_rules[i] = NULL;
-    }
-    iptables_rules.clear();
-}
-
-Optimack::Optimack()
-{
-    main_fd = 0;
-    iptables_rules.clear();
-    subconn_infos.clear();
-    bytes_per_second.clear();
-    recv_buffer.clear();
-    recved_seq.insertNewInterval(0,1);
-    range_stop = -1;
-    seq_next_global = 1;
-    subconn_count = 0;
-    request = response = NULL;
-    g_nfq_qh = NULL;
-    g_nfq_h = NULL;
-    optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
-    subconn_infos.clear();
-    
-    if(use_boost_pool){
-        boost_pool = new boost::asio::thread_pool(4);
-        if (!boost_pool) {
-            printf("couldn't create boost thread pool\n");
-            return;             
-        }
-    }
-    else
-        oracle_pool = thr_pool_create(1, 1, 300, NULL);
-
-#ifdef USE_OPENSSL
-    SSL_library_init();
-    SSLeay_add_ssl_algorithms();
-    SSL_load_error_strings();
-#endif
-
-}
-
 Optimack::~Optimack()
 {
     // printf("S%d: enter destructor. Closed.\n", squid_port);
@@ -1563,9 +1560,20 @@ Optimack::~Optimack()
     // if(nfq_stop)
     //     return;
 
-
-
     cleanup();
+
+    if(open_conns.joinable())
+        open_conns.join();
+    
+    if(range_thread.joinable())
+        range_thread.join();
+    
+    if(open_ssl_thread.joinable())
+        open_ssl_thread.join();
+    
+    if(recv_ssl_thread.joinable())
+        recv_ssl_thread.join();
+    
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
      // clear thr_pool
