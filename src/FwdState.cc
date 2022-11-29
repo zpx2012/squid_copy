@@ -715,7 +715,7 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
     /* Our code */
 #ifdef USE_OPTIMACK
     if(USE_OPTIMACK){
-        std::cout << "ConnOpen:" << conn << std::endl;
+        // std::cout << "ConnOpen:" << conn << std::endl;
         conn->setOptimack();
     }
 #endif

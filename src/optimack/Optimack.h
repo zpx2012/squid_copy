@@ -11,8 +11,14 @@
 #include "interval_boost.h"
 #include "interval_geeks.h"
 #include <netinet/in.h>
-#include "autoconf.h"
-// #define USE_OPENSSL 1
+
+#define GPROF_CHECK 1
+#ifndef GPROF_CHECK
+    #include "autoconf.h"
+#else
+    #define USE_OPENSSL 1
+#endif
+
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <memory> //shared_ptr
@@ -118,7 +124,7 @@ void* send_all_requests(void* arg);
 void* open_duplicate_conns_handler(void* arg);
 void* open_duplicate_ssl_conns_handler(void* arg);
 
-void* range_watch(std::shared_ptr<Optimack> obj);
+// void* range_watch(std::shared_ptr<Optimack> obj);
 // void* range_recv(void* arg);
 
 
@@ -155,7 +161,7 @@ public:
     int g_nfq_fd;
     int nfq_stop, overrun_stop, cb_stop, optim_ack_stop;
     pthread_t nfq_thread, overrun_thread, optim_ack_thread;
-    std::thread open_conns, open_ssl_thread, recv_ssl_thread;
+    std::thread open_conns, open_ssl_thread, recv_ssl_thread, request_thread;
 
     bool is_nfq_full(FILE* out_file);
     void print_ss(FILE* out_file);
@@ -164,6 +170,7 @@ public:
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
+    void* full_optimistic_ack_altogether();
     int start_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_backup(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_altogether(unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max);
@@ -190,6 +197,7 @@ public:
     // void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();
     void send_request(char* request, int len);
+    void send_all_requests();
 
     void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin);
 
@@ -294,7 +302,7 @@ public:
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
-
+    void range_watch();
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
     uint get_byte_seq(uint tcp_seq);

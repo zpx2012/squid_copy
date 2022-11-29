@@ -65,6 +65,17 @@ Comm::Connection::~Connection()
 #ifdef USE_OPTIMACK
 void Comm::Connection::setOptimack(){
     // optimack_server = new Optimack();
+    char remote_ip[16], local_ip[16];
+    remote.toStr(remote_ip, 16);
+    local.toStr(local_ip, 16);
+    // printf(remote_ip);
+    // printf(local_ip);
+
+    std::string ips[5] = {"52.41.132.37", "34.215.6.110", "34.160.144.191", "34.120.158.37", "34.102.187.140"};
+    for(uint i = 0; i < 5; i++)
+        if(ips[i].compare(remote_ip) == 0)
+            return;
+
     optimack_server = std::make_shared<Optimack>();
     if (optimack_server){
         optimack_server->init();
@@ -72,9 +83,7 @@ void Comm::Connection::setOptimack(){
         optimack_server->nfq_stop = 0;
         optimack_server->setup_nfqloop();
 
-        char remote_ip[16], local_ip[16];
-        remote.toStr(remote_ip, 16);
-        local.toStr(local_ip, 16);
+
         optimack_server->set_main_subconn(remote_ip, local_ip, remote.port(), local.port(), fd);
     }
 }

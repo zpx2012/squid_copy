@@ -424,7 +424,7 @@ comm_init_opened(const Comm::ConnectionPointer &conn,
 
     /* update fdstat */
     debugs(5, 5, HERE << conn << " is a new socket");
-    std::cout << conn << "is a new socket" << std::endl;
+    // std::cout << conn << "is a new socket" << std::endl;
 
     assert(!isOpen(conn->fd)); // NP: global isOpen checks the fde entry for openness not the Comm::Connection
     fd_open(conn->fd, FD_SOCKET, note);

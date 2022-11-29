@@ -58,6 +58,8 @@
 #include "tools.h"
 #include "util.h"
 
+#include "optimack/logging.h"
+
 #if USE_AUTH
 #include "auth/UserRequest.h"
 #endif
@@ -719,7 +721,7 @@ HttpStateData::processReplyHeader()
     }
 
     // printf("csv, %d, response, %f, %s, %d\n", serverConnection->local.port(), get_current_epoch_time_nanosecond(), request->url.path().toStdString().c_str(), get_content_length(hp->mimeHeader().c_str(), hp->mimeHeader().length())); //request->url.host(),
-    printf("Response: URI: %s\n%s\n", request->url.path().toStdString().c_str(), hp->mimeHeader().c_str());
+    print_func("Response: URI: %s\n%s\n", request->url.path().toStdString().c_str(), hp->mimeHeader().c_str());
     
     /* We know the whole response is in parser now */
     debugs(11, 2, "HTTP Server " << serverConnection);
@@ -2269,7 +2271,7 @@ HttpStateData::sendRequest()
     buildRequestPrefix(&mb);
 
     fprintf(stderr, "csv, %d, %s, %s, request, %f\n", serverConnection->local.port(), request->url.path().toStdString().c_str(), request->url.host(), get_current_epoch_time_nanosecond());
-    printf("http.cc sendRequest URI: %s\n%s\n", request->url.path().toStdString().c_str(), mb.content());
+    print_func("http.cc sendRequest URI: %s\n%s\n", request->url.path().toStdString().c_str(), mb.content());
 
     /* Our code */
 #ifdef USE_OPTIMACK
@@ -2277,30 +2279,30 @@ HttpStateData::sendRequest()
         if(serverConnection->optimack_server){
             // bool use_whitelist = false;
             // if(use_whitelist){
-            // bool static_object = is_static_object(std::string(mb.content()));
-            // if(!static_object || serverConnection->optimack_server->iptables_rules.empty()){
-            //     printf("Not static or already cleanup\n");
-            //     serverConnection->optimack_server->remove_iptables_rules();
-            //     // serverConnection->optimack_server->cleaned_up = true;
-            // }
+            bool static_object = is_static_object(std::string(mb.content()));
+            if(!static_object || serverConnection->optimack_server->iptables_rules.empty()){
+                print_func("Not static or already cleanup\n");
+                serverConnection->optimack_server->remove_iptables_rules();
+                // serverConnection->optimack_server->cleaned_up = true;
+            }
             // // if(!static_object || serverConnection->optimack_server->cleaned_up){
             // //     printf("Not static or already cleanup\n");
             // //     if(!serverConnection->optimack_server->cleaned_up)
             // //         serverConnection->optimack_server->cleanup();
             // // }
-            // else{
+            else{
 #ifdef USE_OPENSSL
                 SSL* ssl = fd_table[serverConnection->fd].ssl.get();
                 if(ssl){
                     serverConnection->optimack_server->set_main_subconn_ssl(ssl);
-                    printf("https use sendRequest too\n");
-                    printf("ssl:%p\n", ssl);
+                    print_func("https use sendRequest too\n");
+                    print_func("ssl:%p\n", ssl);
                     // printf("Request:\n%s\n", mb.content());
                 }
 #endif
                 serverConnection->optimack_server->send_request(mb.content(), mb.contentSize());
                 /* end */
-            // }
+            }
         }
     }
 #endif

@@ -5,11 +5,12 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 
-// #include "squid.h"
-// #include "sbuf/SBuf.h"
-// #include "http/one/RequestParser.h"
-// #include "http/one/ResponseParser.h"
-
+#ifndef GPROF_CHECK
+#include "squid.h"
+#include "sbuf/SBuf.h"
+#include "http/one/RequestParser.h"
+#include "http/one/ResponseParser.h"
+#endif
 
 #include "logging.h"
 #include "Optimack_gprof.h"
@@ -35,6 +36,7 @@ const char tail_field[] = "\r\n\r\n";
 const char keep_alive_field[] = "Keep-Alive: ";
 const char max_field[] = "max=";
 
+int process_range_rv(char* response, int rv, std::shared_ptr<Optimack> obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 
@@ -76,10 +78,12 @@ int parse_response(http_header *head, char *response, int unread)
 }
 
 
-void*
-range_watch(void* arg)
+void
+Optimack::range_watch() //void* arg
 {
-    printf("[Range]: range_watch thread starts\n");
+    // pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
+    // printf("[Range]: range_watch thread starts, ref_count %d\n", getptr().use_count());
 
 #ifdef USE_OPENSSL
     SSL *range_ssl, *range_ssl_old;
@@ -88,14 +92,16 @@ range_watch(void* arg)
     int rv, range_sockfd, range_sockfd_old, erase_count = 0;
     char response[MAX_RANGE_SIZE+1];
 
-    Optimack* obj = ((Optimack*)arg);
+    // Optimack* obj = ((Optimack*)arg);
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
     range_sockfd = -1;
 
-    pthread_mutex_t *mutex = &(obj->mutex_seq_gaps);
-    subconn_info* subconn = (obj->subconn_infos.begin()->second);
+    pthread_mutex_t *mutex = &(mutex_seq_gaps);
+    subconn_info* subconn = (subconn_infos.begin()->second);
 
-    std::vector<Interval>& range_job_vector = obj->ranges_sent.getIntervalList();
-    pthread_mutex_t* p_mutex_range_job_vector = obj->ranges_sent.getMutex();
+    std::vector<Interval>& range_job_vector = ranges_sent.getIntervalList();
+    pthread_mutex_t* p_mutex_range_job_vector = ranges_sent.getMutex();
 
     int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
     http_header* header = (http_header*)malloc(sizeof(http_header));
@@ -122,16 +128,16 @@ range_watch(void* arg)
     //     close(nfd);
     // }
 
-    while(!obj->range_stop) {
+    while(!range_stop) {
 
-        obj->try_for_gaps_and_request();
+        try_for_gaps_and_request();
 
         if(range_job_vector.size() == 0){
             // printf("range_job_vector.size() == 0\n");
             continue;
         }
 
-        if(range_sockfd <= 0 || obj->range_request_count >= 95 || erase_count >= 5){
+        if(range_sockfd <= 0 || range_request_count >= 95 || erase_count >= 5){
             //clear all sent timestamp, to resend it
             // pthread_mutex_lock(p_mutex_range_job_vector);
 restart:
@@ -140,18 +146,24 @@ restart:
             }
             // pthread_mutex_unlock(p_mutex_range_job_vector);
 
-            range_sockfd = establish_tcp_connection(range_sockfd_old, obj->g_remote_ip, obj->g_remote_port);
+            range_sockfd = establish_tcp_connection(range_sockfd_old, g_remote_ip, g_remote_port);
             close(range_sockfd_old);
             printf("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
             log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
-            if(obj->is_ssl){
+            if(is_ssl){
 #ifdef USE_OPENSSL
+                range_ssl = NULL;
                 range_ssl = open_ssl_conn(range_sockfd, false);
-                SSL_free(range_ssl_old);
+                if(range_ssl_old)
+                    SSL_free(range_ssl_old);
+                if(!range_ssl){
+                    sleep(1);
+                    goto restart;
+                }
                 fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
 #endif
             }
-            obj->range_request_count = 0;
+            range_request_count = 0;
             erase_count = 0;
         }
         if(range_sockfd <= 0){ //TODO: remove ranges_sent?{
@@ -165,11 +177,11 @@ restart:
         for (auto it = range_job_vector.begin(); it != range_job_vector.end();){
         // for(auto it : range_job->getIntervalList()) {
             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
-            uint end_tcp_seq = obj->get_tcp_seq(it->end);
-            if (obj->cur_ack_rel >= end_tcp_seq){
+            uint end_tcp_seq = get_tcp_seq(it->end);
+            if (cur_ack_rel >= end_tcp_seq){
                 erase_count++;
-                log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, end_tcp_seq);
-                printf("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d\n", obj->cur_ack_rel, end_tcp_seq, erase_count);
+                log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", cur_ack_rel, end_tcp_seq);
+                printf("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d\n", cur_ack_rel, end_tcp_seq, erase_count);
                 // printf("before erase it: [%u, %u]\n", it->start, it->end);
                 range_job_vector.erase(it++);
                 if(!range_job_vector.size())
@@ -178,21 +190,21 @@ restart:
                 continue;
             }
             if(!it->sent_epoch_time){
-                if(obj->is_ssl)
+                if(is_ssl)
 #ifdef USE_OPENSSL
-                    obj->send_http_range_request(range_ssl, *it);
+                    send_http_range_request(range_ssl, *it);
 #endif
                 else
-                    obj->send_http_range_request((void*)range_sockfd, *it);
+                    send_http_range_request((void*)range_sockfd, *it);
 
                 it->sent_epoch_time = get_current_epoch_time_second();
                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
             }
             else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
-                obj->range_timeout_cnt++;
-                obj->range_timeout_penalty += delay;
-                uint start_tcp_seq = obj->get_tcp_seq(it->start);
+                range_timeout_cnt++;
+                range_timeout_penalty += delay;
+                uint start_tcp_seq = get_tcp_seq(it->start);
                 log_info("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
                 printf("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
                 // close(range_sockfd);
@@ -210,7 +222,7 @@ restart:
         // printf("Receiving packet\n");
         if(recv_offset == 0)
             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset+1);
-        if(obj->is_ssl){
+        if(is_ssl){
 #ifdef USE_OPENSSL
             rv = SSL_read(range_ssl, response+recv_offset, MAX_RANGE_SIZE-recv_offset);
 #endif
@@ -222,10 +234,10 @@ restart:
         if (rv > 0) {
             log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
             printf("[Range] recved %d bytes, hand over to process_range_rv\n", rv);
-            process_range_rv(response, rv, obj, subconn, range_job_vector, header, consumed, unread, parsed, recv_offset, unsent);
+            process_range_rv(response, rv, this, subconn, range_job_vector, header, consumed, unread, parsed, recv_offset, unsent);
         }
         else if(rv == 0){
-            if(!obj->is_ssl){
+            if(!is_ssl){
                 if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
                     continue;
             }
@@ -241,7 +253,7 @@ restart:
             cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
             printf("closed range_sockfd %d\n", range_sockfd);
 #ifdef USE_OPENSSL
-            if(obj->is_ssl)
+            if(is_ssl)
                 range_ssl_old = range_ssl;
 #endif
         }
@@ -251,8 +263,199 @@ restart:
     header = NULL;
 
     printf("[Range]: range_watch thread exits...\n");
-    pthread_exit(NULL);
+    // pthread_exit(NULL);
+    return;
 }
+
+
+
+// void*
+// range_watch(std::shared_ptr<Optimack> obj) //void* arg
+// {
+//     // pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
+//     printf("[Range]: range_watch thread starts, ref_count %d\n", obj.use_count());
+
+// #ifdef USE_OPENSSL
+//     SSL *range_ssl, *range_ssl_old;
+// #endif
+
+//     int rv, range_sockfd, range_sockfd_old, erase_count = 0;
+//     char response[MAX_RANGE_SIZE+1];
+
+//     // Optimack* obj = ((Optimack*)arg);
+//     // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
+//     range_sockfd = -1;
+
+//     pthread_mutex_t *mutex = &(obj->mutex_seq_gaps);
+//     subconn_info* subconn = (obj->subconn_infos.begin()->second);
+
+//     std::vector<Interval>& range_job_vector = obj->ranges_sent.getIntervalList();
+//     pthread_mutex_t* p_mutex_range_job_vector = obj->ranges_sent.getMutex();
+
+//     int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
+//     http_header* header = (http_header*)malloc(sizeof(http_header));
+//     memset(header, 0, sizeof(http_header));
+//     // parser
+//     // Http1::RequestParser rp;
+//     // SBuf headerBuf;
+
+//     // int fd = open("/dev/null", O_RDONLY);
+//     // dup2(fd, STDIN_FILENO);
+//     // close(fd);
+//     // for(int fd=0; fd < 3; fd++){
+//     //     int nfd;
+//     //     nfd = open("/dev/null", O_RDWR);
+
+//     //     if(nfd<0) /* We're screwed. */
+//     //     continue;
+
+//     //     if(nfd==fd)
+//     //     continue;
+
+//     //     dup2(nfd, fd);
+//     //     if(nfd > 2)
+//     //     close(nfd);
+//     // }
+
+//     while(!obj->range_stop) {
+
+//         obj->try_for_gaps_and_request();
+
+//         if(range_job_vector.size() == 0){
+//             // printf("range_job_vector.size() == 0\n");
+//             continue;
+//         }
+
+//         if(range_sockfd <= 0 || obj->range_request_count >= 95 || erase_count >= 5){
+//             //clear all sent timestamp, to resend it
+//             // pthread_mutex_lock(p_mutex_range_job_vector);
+// restart:
+//             for (auto it = range_job_vector.begin(); it != range_job_vector.end();it++){
+//                 it->sent_epoch_time = 0;
+//             }
+//             // pthread_mutex_unlock(p_mutex_range_job_vector);
+
+//             range_sockfd = establish_tcp_connection(range_sockfd_old, obj->g_remote_ip, obj->g_remote_port);
+//             close(range_sockfd_old);
+//             printf("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
+//             log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
+//             if(obj->is_ssl){
+// #ifdef USE_OPENSSL
+//                 range_ssl = NULL;
+//                 range_ssl = open_ssl_conn(range_sockfd, false);
+//                 if(range_ssl_old)
+//                     SSL_free(range_ssl_old);
+//                 if(!range_ssl){
+//                     sleep(1);
+//                     goto restart;
+//                 }
+//                 fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
+// #endif
+//             }
+//             obj->range_request_count = 0;
+//             erase_count = 0;
+//         }
+//         if(range_sockfd <= 0){ //TODO: remove ranges_sent?{
+//             perror("Can't create range_sockfd, range thread break\n");
+//             break;
+//         }
+
+//         //Check if any more unsent range and sent
+//         // printf("Check if any more unsent range and sent\n");
+//         // pthread_mutex_lock(p_mutex_range_job_vector);
+//         for (auto it = range_job_vector.begin(); it != range_job_vector.end();){
+//         // for(auto it : range_job->getIntervalList()) {
+//             // printf("[Range] Resend bytes %d - %d\n", it.start, it.end);
+//             uint end_tcp_seq = obj->get_tcp_seq(it->end);
+//             if (obj->cur_ack_rel >= end_tcp_seq){
+//                 erase_count++;
+//                 log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", obj->cur_ack_rel, end_tcp_seq);
+//                 printf("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d\n", obj->cur_ack_rel, end_tcp_seq, erase_count);
+//                 // printf("before erase it: [%u, %u]\n", it->start, it->end);
+//                 range_job_vector.erase(it++);
+//                 if(!range_job_vector.size())
+//                     break;
+//                 // printf("after erase it: [%u, %u]\n", it->start, it->end);
+//                 continue;
+//             }
+//             if(!it->sent_epoch_time){
+//                 if(obj->is_ssl)
+// #ifdef USE_OPENSSL
+//                     obj->send_http_range_request(range_ssl, *it);
+// #endif
+//                 else
+//                     obj->send_http_range_request((void*)range_sockfd, *it);
+
+//                 it->sent_epoch_time = get_current_epoch_time_second();
+//                 // printf("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
+//             }
+//             else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
+//                 double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
+//                 obj->range_timeout_cnt++;
+//                 obj->range_timeout_penalty += delay;
+//                 uint start_tcp_seq = obj->get_tcp_seq(it->start);
+//                 log_info("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
+//                 printf("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
+//                 // close(range_sockfd);
+//                 cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+//                 // range_sockfd_old = range_sockfd;
+//                 // range_sockfd = -1;
+//                 break;
+//             }
+//             it++;
+
+//         }
+//         // pthread_mutex_unlock(p_mutex_range_job_vector);
+
+//         // Receiving packet
+//         // printf("Receiving packet\n");
+//         if(recv_offset == 0)
+//             memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset+1);
+//         if(obj->is_ssl){
+// #ifdef USE_OPENSSL
+//             rv = SSL_read(range_ssl, response+recv_offset, MAX_RANGE_SIZE-recv_offset);
+// #endif
+//         }
+//         else{
+//             rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
+//         }
+
+//         if (rv > 0) {
+//             log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
+//             printf("[Range] recved %d bytes, hand over to process_range_rv\n", rv);
+//             process_range_rv(response, rv, obj, subconn, range_job_vector, header, consumed, unread, parsed, recv_offset, unsent);
+//         }
+//         else if(rv == 0){
+//             if(!obj->is_ssl){
+//                 if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+//                     continue;
+//             }
+
+//             if(rv == 0){
+//                 log_debug("[Range] recv ret %d, sockfd %d closed ", rv, range_sockfd);
+//                 printf("[Range] recv ret %d, sockfd %d closed\n", rv, range_sockfd);
+//             }
+//             else{
+//                 log_debug("[Range] error: ret %d errno %d", rv, errno);
+//                 printf("[Range] error: ret %d errno %d\n", rv, errno);
+//             }
+//             cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+//             printf("closed range_sockfd %d\n", range_sockfd);
+// #ifdef USE_OPENSSL
+//             if(obj->is_ssl)
+//                 range_ssl_old = range_ssl;
+// #endif
+//         }
+//         usleep(100);
+//     }
+//     free(header);
+//     header = NULL;
+
+//     printf("[Range]: range_watch thread exits...\n");
+//     pthread_exit(NULL);
+// }
 
 
 int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short remote_port)
@@ -262,7 +465,7 @@ int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short rem
 
     // Open socket
 opensocket:
-    while(sockfd == 0 || sockfd == old_sockfd){ //
+    while(sockfd == 0){ //|| sockfd == old_sockfd
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
             return -1;
@@ -282,8 +485,13 @@ opensocket:
     setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     // Connect to server
-    if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    int count = 0;
+    while (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0 && count++ < 5) {
+        printf("establish_tcp_connection: sockfd %d connect error\n", sockfd);
         perror("Connect server error");
+    }
+
+    if(count >= 5){
         sockfd = 0;
         goto opensocket;
         close(sockfd);
@@ -292,7 +500,9 @@ opensocket:
 
     int port = get_localport(sockfd);
     if(port < 0){
+        printf("establish_tcp_connection: sockfd %d get_localport error\n", sockfd);
         sockfd = 0;
+        close(sockfd);
         goto opensocket;
     }
 
@@ -350,11 +560,13 @@ void Optimack::try_for_gaps_and_request(){
 
 bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
     
-    if (recved_seq.size() < 2)
+    if (recved_seq.size() < 1 || recved_seq.getFirstEnd() == 1)
         return false;
 
     if(is_ssl){
 #ifdef USE_OPENSSL
+        if(!tls_record_seq_map)
+            return false;
         TLS_Record_Seq_Info seq_info;
         tls_record_seq_map->get_record_seq_info(last_recv_inorder+1, &seq_info);
         last_recv_inorder = seq_info.upper_seq - 1;
@@ -579,10 +791,10 @@ int Optimack::get_lost_range(Interval* intvl)
         if(is_ssl)
             if((intvl->end != ack_end) && (intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
                 printf("get_lost_range: len(%u) mod %d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
-                return -1;
-                uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
-                intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
-                printf("change range to [%u, %u]\n", intvl->start, intvl->end);
+                // return -1;
+                // uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
+                // intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
+                // printf("change range to [%u, %u]\n", intvl->start, intvl->end);
                 recved_seq.printIntervals();
             }
 #endif
@@ -646,7 +858,8 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
     if (start == end || (start == 0 || end == 0))
         return -1;
     
-    char range_request[MAX_RANGE_REQ_LEN];
+    char* range_request = (char *)malloc(request_len+100);
+    memset(range_request, 0 , request_len+100);
     memcpy(range_request, request, request_len);
     sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
 
@@ -662,6 +875,7 @@ int Optimack::send_http_range_request(void* sockfd, Interval range){
         int sockfd_ = (long)sockfd;
         rv = send(sockfd_, range_request, strlen(range_request), 0);
     }
+    free(range_request);
     
     if (rv < 0){
         // printf("[Range] bytes [%u, %u] failed\n", start, end);
@@ -697,7 +911,6 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     // rp.parse(headerBuf);
     // response_header_len = rp.messageHeaderSize();
     // pthread_mutex_unlock(&mutex_range);
-
     response_header_len = 392;
 
     // response_header_len = 398;
@@ -705,11 +918,13 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     memcpy(response, payload, response_header_len);
     response[response_header_len] = 0;
 
-    const char* content_len_field = "Content-Length: ";
-    int content_len_field_len = strlen(content_len_field);
-    char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
-    p_content_len += content_len_field_len;
-    file_size = (u_int)strtol(p_content_len, &p_content_len, 10);
+    // const char* content_len_field = "Content-Length: ";
+    // char* payload_end = (char*)payload + payload_len;
+    // int content_len_field_len = strlen(content_len_field);
+    // char* p_content_len = std::search((char*)payload, (char*)payload+payload_len, content_len_field, content_len_field+content_len_field_len);
+    
+    // p_content_len += content_len_field_len;
+    file_size = get_content_length((char*)payload, payload_len);
     if(file_size){
         if(is_ssl){
 #ifdef USE_OPENSSL
@@ -728,3 +943,15 @@ int Optimack::get_http_response_header_len(subconn_info* subconn, unsigned char*
     return 0;
 }
 
+int get_content_length(const char* payload, int payload_len){
+    const char* contentlen_field = "Content-Length: ";
+    const char* payload_end = payload + payload_len;
+    int contentlen_field_len = strlen(contentlen_field);
+    const char* p_contentlen = std::search(payload, payload+payload_len, contentlen_field, contentlen_field+contentlen_field_len);
+    if(p_contentlen < payload_end){
+        p_contentlen += contentlen_field_len;
+        int file_size = (u_int)std::stol(p_contentlen);
+        return file_size;
+    }
+    return -1;
+}

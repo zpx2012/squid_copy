@@ -15,7 +15,7 @@
 #include <sstream>
 #include <string.h>
 #include "reassembler.h"
-#include "Optimack.h"
+#include "Optimack_gprof.h"
 #include <thread>
 #include <mutex>
 
@@ -129,8 +129,8 @@ public:
     ~TLS_Decrypted_Record_Reassembler();
     int insert_plaintext(TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len);
     int insert_tag(TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len);
-    int check_complete(u_char* &buf, int &buf_len, u_short* &return_ports, int& return_ports_len);
-    int get_complete_plaintext(u_char* &buf, int &buf_len);
+    int check_complete(u_char* buf, int buf_len, u_short* &return_ports, int& return_ports_len);
+    int get_complete_plaintext(u_char* buf, int buf_len);
     bool verify(u_char* plntxt, int plntxt_len, TLS_Crypto_Coder* crypto_coder, u_char* tag);
     void cleanup();
     
@@ -168,20 +168,7 @@ public:
         // }
         
     }
-    ~TLS_Decrypted_Records_Map() {
-        // lock();
-        // for(size_t i = 0; i < 42750; i++)
-        //     delete decrypted_record_reassembler_map[i];
-        // delete [] decrypted_record_reassembler_map;
-        // unlock();
-        
-        for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); ){
-            delete it->second;
-            lock();
-            decrypted_record_reassembler_map.erase(it++);
-            unlock();  
-        }      
-    }
+    ~TLS_Decrypted_Records_Map();
 
     int insert_plaintext(int record_num, uint seq, u_char* data, int data_len, u_char* &return_str);
     // int insert_tag(int record_num, TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len, u_char* &return_str);
@@ -226,12 +213,13 @@ public:
     TLS_Record_Number_Seq_Map();
 
     ~TLS_Record_Number_Seq_Map();
-    int insert(uint start_seq, int record_num, int record_size_with_header);
-    int insert_nolock(uint start_seq, int record_num, int record_size_with_header);
+    TLS_Record_Seq_Info* insert(uint start_seq, int record_num, int record_size_with_header);
+    TLS_Record_Seq_Info* insert_nolock(uint start_seq, int record_num, int record_size_with_header);
     // int insert(uint start_seq, TLS_Record_Seq_Info* seq_info);
-    int set_record_seq_info(uint seq, struct mytlshdr* tlshdr, int record_num);
+    TLS_Record_Seq_Info* check_if_tlshdr(uint seq, unsigned char* payload, int payload_len, TLS_Crypto_Coder* crypto_coder);
+    TLS_Record_Seq_Info* find_record_seq_info(uint seq, unsigned char* payload, int payload_len, TLS_Crypto_Coder* crypto_coder);
     int set_size(uint start_seq, int record_size_with_header);
-    int get_record_seq_info(uint seq, TLS_Record_Seq_Info* return_info);
+    TLS_Record_Seq_Info* get_record_seq_info(uint seq);
     int get_record_num(uint seq);
 
     void print_record_seq_map();
