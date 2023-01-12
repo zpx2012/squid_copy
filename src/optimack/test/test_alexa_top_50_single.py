@@ -154,6 +154,7 @@ def get_onload_time(driver, domain):
         print("BackEnd: %fms" % (responseStart - navigationStart))
         print("DomContentLoaded: %fms" % (domContentLoaded - navigationStart))
         print("OnLoad: %fms" % (loadEventEnd - navigationStart))
+        print(timing)
         # print(timing.keys())
         # driver.close()
         if '<title>ERROR: The requested URL could not be retrieved</title>' in driver.page_source:
@@ -173,15 +174,19 @@ def get_onload_time(driver, domain):
 
 def open_normal_webdriver():
     opts = webdriver.FirefoxOptions()
-    opts.add_argument("--headless")
+    # opts.add_argument("--headless")
 
     profile = webdriver.FirefoxProfile()
+    profile.set_preference("network.stricttransportsecurity.preloadlist", False)
+    profile.set_preference("browser.fixup.fallback-to-https", False)
+    profile.set_preference("dom.security.https_first_pbm", False)
     profile.set_preference("browser.privatebrowsing.autostart", True)
     profile.set_preference("browser.cache.disk.enable", False)
     profile.set_preference("browser.cache.memory.enable", False)
     profile.set_preference("browser.cache.offline.enable", False)
     profile.set_preference("network.http.use-cache", False)
     
+    profile.update_preferences()    
     driver = webdriver.Firefox(options=opts, firefox_profile=profile)
     driver.set_page_load_timeout(300)
     return driver
@@ -224,6 +229,9 @@ def open_proxy_webdriver(proxy_addr, http_port, https_port):
     #         })
 
     profile = webdriver.FirefoxProfile()
+    profile.set_preference("network.stricttransportsecurity.preloadlist", False)
+    profile.set_preference("browser.fixup.fallback-to-https", False)
+    profile.set_preference("dom.security.https_first_pbm", False)
     profile.set_preference("browser.privatebrowsing.autostart", True)
     profile.set_preference("browser.cache.disk.enable", False)
     profile.set_preference("browser.cache.memory.enable", False)
