@@ -11,6 +11,7 @@
 #include "interval_boost.h"
 #include "interval_geeks.h"
 #include <netinet/in.h>
+#include <thread>
 
 #define GPROF_CHECK 1
 #ifndef GPROF_CHECK
@@ -39,11 +40,20 @@ class TLS_Record_Number_Seq_Map;
 
 #define USE_OPTIMACK 1
 
+const int multithread = 0;
+const int debug_subconn_recvseq = 0;
+const int use_optimack = 1;
+const int forward_packet = 1;
+const int log_squid_ack = 0;
+const int log_result = 0;
+const int use_boost_pool = 1;
+
 
 class Optimack;
 
 struct subconn_info
 {
+    Optimack* optack;
     int id;
     int sockfd;
     unsigned short local_port;
@@ -101,12 +111,17 @@ struct subconn_info
     }
 };
 
+extern std::map<uint, struct subconn_info*> allconns;
+
+
 // Multithread
 struct thread_data {
     unsigned int  pkt_id;
     unsigned int  len;
     unsigned char *buf;
     int ttl;
+    bool incoming;
+    subconn_info* subconn;
     Optimack* obj;
 };
 
@@ -116,7 +131,7 @@ struct int_thread {
 };
 
 // Thread wrapper
-void* nfq_loop(void *arg);
+// void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);

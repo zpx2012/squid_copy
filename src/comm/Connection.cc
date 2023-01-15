@@ -79,9 +79,9 @@ void Comm::Connection::setOptimack(){
     optimack_server = std::make_shared<Optimack>();
     if (optimack_server){
         optimack_server->init();
-        optimack_server->setup_nfq(local.port());
-        optimack_server->nfq_stop = 0;
-        optimack_server->setup_nfqloop();
+        // optimack_server->setup_nfq(local.port());
+        // optimack_server->nfq_stop = 0;
+        // optimack_server->setup_nfqloop();
 
 
         optimack_server->set_main_subconn(remote_ip, local_ip, remote.port(), local.port(), fd);

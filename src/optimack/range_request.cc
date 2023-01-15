@@ -190,10 +190,11 @@ restart:
                 continue;
             }
             if(!it->sent_epoch_time){
-                if(is_ssl)
+                if(is_ssl){
 #ifdef USE_OPENSSL
                     send_http_range_request(range_ssl, *it);
 #endif
+                }
                 else
                     send_http_range_request((void*)range_sockfd, *it);
 
