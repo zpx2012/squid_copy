@@ -6,7 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 from selenium.common.exceptions import TimeoutException, WebDriverException
-import time, traceback, subprocess as sp, re, shlex, os, psutil, signal, socket
+import time, traceback, subprocess as sp, re, shlex, os, psutil, signal, socket, pandas as pd
 
 errpage_partial = '''
 <html><head>
@@ -143,20 +143,14 @@ def get_onload_time(driver, domain):
         driver.get(url)
 
         timing = driver.execute_script("return window.performance.timing")
-        navigationStart = driver.execute_script("return window.performance.timing.navigationStart")
-        responseStart = driver.execute_script("return window.performance.timing.responseStart")
-        domContentLoaded = driver.execute_script("return window.performance.timing.domContentLoadedEventEnd")
-        loadEventEnd = driver.execute_script("return window.performance.timing.loadEventEnd")
 
-        timing['backendTime'] = responseStart - navigationStart
-        timing['domContentLoadedTime'] = domContentLoaded - navigationStart
-        timing['onLoadTime'] = loadEventEnd - navigationStart
-        print("BackEnd: %fms" % (responseStart - navigationStart))
-        print("DomContentLoaded: %fms" % (domContentLoaded - navigationStart))
-        print("OnLoad: %fms" % (loadEventEnd - navigationStart))
-        print(timing)
-        # print(timing.keys())
-        # driver.close()
+        timing['backendTime'] = timing['responseStart'] - timing['navigationStart']
+        timing['domContentLoadedTime'] = timing['domContentLoadedEventEnd'] - timing['navigationStart']
+        timing['onLoadTime'] = timing['loadEventEnd'] - timing['navigationStart']
+        print("BackEnd: %fms" % (timing['backendTime']))
+        print("DomContentLoaded: %fms" % (timing['domContentLoadedTime']))
+        print("OnLoad: %fms" % (timing['onLoadTime']))
+
         if '<title>ERROR: The requested URL could not be retrieved</title>' in driver.page_source:
             return timing, 'ERR SQUID'
         return timing, 'Success'
@@ -171,6 +165,16 @@ def get_onload_time(driver, domain):
     except:
         print('%s' % traceback.format_exc())
         return timing, 'UNKNOWN_ERROR'
+
+def get_alltimings(driver, start_timestamp, output_file):
+    all_timings = driver.execute_script('return window.performance.getEntries()')
+    # convert into pd
+    df = pd.DataFrame(all_timings)
+    # add one column to be start timestamp
+    df['navigationStart'] = start_timestamp
+    # write to csv
+    df.to_csv(output_file, mode = 'a', encoding='utf-8', index=False)
+
 
 def open_normal_webdriver():
     opts = webdriver.FirefoxOptions()
@@ -367,10 +371,12 @@ def test_normal(normal_driver, domain, out_dir):
     timing, err = get_onload_time(normal_driver, domain)
     #normal_driver.quit()
     # print("Normal: " + str(timing))
+
     
     output = [domain, 'Normal', time.strftime("%Y-%m-%d %H:%M:%S"), err]
     if timing:
         output += list(map(str,timing.values()))
+        get_alltimings(normal_driver, timing['navigationStart'], alltimings_output_file)
     return err, output
 
 
@@ -408,6 +414,7 @@ def test_proxy(proxy_driver, domain, out_dir, squid_path, label, start_time):
             output = [domain, label, time.strftime("%Y-%m-%d %H:%M:%S"), err]
             if timing:
                 output += list(map(str,timing.values()))
+                get_alltimings(proxy_driver, timing['navigationStart'], alltimings_output_file)
                 # outfile.writelines(','.join(output) + "\n")
                 # print("Proxy: " + str(timing))
                 # os.system("sudo rm " + tcpdump_outfile)
@@ -441,6 +448,7 @@ home_dir = os.path.expanduser("~") + "/"
 domain = sys.argv[1]
 out_dir = os.path.expanduser(sys.argv[2])
 output_file = sys.argv[3]
+alltimings_output_file = out_dir + '/' + output_file + "_alltimings.csv"
 mode = sys.argv[4]
 os.system("sudo mkdir -p "  + out_dir)
 proxy_path = home_dir + "squid/sbin/squid"
@@ -461,6 +469,7 @@ with open(out_dir + '/' + output_file, "a") as outfile:
         time.sleep(5)
         print("Test: Squid " + domain)
         err, output = test_proxy(squid_driver, domain, out_dir, squid_path, "Squid", start_time)
+        get_alltimings(squid_driver, output['navigationStart'], alltimings_output_file)
         squid_driver.quit()
 
     elif mode == 'proxy':
@@ -468,6 +477,7 @@ with open(out_dir + '/' + output_file, "a") as outfile:
         time.sleep(15)
         print("Test: Proxy " + domain)
         err, output = test_proxy(proxy_driver, domain, out_dir, proxy_path, "Proxy", start_time)
+        get_alltimings(proxy_driver, output['navigationStart'], alltimings_output_file)
         proxy_driver.quit()
 
     outfile.writelines(','.join(output) + "\n")
