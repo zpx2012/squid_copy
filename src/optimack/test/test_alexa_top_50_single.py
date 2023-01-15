@@ -143,21 +143,6 @@ def get_onload_time(driver, domain):
         driver.get(url)
 
         timing = driver.execute_script("return window.performance.timing")
-<<<<<<< HEAD
-        navigationStart = driver.execute_script("return window.performance.timing.navigationStart")
-        responseStart = driver.execute_script("return window.performance.timing.responseStart")
-        domContentLoaded = driver.execute_script("return window.performance.timing.domContentLoadedEventEnd")
-        loadEventEnd = driver.execute_script("return window.performance.timing.loadEventEnd")
-
-        timing['backendTime'] = responseStart - navigationStart
-        timing['domContentLoadedTime'] = domContentLoaded - navigationStart
-        timing['onLoadTime'] = loadEventEnd - navigationStart
-        # print("BackEnd: %fms" % (responseStart - navigationStart))
-        # print("DomContentLoaded: %fms" % (domContentLoaded - navigationStart))
-        print("OnLoad: %fms" % (loadEventEnd - navigationStart))
-        # print(timing.keys())
-        # driver.close()
-=======
 
         timing['backendTime'] = timing['responseStart'] - timing['navigationStart']
         timing['domContentLoadedTime'] = timing['domContentLoadedEventEnd'] - timing['navigationStart']
@@ -166,7 +151,6 @@ def get_onload_time(driver, domain):
         print("DomContentLoaded: %fms" % (timing['domContentLoadedTime']))
         print("OnLoad: %fms" % (timing['onLoadTime']))
 
->>>>>>> c0b1eb5caab87fe0fcbfe9035d1396ce046b62ad
         if '<title>ERROR: The requested URL could not be retrieved</title>' in driver.page_source:
             return timing, 'ERR SQUID'
         return timing, 'Success'
@@ -391,13 +375,7 @@ def test_normal(normal_driver, domain, out_dir, start_time):
         print(tcpdump_outfile)
         tcpdump_p = start_tcpdump(domain, tcpdump_outfile) 
     timing, err = get_onload_time(normal_driver, domain)
-<<<<<<< HEAD
     stop_tcpdump(tcpdump_p)
-=======
-    #normal_driver.quit()
-    # print("Normal: " + str(timing))
-
->>>>>>> c0b1eb5caab87fe0fcbfe9035d1396ce046b62ad
     
     output = [domain, 'Normal', time.strftime("%Y-%m-%d %H:%M:%S"), err]
     if timing:
