@@ -196,7 +196,6 @@ static const char *squid_start_script = "squid_start";
 
 /*Our code*/
 struct nfq_handle *g_nfq_h;
-struct nfq_q_handle *g_nfq_qh;
 int g_nfq_fd;
 int nfq_stop, cb_stop;
 pthread_t nfq_thread;
@@ -289,6 +288,7 @@ int teardown_nfq()
 static int 
 cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
+    double cb_start = get_current_epoch_time_nanosecond();
     unsigned char* packet;
     int packet_len = nfq_get_payload(nfa, &packet);
 
@@ -296,8 +296,10 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     struct nfqnl_msg_packet_hdr *ph;
     ph = nfq_get_msg_packet_hdr(nfa);
     if (!ph) {
+        printf("cb: can't get_msg_packet_hdr\n");
         return -1;
     }
+    int pkt_id = htonl(ph->packet_id);
 
     struct myiphdr *iphdr = ip_hdr(packet);
     struct mytcphdr *tcphdr = tcp_hdr(packet);
@@ -314,11 +316,15 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     auto find_ret = allconns.find(local_port);
     if (find_ret == allconns.end()) {
         nfq_set_verdict(g_nfq_qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
+        // printf("cb: can't find local port %d\n", local_port);
         // printf("letting through\n");
         return -1;
     }
     subconn_info* subconn = (find_ret->second);
     Optimack* obj = subconn->optack;
+
+    // printf("delay, %d, cb_start, %f, port, %d, obj, %p\n", pkt_id, get_current_epoch_time_nanosecond(), obj->squid_port, obj);
+
 
     if(!obj){
         printf("cb: subconn's optmack is null!\n");
@@ -334,13 +340,14 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     }
     // print_func("malloc thr_data %p\n", thr_data);
     memset(thr_data, 0, sizeof(struct thread_data));
-    thr_data->pkt_id = htonl(ph->packet_id);
+    thr_data->pkt_id = pkt_id;
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len+1);
     thr_data->incoming = incoming;
     thr_data->subconn = subconn;
     thr_data->obj = subconn->optack;
     thr_data->ttl = 10;
+    thr_data->timestamps.push_back(cb_start);
     if (!thr_data->buf){
             // debugs(0, DBG_CRITICAL, "cb: error during malloc");
         printf("free thr_data %p\n", thr_data);
@@ -350,7 +357,7 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     memcpy(thr_data->buf, packet, packet_len);
     thr_data->buf[packet_len] = 0;
 
-    if(forward_packet)
+    if(!forward_packet)
         nfq_set_verdict(g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
 
 

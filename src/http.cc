@@ -2280,7 +2280,7 @@ HttpStateData::sendRequest()
             // bool use_whitelist = false;
             // if(use_whitelist){
             bool static_object = is_static_object(std::string(mb.content()));
-            if(!static_object || serverConnection->optimack_server->iptables_rules.empty()){
+            if(!static_object){ //|| serverConnection->optimack_server->iptables_rules.empty()
                 print_func("Not static or already cleanup\n");
                 serverConnection->optimack_server->remove_iptables_rules();
                 // serverConnection->optimack_server->cleaned_up = true;

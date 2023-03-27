@@ -133,7 +133,6 @@ void log_func(int level, const char *fmt, ...)
 
 void print_func(const char *fmt, ...)
 {
-
     va_list ap;
     char buffer[1024];
     char time_str[64];

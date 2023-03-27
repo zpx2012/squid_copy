@@ -1361,9 +1361,9 @@ int SSL_connect_nonblocking(int sockfd, SSL* ssl){
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(sockfd, &fds);
-    for(int count = 0; count < 10; count++){
+    for(int count = 0; count < 3; count++){
 
-        print_func("%d: Attempt %d.\n", sockfd, count);
+        print_func("SSL_connect_nonblocking: fd%d: Attempt %d.\n", sockfd, count);
 
         int err = SSL_connect(ssl);
         if (err == 1) {
@@ -1430,7 +1430,8 @@ SSL * open_ssl_conn(int sockfd, bool limit_recordsize){
     // SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
     SSL_CTX_set_cipher_list(ctx, PREFERRED_CIPHERS);
 
-    const int status = SSL_connect_nonblocking(sockfd, ssl);
+    // const int status = SSL_connect_nonblocking(sockfd, ssl);
+    const int status = SSL_connect(ssl);
     if (status != 1)
     {
         int err = SSL_get_error(ssl, status);

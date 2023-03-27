@@ -40,8 +40,8 @@ df = pd.read_csv(in_file, sep=',')
 df.columns = ['domain', 'mode', 'timestamp', 'ErrorCode', 'connectEnd', 'connectStart', 'domComplete', 'domContentLoadedEventEnd', 'domContentLoadedEventStart', 'domInteractive', 'domLoading', 'domainLookupEnd', 'domainLookupStart', 'fetchStart', 'loadEventEnd', 'loadEventStart', 'navigationStart', 'redirectEnd', 'redirectStart', 'requestStart', 'responseEnd', 'responseStart', 'secureConnectionStart', 'unloadEventEnd', 'unloadEventStart', 'backendTime', 'domContentLoadedTime', 'onLoadTime']
 df = df[df['ErrorCode'] == 'Success']
 df['timestamp'] = pd.to_datetime(df['timestamp'])
-df = df[df.timestamp >= pd.to_datetime('2022-12-31T4:0:0')]
-df = df[df['timestamp'] < pd.to_datetime('2023-01-01T4:0:0') ]
+df = df[df.timestamp >= pd.to_datetime('2023-03-02T4:0:0')]
+df = df[df['timestamp'] < pd.to_datetime('2023-03-03T4:0:0') ]
 modes = ['Normal', 'Squid', 'Proxy']
 durations = ['backendTime', 'domContentLoadedTime', 'onLoadTime']
 for dur in durations:

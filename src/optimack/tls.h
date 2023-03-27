@@ -15,7 +15,7 @@
 #include <sstream>
 #include <string.h>
 #include "reassembler.h"
-#include "Optimack_gprof.h"
+#include "Optimack.h"
 #include <thread>
 #include <mutex>
 

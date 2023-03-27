@@ -40,10 +40,12 @@ class TLS_Record_Number_Seq_Map;
 
 #define USE_OPTIMACK 1
 
+extern struct nfq_q_handle *g_nfq_qh;
+
 const int multithread = 0;
 const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
-const int forward_packet = 1;
+const int forward_packet = 0;
 const int log_squid_ack = 0;
 const int log_result = 0;
 const int use_boost_pool = 1;
@@ -123,6 +125,7 @@ struct thread_data {
     bool incoming;
     subconn_info* subconn;
     Optimack* obj;
+    std::vector<double> timestamps;
 };
 
 struct int_thread {
@@ -195,7 +198,7 @@ public:
     int process_tcp_packet(struct thread_data* thr_data);
     int process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned int seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn, char* log);
     int process_tcp_ciphertext_packet(int pkt_id, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
-    int process_tcp_plaintext_packet(int pkt_id, unsigned char* packet, int packet_len, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
+    int process_tcp_plaintext_packet(thread_data* thr_data, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
     void send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq);
     int modify_to_main_conn_packet(struct subconn_info* subconn, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);

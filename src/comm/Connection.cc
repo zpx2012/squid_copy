@@ -55,11 +55,11 @@ Comm::Connection::~Connection()
     delete tlsHistory;
 
     /* Our code */
-    if(optimack_server){
-        optimack_server->cleanup();
+    // if(optimack_server){
+        // optimack_server->cleanup();
         // delete optimack_server;
         // optimack_server = nullptr;
-    }
+    // }
 }
 
 #ifdef USE_OPTIMACK

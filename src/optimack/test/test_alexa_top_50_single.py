@@ -171,14 +171,16 @@ def get_alltimings(driver, start_timestamp, output_file):
     # convert into pd
     df = pd.DataFrame(all_timings)
     # add one column to be start timestamp
+    df['domain'] = domain
+    df['mode'] = mode
     df['navigationStart'] = start_timestamp
     # write to csv
-    df.to_csv(output_file, mode = 'a', encoding='utf-8', index=False)
+    df.to_csv(output_file, mode = 'a', encoding='utf-8', index=False, header=False)
 
 
 def open_normal_webdriver():
     opts = webdriver.FirefoxOptions()
-    # opts.add_argument("--headless")
+    opts.add_argument("--headless")
 
     profile = webdriver.FirefoxProfile()
     profile.set_preference("network.stricttransportsecurity.preloadlist", False)
@@ -250,7 +252,7 @@ def open_proxy_webdriver(proxy_addr, http_port, https_port):
 
     profile.update_preferences()    
     driver = webdriver.Firefox(options=opts, firefox_profile=profile) # capabilities=firefox_capabilities)
-    driver.set_page_load_timeout(300)
+    driver.set_page_load_timeout(900)
     return driver
 
 
@@ -482,16 +484,14 @@ with open(out_dir + '/' + output_file, "a") as outfile:
         time.sleep(10)
         print("Test: Squid " + domain)
         err, output = test_proxy(squid_driver, domain, out_dir, squid_path, "Squid", start_time)
-        get_alltimings(squid_driver, output['navigationStart'], alltimings_output_file)
         squid_driver.quit()
         print()
 
     elif mode == 'proxy':
         proxy_driver = open_proxy_webdriver("127.0.0.1:3128", 3128, 3129)
-        time.sleep(15)
+        time.sleep(20)
         print("Test: Proxy " + domain)
         err, output = test_proxy(proxy_driver, domain, out_dir, proxy_path, "Proxy", start_time)
-        get_alltimings(proxy_driver, output['navigationStart'], alltimings_output_file)
         proxy_driver.quit()
         print()
 
