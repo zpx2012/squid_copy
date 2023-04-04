@@ -4104,6 +4104,7 @@ bool is_static_object(std::string request){
 
     bool static_object = false;
     std::vector<std::string> whitelist = {"image", "video", "audio", "font", "x-7z-compressed", "pdf", "json", "x-tar", "gzip", "zip", "*"};
+    
     std::vector<std::string> request_fields = split(request, '\n');
     for(auto const& s : request_fields){
         //std::cout << s << std::endl;
@@ -4124,6 +4125,10 @@ bool is_static_object(std::string request){
                std::find(whitelist.begin(), whitelist.end(), first_type.at(1)) != whitelist.end()){
                    static_object = true;
                    std::cout << "Is static_object: " << accept_fields.at(0) << std::endl; 
+            }
+            else if(first_type.at(0) == "text" && first_type.at(1) != "html"){
+                static_object = true;
+                std::cout << "Is static_object: " << accept_fields.at(0) << std::endl;
             }
         }
     }

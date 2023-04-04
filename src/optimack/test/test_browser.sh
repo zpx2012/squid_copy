@@ -5,13 +5,13 @@ function one_round(){
     out_dir=$2
     output_file=$3
 
-    # python3 ~/squid_copy/src/optimack/test/test_alexa_top_50_single.py $domain $out_dir $output_file normal
+    python3 ~/squid_copy/src/optimack/test/test_alexa_top_50_single.py $domain $out_dir $output_file normal
 
-    # ~/squid_only/sbin/squid
-    # python3 ~/squid_copy/src/optimack/test/test_alexa_top_50_single.py $domain $out_dir $output_file squid
-    # ~/squid_only/sbin/squid -k shutdown
-    # ~/squid_only/sbin/squid -k kill
-    # killall squid  
+    ~/squid_only/sbin/squid
+    python3 ~/squid_copy/src/optimack/test/test_alexa_top_50_single.py $domain $out_dir $output_file squid
+    ~/squid_only/sbin/squid -k shutdown
+    ~/squid_only/sbin/squid -k kill
+    killall squid  
     
     screen -dmS proxy bash -c "~/squid/sbin/squid -N >> $out_dir/squid_output_${domain}_$(date +%Y-%m-%dT%H:%M:%S).txt"
     python3 ~/squid_copy/src/optimack/test/test_alexa_top_50_single.py $domain $out_dir $output_file proxy
