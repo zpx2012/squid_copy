@@ -367,6 +367,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
         max_opt_ack = cur_ack;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
+    printf("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u\n", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
@@ -1116,7 +1117,7 @@ Optimack::full_optimistic_ack_altogether()
     // free(ack_thr);
     // ack_thr = NULL;
 
-    log_info("Optimistic ack started");
+    printf("Optimistic ack started\n");
 
     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
          last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
@@ -1157,6 +1158,7 @@ Optimack::full_optimistic_ack_altogether()
                         if(opa_ack_start == last_opa_ack)
                             continue;
                         send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                        printf("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u\n", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
                     }
@@ -2785,27 +2787,27 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data){
     // check remote ip, local ip
     // and set key_port
     // bool incoming = true;
-    // char *sip, *dip;
-    // uint local_port;
-    // if (g_remote_ip_int == iphdr->saddr) {
-    //     incoming = true;
-    //     sip = g_remote_ip;
-    //     dip = g_local_ip;
-    //     local_port = dport;
-    // }
-    // else if (g_remote_ip_int == iphdr->daddr) {
-    //     incoming = false;
-    //     sip = g_local_ip;
-    //     dip = g_remote_ip;
-    //     local_port = sport;
-    // }
+    char *sip, *dip;
+    uint local_port;
+    if (g_remote_ip_int == iphdr->saddr) {
+        incoming = true;
+        sip = g_remote_ip;
+        dip = g_local_ip;
+        local_port = dport;
+    }
+    else if (g_remote_ip_int == iphdr->daddr) {
+        incoming = false;
+        sip = g_local_ip;
+        dip = g_remote_ip;
+        local_port = sport;
+    }
 
-    // if(incoming)
-    //     printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
-    // //     sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn->id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
-    // else
-    //     printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_loc, tcphdr->th_ack, ack-subconn->ini_seq_rem, iphdr->ttl, payload_len);
-    //     sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn->id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_loc, tcphdr->th_ack, ack-subconn->ini_seq_rem, iphdr->ttl, payload_len);
+    if(incoming)
+        printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
+    //     sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn->id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_rem, tcphdr->th_ack, ack-subconn->ini_seq_loc, iphdr->ttl, payload_len);
+    else
+        printf("P%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d\n", thr_data->pkt_id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_loc, tcphdr->th_ack, ack-subconn->ini_seq_rem, iphdr->ttl, payload_len);
+        sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn->id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_loc, tcphdr->th_ack, ack-subconn->ini_seq_rem, iphdr->ttl, payload_len);
 
     // log_info(log);
     // print_func("%s\n", log);
@@ -3463,7 +3465,7 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
         send_optimistic_ack(subconn, 1, get_adjusted_rwnd(1));
     }
     else{
-        send_optimistic_ack(subconn, seq_rel+payload_len, rwnd);
+        // send_optimistic_ack(subconn, seq_rel+payload_len, rwnd);
     }
 
     if (BACKUP_MODE && subconn->is_backup){
@@ -4126,7 +4128,7 @@ bool is_static_object(std::string request){
                    static_object = true;
                    std::cout << "Is static_object: " << accept_fields.at(0) << std::endl; 
             }
-            else if(first_type.at(0) == "text" && first_type.at(1) != "html"){
+            else if(first_type.at(0) == "text" && first_type.at(1) == "ccs"){
                 static_object = true;
                 std::cout << "Is static_object: " << accept_fields.at(0) << std::endl;
             }

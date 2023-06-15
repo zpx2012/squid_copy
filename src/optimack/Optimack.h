@@ -13,7 +13,7 @@
 #include <netinet/in.h>
 #include <thread>
 
-#define GPROF_CHECK 1
+#define GPROF_CHECK 0
 #ifndef GPROF_CHECK
     #include "autoconf.h"
 #else
@@ -309,7 +309,7 @@ public:
         we2squid_lost_cnt = 0,
         range_timeout_cnt = 0;
     float overrun_penalty = 0, we2squid_penalty = 0, range_timeout_penalty = 0;
-    bool cleaned_up = false;
+    bool cleaned_up = false, static_object = true;
 
     float last_off_packet = 0.0;
     std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp, seq_ini_time;

@@ -909,8 +909,12 @@ FwdState::connectStart()
     /** Our code: don't reuse connections **/   
     // const bool openedPconn = false;
 
-    const bool openedPconn = Comm::IsConnOpen(temp);
+    bool openedPconn = Comm::IsConnOpen(temp);
     pconnRace = openedPconn ? racePossible : raceImpossible;
+
+    /* Our code*/
+    if(!temp->optimack_server->static_object)
+        openedPconn = false;
 
     // if we found an open persistent connection to use. use it.
     if (openedPconn) {

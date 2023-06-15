@@ -2283,6 +2283,7 @@ HttpStateData::sendRequest()
             if(!static_object){ //|| serverConnection->optimack_server->iptables_rules.empty()
                 print_func("Not static or already cleanup\n");
                 serverConnection->optimack_server->remove_iptables_rules();
+                serverConnection->optimack_server->static_object = false;
                 // serverConnection->optimack_server->cleaned_up = true;
             }
             // // if(!static_object || serverConnection->optimack_server->cleaned_up){
