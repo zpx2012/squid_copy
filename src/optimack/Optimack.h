@@ -133,6 +133,24 @@ struct int_thread {
     Optimack* obj;
 };
 
+
+struct http_header {
+    int start;
+    int end;
+    int parsed;
+    int remain;
+    int recved;
+};
+
+struct range_conn{
+    int sockfd, sockfd_old, range_request_count, requested_bytes, erase_count;
+    int in_use;
+    http_header* header;
+#ifdef USE_OPENSSL
+    SSL *ssl, *ssl_old;
+#endif
+};
+
 // Thread wrapper
 // void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
@@ -320,7 +338,10 @@ public:
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
+
     void range_watch();
+    int range_recv(std::vector<Interval>& range_job_vector, struct range_conn* range_conn_this);
+    int check_range_conn(struct range_conn* range_conn_this, std::vector<Interval>& range_job_vector);
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
     uint get_byte_seq(uint tcp_seq);
