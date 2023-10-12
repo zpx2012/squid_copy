@@ -12,8 +12,8 @@
 # url='http://terran.cs.ucr.edu/ubuntu-16.04.6-server-i386.template' #83M
 # site='terran'
 
-url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
-# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
+# url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
+url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
 # url='http://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
 site='mirrors.mit.edu'
 
@@ -28,6 +28,9 @@ cd ~/squid_copy/
 #./configure --prefix=/usr/local/squid --disable-optimizations --enable-linux-netfilter
 make install
 
+
+iptables -F
+iptables -F -t mangle
 while true; do
     echo $(date -Iseconds): Slowdown test
     curl_singlerun=curl_proxy_singlerun_$(date +%s)

@@ -2,9 +2,9 @@
 set -e
 
 prefix=$1
-./configure --prefix=$prefix/squid --disable-optimizations --with-openssl=/usr/local/ssl --enable-ssl-crtd
-make
-make install
+#./configure --prefix=$prefix/squid --disable-optimizations --with-openssl=/usr/local/ssl --enable-ssl-crtd
+#make
+#make install
 
 cd $prefix/squid/etc/
 mkdir -p ssl_cert

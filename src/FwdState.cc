@@ -908,13 +908,19 @@ FwdState::connectStart()
 
     /** Our code: don't reuse connections **/   
     // const bool openedPconn = false;
+    if((strcmp(host, "161.35.100.102") != 0) && (strcmp(host, "mirrors.mit.edu") != 0) && (strcmp(host, "mirror.math.princeton.edu") != 0)){
+        printf("%s skipped\n", host);
+        return;
+    }
 
     bool openedPconn = Comm::IsConnOpen(temp);
     pconnRace = openedPconn ? racePossible : raceImpossible;
 
     /* Our code*/
-    if(!temp->optimack_server->static_object)
-        openedPconn = false;
+    // if(USE_OPTIMACK){
+    //     if(!temp->optimack_server->static_object)
+    //         openedPconn = false;
+    // }
 
     // if we found an open persistent connection to use. use it.
     if (openedPconn) {

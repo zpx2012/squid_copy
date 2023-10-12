@@ -7,6 +7,7 @@
 
 #include "logging.h"
 #include "Optimack.h"
+// #include "thr_pool_range.h"
 
 #ifndef GPROF_CHECK
 #include "squid.h"
@@ -23,17 +24,18 @@
 #define PACKET_SIZE 1460
 
 
-
 const char header_field[] = "HTTP/1.1 206";
 const char range_field[] = "Content-Range: bytes ";
 const char tail_field[] = "\r\n\r\n";
 const char keep_alive_field[] = "Keep-Alive: ";
 const char max_field[] = "max=";
 
+const bool debug_range = true;
+#define RANGE_NUM 1
 
 
-int process_range_rv(char* response, int rv, std::shared_ptr<Optimack> obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
-int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
+// int process_range_rv(char* response, int rv, std::shared_ptr<Optimack> obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
+int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 void cleanup_range(int& range_sockfd, int& range_sockfd_old, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 
 
@@ -53,12 +55,12 @@ int parse_response(http_header *head, char *response, int unread)
         if (parse_head < recv_end) {
             parse_head += 21;
             if(parse_head < recv_end){
-                head->start = (int)strtol(parse_head, &parse_head, 10);
+                // head->start = (int)strtol(parse_head, &parse_head, 10);
                 parse_head++;
                 if(parse_head < recv_end){
-                    head->end = (int)strtol(parse_head, &parse_head, 10);
-                    head->remain = head->end - head->start + 1;
-                    head->recved = 0;
+                    // head->end = (int)strtol(parse_head, &parse_head, 10);
+                    // head->remain = head->end - head->start + 1;
+                    // head->recved = 0;
                     parse_head = std::search(parse_head, recv_end, tail_field, tail_field+4);
                     if (parse_head < recv_end) {
                         parse_head += 4;
@@ -87,7 +89,7 @@ restart:
 
         range_conn_this->sockfd = establish_tcp_connection(range_conn_this->sockfd_old, g_remote_ip, g_remote_port);
         close(range_conn_this->sockfd_old);
-        print_func("[Range] New conn, fd %d, port %d\n", range_conn_this->sockfd, get_localport(range_conn_this->sockfd));
+        // print_func("[Range] New conn, fd %d, port %d\n", range_conn_this->sockfd, get_localport(range_conn_this->sockfd));
         log_info("[Range] New conn, fd %d, port %d\n", range_conn_this->sockfd, get_localport(range_conn_this->sockfd));
         if(is_ssl){
     #ifdef USE_OPENSSL
@@ -122,7 +124,6 @@ struct range_conn* find_least_range_conn(struct range_conn* range_conns, int ran
     return &range_conns[min_i];
 }
 
-
 void
 Optimack::range_watch() //void* arg
 {
@@ -130,23 +131,27 @@ Optimack::range_watch() //void* arg
 
     // print_func("[Range]: range_watch thread starts, ref_count %d\n", getptr().use_count());
 
-    int erase_count = 0;
+#ifdef USE_OPENSSL
+    SSL *range_ssl, *range_ssl_old;
+#endif
 
-    int range_conn_num = 2;
-    struct range_conn* range_conns = new struct range_conn[range_conn_num];
-    for(int i = 0; i < range_conn_num; i++){
-        range_conns[i].sockfd = -1;
-        range_conns[i].sockfd_old = -1;
-        range_conns[i].range_request_count = 0;
-        range_conns[i].header = (http_header*)malloc(sizeof(http_header));
-        memset(range_conns[i].header, 0, sizeof(http_header));
-    }
+    int rv, range_sockfd, range_sockfd_old, erase_count = 0;
+    char response[MAX_RANGE_SIZE+1];
+
+    // Optimack* obj = ((Optimack*)arg);
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
+    range_sockfd = -1;
 
     pthread_mutex_t *mutex = &(mutex_seq_gaps);
+    subconn_info* subconn = (subconn_infos.begin()->second);
 
     std::vector<Interval>& range_job_vector = ranges_sent.getIntervalList();
     pthread_mutex_t* p_mutex_range_job_vector = ranges_sent.getMutex();
 
+    int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
+    http_header* header = (http_header*)malloc(sizeof(http_header));
+    memset(header, 0, sizeof(http_header));
     // parser
     // Http1::RequestParser rp;
     // SBuf headerBuf;
@@ -178,87 +183,132 @@ Optimack::range_watch() //void* arg
             continue;
         }
 
-        for(int i = 0; i < range_conn_num; i++){
-
-//             int & range_sockfd = range_conns[i].sockfd;
-//             int & range_sockfd_old = range_conns[i].sockfd_old;
-//             int & range_request_count = range_conns[i].range_request_count;
-// #ifdef USE_OPENSSL
-//             SSL* & range_ssl = range_conns[i].ssl;
-//             SSL* & range_ssl_old = range_conns[i].ssl_old;
-// #endif
-
-            check_range_conn(&range_conns[i], range_job_vector);
-
-
-            //Check if any more unsent range and sent
-            // print_func("Check if any more unsent range and sent\n");
+        if(range_sockfd <= 0 || range_request_count >= 95 || erase_count >= 5){
+            //clear all sent timestamp, to resend it
             // pthread_mutex_lock(p_mutex_range_job_vector);
-            for (auto it = range_job_vector.begin(); it != range_job_vector.end();){
-            // for(auto it : range_job->getIntervalList()) {
-                // print_func("[Range] Resend bytes %d - %d\n", it.start, it.end);
-                uint end_tcp_seq = get_tcp_seq(it->end);
-                if (cur_ack_rel >= end_tcp_seq){
-                    erase_count++;
-                    log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", cur_ack_rel, end_tcp_seq);
-                    print_func("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d\n", cur_ack_rel, end_tcp_seq, erase_count);
-                    // print_func("before erase it: [%u, %u]\n", it->start, it->end);
-                    range_job_vector.erase(it++);
-                    if(!range_job_vector.size())
-                        break;
-                    // print_func("after erase it: [%u, %u]\n", it->start, it->end);
-                    continue;
-                }
-                if(!it->sent_epoch_time){
-                    struct range_conn* curr_range_conn = find_least_range_conn(range_conns, range_conn_num);
-                    int rv = 0;
-                    if(is_ssl){
-#ifdef USE_OPENSSL
-                        rv = send_http_range_request(curr_range_conn->ssl, *it);
-#endif
-                    }
-                    else
-                        rv = send_http_range_request((void*)curr_range_conn->sockfd, *it);
-
-                    it->sent_epoch_time = get_current_epoch_time_second();
-                    if (rv < 0){
-                        // print_func("[Range] bytes [%u, %u] failed\n", start, end);
-                        log_debug("[Range] bytes %d - %d failed", it->start, it->end);
-                    } 
-                    else{
-                        curr_range_conn->requested_bytes += it->end - it->start + 1;
-                        curr_range_conn->range_request_count++;
-                        print_func("[Range] bytes [%u, %u] requested, No.%d\n", it->start, it->end, curr_range_conn->range_request_count);
-                        // log_debug("[Range] bytes %d - %d requested, No.%d", start, end, range_request_count);
-                    }
-                }
-                else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
-                    double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
-                    range_timeout_cnt++;
-                    range_timeout_penalty += delay;
-                    uint start_tcp_seq = get_tcp_seq(it->start);
-                    log_info("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
-                    print_func("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
-                    // close(range_sockfd);
-                    // cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
-                    // range_sockfd_old = range_sockfd;
-                    // range_sockfd = -1;
-                    break;
-                }
-                it++;
-
+restart:
+            for (auto it = range_job_vector.begin(); it != range_job_vector.end();it++){
+                it->sent_epoch_time = 0;
             }
             // pthread_mutex_unlock(p_mutex_range_job_vector);
-            range_recv(range_job_vector, &range_conns[i]);
+
+            range_sockfd = establish_tcp_connection(range_sockfd_old, g_remote_ip, g_remote_port);
+            close(range_sockfd_old);
+            range_sockfd_old = range_sockfd;
+            // print_func("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
+            // log_info("[Range] New conn, fd %d, port %d\n", range_sockfd, get_localport(range_sockfd));
+            if(is_ssl){
+#ifdef USE_OPENSSL
+                range_ssl = NULL;
+                range_ssl = open_ssl_conn(range_sockfd, false);
+                if(range_ssl_old)
+                    SSL_free(range_ssl_old);
+                if(!range_ssl){
+                    sleep(1);
+                    goto restart;
+                }
+                fcntl(range_sockfd, F_SETFL, O_NONBLOCK);
+#endif
+            }
+            range_request_count = 0;
+            erase_count = 0;
+        }
+        if(range_sockfd <= 0){ //TODO: remove ranges_sent?{
+            perror("Can't create range_sockfd, range thread break\n");
+            break;
+        }
+
+        //Check if any more unsent range and sent
+        // print_func("Check if any more unsent range and sent\n");
+        // pthread_mutex_lock(p_mutex_range_job_vector);
+        for (auto it = range_job_vector.begin(); it != range_job_vector.end();){
+        // for(auto it : range_job->getIntervalList()) {
+            // print_func("[Range] Resend bytes %d - %d\n", it.start, it.end);
+            uint end_tcp_seq = get_tcp_seq(it->end);
+            if (cur_ack_rel >= end_tcp_seq){
+                erase_count++;
+                log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", cur_ack_rel, end_tcp_seq);
+                print_func("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d\n", cur_ack_rel, end_tcp_seq, erase_count);
+                // print_func("before erase it: [%u, %u]\n", it->start, it->end);
+                range_job_vector.erase(it++);
+                if(!range_job_vector.size())
+                    break;
+                // print_func("after erase it: [%u, %u]\n", it->start, it->end);
+                continue;
+            }
+            if(!it->sent_epoch_time){
+                if(is_ssl){
+#ifdef USE_OPENSSL
+                    send_http_range_request(range_ssl, &(*it));
+#endif
+                }
+                else
+                    send_http_range_request((void*)range_sockfd, &(*it));
+
+                it->sent_epoch_time = get_current_epoch_time_second();
+                // print_func("[Range]: sent range[%u, %u]\n", it->start+obj->response_header_len+1, it->end+obj->response_header_len+1);
+            }
+            else if (get_current_epoch_time_nanosecond() - it->sent_epoch_time >= 10){//timeout, send it again
+                double delay = get_current_epoch_time_nanosecond() - it->sent_epoch_time;
+                range_timeout_cnt++;
+                range_timeout_penalty += delay;
+                uint start_tcp_seq = get_tcp_seq(it->start);
+                log_info("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
+                print_func("[Range] [%u, %u] timeout %.2f, close and restart\n", start_tcp_seq, end_tcp_seq, delay);
+                // close(range_sockfd);
+                cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+                // range_sockfd_old = range_sockfd;
+                // range_sockfd = -1;
+                break;
+            }
+            it++;
+
+        }
+        // pthread_mutex_unlock(p_mutex_range_job_vector);
+
+        // Receiving packet
+        // print_func("Receiving packet\n");
+        if(recv_offset == 0)
+            memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset+1);
+        if(is_ssl){
+#ifdef USE_OPENSSL
+            rv = SSL_read(range_ssl, response+recv_offset, MAX_RANGE_SIZE-recv_offset);
+#endif
+        }
+        else{
+            rv = recv(range_sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
+        }
+
+        if (rv > 0) {
+            log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
+            print_func("[Range] recved %d bytes, hand over to process_range_rv\n", rv);
+            process_range_rv(response, rv, this, subconn, header, consumed, unread, parsed, recv_offset, unsent);
+        }
+        else if(rv == 0){
+            if(!is_ssl){
+                if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+            }
+
+            if(rv == 0){
+                log_debug("[Range] recv ret %d, sockfd %d closed ", rv, range_sockfd);
+                print_func("[Range] recv ret %d, sockfd %d closed\n", rv, range_sockfd);
+            }
+            else{
+                log_debug("[Range] error: ret %d errno %d", rv, errno);
+                print_func("[Range] error: ret %d errno %d\n", rv, errno);
+            }
+            cleanup_range(range_sockfd, range_sockfd_old, header, consumed, unread, parsed, recv_offset, unsent);
+            print_func("closed range_sockfd %d\n", range_sockfd);
+#ifdef USE_OPENSSL
+            if(is_ssl)
+                range_ssl_old = range_ssl;
+#endif
         }
         usleep(100);
     }
-
-    for(int i = 0; i < range_conn_num; i++){
-        free(range_conns[i].header);
-        range_conns[i].header = NULL;
-    }
-    free(range_conns);
+    free(header);
+    header = NULL;
 
     print_func("[Range]: range_watch thread exits...\n");
     // pthread_exit(NULL);
@@ -286,9 +336,10 @@ int Optimack::range_recv(std::vector<Interval>& range_job_vector, struct range_c
     }
 
     if (rv > 0) {
+
         log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
         print_func("[Range] recved %d bytes, hand over to process_range_rv\n", rv);
-        process_range_rv(response, rv, this, subconn, range_job_vector, range_conn_this->header, consumed, unread, parsed, recv_offset, unsent);
+        process_range_rv(response, rv, this, subconn, range_conn_this->header, consumed, unread, parsed, recv_offset, unsent);
     }
     else if(rv == 0){
         if(!is_ssl){
@@ -298,11 +349,11 @@ int Optimack::range_recv(std::vector<Interval>& range_job_vector, struct range_c
 
         if(rv == 0){
             log_debug("[Range] recv ret %d, sockfd %d closed ", rv, range_conn_this->sockfd);
-            print_func("[Range] recv ret %d, sockfd %d closed\n", rv, range_conn_this->sockfd);
+            print_func("[Range] recv ret %d, sockfd %d closed", rv, range_conn_this->sockfd);
         }
         else{
             log_debug("[Range] error: ret %d errno %d", rv, errno);
-            print_func("[Range] error: ret %d errno %d\n", rv, errno);
+            print_func("[Range] error: ret %d errno %d", rv, errno);
         }
         cleanup_range(range_conn_this->sockfd, range_conn_this->sockfd_old, range_conn_this->header, consumed, unread, parsed, recv_offset, unsent);
         print_func("closed range_sockfd %d\n", range_conn_this->sockfd);
@@ -323,12 +374,12 @@ int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short rem
 
     // Open socket
 opensocket:
-    while(sockfd == 0){ //|| sockfd == old_sockfd
+    while(sockfd == 0 || sockfd == old_sockfd){ //|| 
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             perror("Can't open stream socket.");
             return -1;
         }
-        print_func("establish_tcp_connection: create sockfd %d\n", sockfd);
+        if(debug_range) print_func("establish_tcp_connection: create sockfd %d\n", sockfd);
     }
 
     // Set server_addr
@@ -364,7 +415,7 @@ opensocket:
         goto opensocket;
     }
 
-    print_func("establish_tcp_connection: connect sockfd %d, port %d\n", sockfd, port);
+    if(debug_range) print_func("establish_tcp_connection: connect sockfd %d, port %d\n", sockfd, port);
 
     return sockfd;
 }
@@ -372,30 +423,9 @@ opensocket:
 
 void Optimack::try_for_gaps_and_request(){
     uint last_recv_inorder;
-    // if(last_ack_epochtime > last_inorder_data_epochtime && elapsed(last_ack_time) > 1.5){
-        // if(!resend_cnt){
-        //     if(cur_ack_rel < recved_seq.getFirstEnd()){
-        //         resend_cnt++;
-        //         print_func("last_ack_time > 2, resend recv_buffer, cur_ack_rel %u < firstEnd %u\n", cur_ack_rel, recved_seq.getFirstEnd());
-        //         log_info("last_ack_time > 2, resend recv_buffer, cur_ack_rel %u < firstEnd %u", cur_ack_rel, recved_seq.getFirstEnd());
-        //         send_out_of_order_recv_buffer_withLock(cur_ack_rel);
-        //         // send_out_of_order_recv_buffer_withLock(cur_ack_rel, recved_seq.getFirstEnd(), 2);
-        //     }
-        // }
-
-        // if(elapsed(last_ack_time) > MAX_STALL_TIME){
-            // char time_str[20] = "";
-            // print_func("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            // log_info("try_for_gaps_and_request: Reach max stall time, last ack time %s exit...\n", print_chrono_time(last_ack_time, time_str));
-            
-        // }
-    // }
-    
+   
     last_recv_inorder = recved_seq.getFirstEnd();
     if(check_packet_lost_on_all_conns(last_recv_inorder)){
-        // print_func("[Range]: lost on all conns\n");
-        // lost_range [recved_seq[0].end, recved_seq[1].end]
-        // Interval lost_range = get_lost_range();
         uint first_out_of_order = recved_seq.getElem_withLock(1,true);// ;getIntervalList().at(1).start
         if(is_ssl){
 #ifdef USE_OPENSSL
@@ -405,12 +435,7 @@ void Optimack::try_for_gaps_and_request(){
 #endif
         }
         if(first_out_of_order){
-            Interval lost_all_range(recved_seq.getFirstEnd(), first_out_of_order-1);
-            if(get_lost_range(&lost_all_range) >= 0){
-                ranges_sent.insert(lost_all_range);
-                log_info("lost on all: request range[%u, %u]",lost_all_range.start+ response_header_len + 1, lost_all_range.end + response_header_len + 1);
-                // start_range_recv(intervallist);
-            }
+            insert_lost_range(recved_seq.getFirstEnd(), first_out_of_order-1);
         }
     }
 }
@@ -447,7 +472,7 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
         // else
         //     print_func(">, continue\n");
     }
-    usleep(800000);
+    usleep(1000);
     char tmp[1000] = {0};
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
         // sprintf(tmp, "%s %d:%u", tmp, it->second->id, it->second->next_seq_rem);
@@ -467,7 +492,174 @@ bool Optimack::check_packet_lost_on_all_conns(uint last_recv_inorder){
 }
 
 
-int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
+//Multi range request
+
+void
+Optimack::range_watch_multi() //void* arg
+{
+
+    int erase_count = 0;
+
+    thr_pool* range_pool = thr_pool_create_range(0, RANGE_NUM, 300, NULL, this);
+    if(!range_pool){
+        print_func("thr_pool_create_range failed!\n");
+        return;
+    }
+
+    std::vector<Interval>& range_job_vector = ranges_sent.getIntervalList();
+
+
+    while(!range_stop) {
+
+        if (recved_seq.size() < 1 || recved_seq.getFirstEnd() == 1)
+            continue;
+
+        uint min_next_seq_rem = get_min_next_seq_rem();
+
+        interval_set& recved_seq_intvl = recved_seq.getIntervalList();
+        pthread_mutex_lock(recved_seq.getMutex());
+        int count = 0;
+        for(auto prev = recved_seq_intvl.begin(), cur = next(prev); cur != recved_seq_intvl.end(); prev = cur, cur++, count++){
+            if(cur->lower()-1 < min_next_seq_rem)
+                insert_lost_range(prev->upper(), cur->lower()-1);
+        }
+        pthread_mutex_unlock(recved_seq.getMutex());
+
+        if(range_job_vector.size() != 0){
+            // pthread_mutex_lock(ranges_sent.getMutex());
+            for (auto it = range_job_vector.begin(); it != range_job_vector.end();){
+                uint end_tcp_seq = (it->end);
+                if (cur_ack_rel >= end_tcp_seq){
+                    if(debug_range){
+                        log_info("[Range] cur_ack_rel %u >= it->end %u, delete\n", cur_ack_rel, end_tcp_seq);
+                        print_func("[Range] cur_ack_rel %u >= it->end %u, delete, erase count %d", cur_ack_rel, end_tcp_seq, erase_count);
+                    }
+                    erase_count++;
+                    it = range_job_vector.erase(it);
+                    if(!range_job_vector.size())
+                        break;
+                    continue;
+                }
+                if(!it->sent_epoch_time){
+                    if(debug_range) print_func("[Range]: hand [%d, %d] over to queue", it->start, it->end);
+                    it->sent_epoch_time = get_current_epoch_time_second();
+                    uint lower = it->start, step = 4*squid_MSS, upper = lower + step;
+                    Interval* split_it = NULL;
+                    for(; upper-1 < it->end; lower = upper ,upper += 4*squid_MSS){
+                        Interval* split_it = new Interval(lower, upper-1);
+                        thr_pool_queue_range(range_pool, (void *)split_it);
+                    }
+                    if(lower < it->end){
+                        split_it = new Interval(lower, it->end);
+                        thr_pool_queue_range(range_pool, (void *)split_it);
+                    }
+                }
+
+                it++;
+            }
+            // pthread_mutex_unlock(ranges_sent.getMutex());
+        }
+        usleep(500);
+    }
+
+    print_func("[Range]: range_watch_multi thread exits...\n");
+    // pthread_exit(NULL);
+    return;
+}
+
+
+int Optimack::range_worker(int& sockfd, Interval* it){
+    while(true){
+        if(it->end <= cur_ack_rel)
+            break;
+
+        int rv = send_http_range_request((void*)sockfd, it);
+
+        if (rv < 0){
+            print_func("[Range]: R%d bytes [%u, %u] failed\n", sockfd, it->start, it->end);
+            log_debug("[R%d] bytes %d - %d failed", sockfd, it->start, it->end);
+            // it->sent_epoch_time = 0;
+        } 
+        else{
+            if(debug_range) print_func("[Range]: R%d bytes %d[%u, %u] requested", sockfd, rv, it->start, it->end);
+            int ret = range_recv_block(sockfd, it);
+            if(ret >= 0)
+                break;
+        }
+
+        sockfd = establish_tcp_connection(sockfd, g_remote_ip, g_remote_port);
+    }
+    delete it;
+    return 0;
+}
+
+
+int Optimack::range_recv_block(int sockfd, Interval* it){
+    char response[MAX_RANGE_SIZE+1];
+    int rv = 0, sockfd_old = 0;
+    http_header header;
+    header.start = (it->start);
+    header.end = (it->end);
+    header.parsed = 0;
+    header.remain = it->end - it->start + 1;
+    header.recved = 0;
+    subconn_info* subconn = (subconn_infos.begin()->second);
+
+    int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
+    while (header.remain != 0){
+        if(recv_offset == 0)
+            memset(response+recv_offset, 0, MAX_RANGE_SIZE-recv_offset+1);
+        if(is_ssl){
+    #ifdef USE_OPENSSL
+            // rv = SSL_read(range_conn_this->ssl, response+recv_offset, MAX_RANGE_SIZE-recv_offset);
+    #endif
+        }
+        else{
+            // print_func("[Range]: R%d, before recv", sockfd);
+            rv = recv(sockfd, response+recv_offset, MAX_RANGE_SIZE-recv_offset, MSG_DONTWAIT);
+        }
+
+        if (rv > 0) {
+            if(debug_range){
+                log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
+                print_func("[Range]: R%d recved %d bytes, hand over to process_range_rv", sockfd, rv);
+            }
+            process_range_rv(response, rv, this, subconn, &header, consumed, unread, parsed, recv_offset, unsent);
+        }
+        else if(rv <= 0){
+            if(rv == 0){
+                if(debug_range){
+                    log_debug("[Range] recv ret %d, sockfd %d closed ", rv, sockfd);
+                    print_func("[Range] recv ret %d, sockfd %d closed\n", rv, sockfd);
+                }
+            }
+            else{
+                // log_debug("[Range] R%d ret %d errno %d", rv, errno);
+                // print_func("[Range] R%d ret %d errno %d\n", sockfd, rv, errno);
+                if(!is_ssl){
+                    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK){
+                        continue;
+                    }
+                }
+            }
+            cleanup_range(sockfd, sockfd_old, &header, consumed, unread, parsed, recv_offset, unsent);
+            if(debug_range) print_func("[Range]: closed range_sockfd %d\n", sockfd);
+    #ifdef USE_OPENSSL
+            // if(is_ssl)
+                // range_conn_this->ssl_old = range_conn_this->ssl;
+    #endif
+            return -1;
+        }
+        usleep(100);
+    }
+    return 0;
+}
+
+
+
+
+
+int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subconn, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
     if (rv > MAX_RANGE_SIZE)
         print_func("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
 
@@ -488,127 +680,28 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
                 break;
             }
             else {
-                // parser
-                // headerBuf.assign(response+consumed, unread);
-                // rp.parse(headerBuf);
-                // print_func("[Range]: headBlockSize %d Parsed %d StatusCode %d\n", rp.headerBlockSize(), parsed, rp.parseStatusCode);
-                // src/http/StatusCode.h
-
                 recv_offset = 0;
                 consumed += parsed;
                 unread -= parsed;
             }
         }
         else {
-            // collect data
-            // if (header->remain <= unread) {
-            //     // we have all the data
-            //     // print_func("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start, header->end, header->remain, unread);
-            //     log_error("[Range] data retrieved %d - %d", header->start, header->end);
-            //     print_func("[Range] data retrieved %d - %d\n", header->start, header->end);
+            if(header->end > obj->cur_ack_rel){
+                if(debug_range){
+                    print_func("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
+                    log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
+                }
+                // obj->ranges_sent.removeInterval_updateTimer(header->start+header->recved, header->start+header->recved+unread);
 
-            //     memcpy(data, response+consumed, header->remain);
-            //     header->parsed = 0;
-            //     unread -= header->remain;
-            //     consumed += header->remain;
-            //     unsent = header->end - header->start + 1;
-            //     // parser
-            //     // rp.clear();
-            //     /*
-            //     * TODO: send(buf=data, size=unsent) to client here
-            //     * remove interval gaps (header->start, header->end) here
-            //     */
-            //     // range_job->removeInterval(header->start, header->end);
-            //     log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
-            //     print_func("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
-            //     obj->ranges_sent.removeInterval(header->start, header->end);
-            //     log_error("After removing [%u, %u], %s", header->start, header->end, obj->ranges_sent.Intervals2str().c_str());
-            //     print_func("After removing [%u, %u], %s\n", header->start, header->end, obj->ranges_sent.Intervals2str().c_str());
-            // }
-            // else {
-                // still need more data
-                // we can consume and send all unread data
-                print_func("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
-                log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
-                // memcpy(data, response+consumed, unread);
-                // header->remain -= unread;
-                // consumed += unread;
-                // unsent = unread;
-                // unread = 0;
-            // }
-
-            int sent, packet_len;//rename to byte_len
-            int send_data_len = 0;//rename to tcp_len
-            uint ack, seq, seq_rel;
-            for (sent=0; unread > 0; ) {
-                ack = subconn->ini_seq_loc + subconn->next_seq_loc;
-                seq_rel = obj->get_tcp_seq(header->start + header->recved);
-                seq = subconn->ini_seq_rem + seq_rel; // Adding the offset back
-
+                int seq_rel = header->start + header->recved;
                 unsigned char* send_data = (u_char*)(response + consumed);
-
-                if(obj->is_ssl){
-#ifdef USE_OPENSSL
-                    packet_len = MAX_FRAG_LEN;
-                    if(unread < MAX_FRAG_LEN)
-                        if(header->remain > unread)
-                            break;
-                        else{
-                            packet_len = unread;
-                            print_func("[Range] packet length(%u) not equal to MAX_FRAG_LEN\n", unread);
-                            if(seq_rel+packet_len != obj->ack_end)
-                                break;
-                        }
-                    // packet_len = unsent >= MAX_FRAG_LEN? MAX_FRAG_LEN : unsent;
-                    // print_func("Range plaintext: seq %u\n", header->start + sent);
-                    // print_hexdump(cur_data, packet_len);
-
-                    unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1] = {0};
-                    int ciphertext_len = subconn->crypto_coder->generate_record(get_record_num(seq_rel), send_data, packet_len, ciphertext);
-                    send_data = ciphertext;
-                    send_data_len = ciphertext_len;
-                    // print_func("Range ciphertext: seq %u\n", seq_rel);
-                    // print_hexdump(ciphertext, packet_len);
-#endif
-                }
-                else{
-                    packet_len = obj->squid_MSS;
-                    if(unread < obj->squid_MSS)
-                        if(header->remain > unread)
-                            break;
-                        else
-                            packet_len = unread;
-                    // packet_len = unsent >= obj->squid_MSS? obj->squid_MSS : unsent;
-                    send_data_len = packet_len;
-                }
-
-                obj->recved_seq.insertNewInterval_withLock(seq_rel, seq_rel+send_data_len);
-                log_debug("[Range] insert [%u,%u] to recved_seq, after %s", seq_rel, seq_rel+send_data_len, obj->recved_seq.Intervals2str().substr(0,490).c_str());
-
-                obj->all_lost_seq.insertNewInterval_withLock(seq_rel, seq_rel+send_data_len);
-                log_debug("[Range] insert [%u,%u] to all_lost_seq", seq_rel, seq_rel+send_data_len);
-     
-                // remove interval gaps (header->start, header->start+unread-1) here
-                // range_job->removeInterval(header->start, header->start+unsent);
-                // log_error("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
-                // print_func("[Range] ranges_sent before %s", obj->ranges_sent.Intervals2str().c_str());
-                //TODO: not start
-                obj->ranges_sent.removeInterval_updateTimer(header->start+header->recved, header->start+header->recved+send_data_len);
-                log_error("After removing [%u, %u], %s", header->start+header->recved, header->start+header->recved+send_data_len, obj->ranges_sent.Intervals2str().c_str());
-                // print_func("After removing [%u, %u], %s\n", header->start, header->start+unsent, obj->ranges_sent.Intervals2str().c_str());
-
-
-                obj->send_data_to_squid(seq_rel, send_data, send_data_len);
-                log_debug("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
-                print_func("[Range] retrieved and sent seq %x(%u) ack %x(%u) len %u\n", ntohl(seq), seq_rel, ntohl(ack), subconn->next_seq_loc, send_data_len);
-
-                header->recved += packet_len;
-                header->remain -= packet_len;
-                consumed += packet_len;
-                unread -= packet_len;
-                sent += packet_len;
+                obj->store_and_send_data(seq_rel, send_data, unread, NULL);
             }
-            obj->send_out_of_order_recv_buffer_withLock(seq_rel + send_data_len);
+            header->recved += unread;
+            header->remain -= unread;
+            consumed += unread;
+            unread -= unread;
+
             recv_offset = unread;
             memcpy(response, response+consumed, unread);
             // header->start += sent;
@@ -631,9 +724,9 @@ int process_range_rv(char* response, int rv, Optimack* obj, subconn_info* subcon
 }
 
 
-int Optimack::get_lost_range(Interval* intvl)
+int Optimack::insert_lost_range(uint start, uint end)
 {
-    uint start = get_byte_seq(intvl->start), end = get_byte_seq(intvl->end);
+    // uint start = get_byte_seq(start_), end = get_byte_seq(end_);
     if(start == -1 || end == -1)
         return -1;
     
@@ -643,14 +736,16 @@ int Optimack::get_lost_range(Interval* intvl)
     lost_range.clear();
     lost_range.insertNewInterval(start, end);
     lost_range.substract(&ranges_sent);
+    // print_func("insert_lost_range: try [%u, %u], result [%u, %u]", start_)
     if(lost_range.size()){
-        print_func("[Range]: get lost range, tcp_seq[%u, %u], byte_seq[%u, %u], tcp_seq[%u, %u]\n", intvl->start, intvl->end, start, end, get_tcp_seq(start), get_tcp_seq(end));
-        intvl->start = lost_range.getIntervalList().at(0).start;
-        intvl->end = lost_range.getIntervalList().at(0).end;
+        // print_func("[Range]: get lost range, tcp_seq[%u, %u], byte_seq[%u, %u], tcp_seq[%u, %u]\n", intvl->start, intvl->end, start, end, get_tcp_seq(start), get_tcp_seq(end));
+        for(auto intvl : lost_range.getIntervalList())
+            ranges_sent.insertNewInterval_withLock(intvl);
+
 #ifdef USE_OPENSSL
         if(is_ssl)
-            if((intvl->end != ack_end) && (intvl->end - intvl->start + 1) % MAX_FRAG_LEN != 0){
-                print_func("get_lost_range: len(%u) mod %d != 0\n", intvl->end-intvl->start+1, MAX_FRAG_LEN);
+            if((end != ack_end) && (end - start + 1) % MAX_FRAG_LEN != 0){
+                print_func("get_lost_range: len(%u) mod %d != 0\n", end-start+1, MAX_FRAG_LEN);
                 // return -1;
                 // uint recordnum = (intvl->end - intvl->start + 1) / MAX_FRAG_LEN + 1;
                 // intvl->end = intvl->start + MAX_FRAG_LEN * recordnum - 1;
@@ -713,22 +808,22 @@ uint Optimack::get_tcp_seq(uint byte_seq){
 
 
 
-int Optimack::send_http_range_request(void* sockfd, Interval range){
-    uint start = range.start, end = range.end;
+int Optimack::send_http_range_request(void* sockfd, Interval* range){
+    uint start = get_byte_seq(range->start), end = get_byte_seq(range->end);
     if (start == end || (start == 0 || end == 0 || request == NULL || request_len == 0))
         return -1;
     
     char* range_request = (char *)malloc(request_len+100);
     memset(range_request, 0 , request_len+100);
     memcpy(range_request, request, request_len);
-    sprintf(range_request+request_len-2, "Range: bytes=%u-%u\r\n\r\n", start, end);
+    sprintf(range_request+request_len-2, "Keep-Alive: timeout=150, max=300\r\nRange: bytes=%u-%u\r\n\r\n", start, end);
 
     int rv = -1;
     if(is_ssl){
 #ifdef USE_OPENSSL
         SSL *ssl = (SSL *)sockfd;
         if(ssl)
-            rv = SSL_write(ssl, range_request, strlen(range_request));      
+            rv = SSL_write(ssl, range_request, strlen(range_request));
 #endif
     }
     else{
@@ -802,3 +897,437 @@ int get_content_length(const char* payload, int payload_len){
     }
     return -1;
 }
+
+
+/*
+ * Thread pool implementation.
+ * See <thr_pool.h> for interface declarations.
+ */
+
+static sigset_t fillset;
+
+/* the list of all created and not yet destroyed thread pools */
+static thr_pool_t *thr_pools = NULL;
+
+/* protects thr_pools */
+static pthread_mutex_t thr_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void *worker_thread(void *);
+
+
+int establish_tcp_connection(int old_sockfd, int remote_ip, unsigned short remote_port)
+{
+    int sockfd = 0;
+    struct sockaddr_in server_addr;
+
+    // Open socket
+opensocket:
+    while(sockfd == 0 || sockfd == old_sockfd){ //
+        if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            perror("Can't open stream socket.");
+            return -1;
+        }
+        if(debug_range) printf("establish_tcp_connection: create sockfd %d\n", sockfd);
+    }
+
+    // Set server_addr
+    bzero(&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = remote_ip;
+    server_addr.sin_port = htons(remote_port);
+
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    // Connect to server
+    int count = 0;
+    while (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0 && count++ < 5) {
+        printf("establish_tcp_connection: sockfd %d connect error\n", sockfd);
+        perror("Connect server error");
+    }
+
+    if(count >= 5){
+        sockfd = 0;
+        goto opensocket;
+        close(sockfd);
+        return -1;
+    }
+
+    // int port = get_localport(sockfd);
+    // if(port < 0){
+    //     printf("establish_tcp_connection: sockfd %d get_localport error\n", sockfd);
+    //     sockfd = 0;
+    //     close(sockfd);
+    //     goto opensocket;
+    // }
+
+    if(debug_range) printf("establish_tcp_connection: connect sockfd %d\n", sockfd);
+
+    return sockfd;
+}
+
+
+
+static int
+create_worker(thr_pool_t *pool)
+{
+    pthread_t threads;
+    sigset_t oset;
+    int error;
+
+    (void) pthread_sigmask(SIG_SETMASK, &fillset, &oset);
+    error = pthread_create(&threads, &pool->pool_attr, worker_thread, pool);
+    (void) pthread_sigmask(SIG_SETMASK, &oset, NULL);
+    return (error);
+}
+
+/*
+ * Worker thread is terminating.  Possible reasons:
+ * - excess idle thread is terminating because there is no work.
+ * - thread was cancelled (pool is being destroyed).
+ * - the job function called pthread_exit().
+ * In the last case, create another worker thread
+ * if necessary to keep the pool populated.
+ */
+static void
+worker_cleanup(void *arg)
+// worker_cleanup(thr_pool_t *pool)
+{
+    thr_pool_t *pool = (thr_pool_t *)arg;
+    --pool->pool_nthreads;
+    if (pool->pool_flags & POOL_DESTROY) {
+        if (pool->pool_nthreads == 0)
+            (void) pthread_cond_broadcast(&pool->pool_busycv);
+    } else if (pool->pool_head != NULL &&
+        pool->pool_nthreads < pool->pool_maximum &&
+        create_worker(pool) == 0) {
+        pool->pool_nthreads++;
+    }
+    (void) pthread_mutex_unlock(&pool->pool_mutex);
+}
+
+static void
+notify_waiters(thr_pool_t *pool)
+{
+    if (pool->pool_head == NULL && pool->pool_active == NULL) {
+        pool->pool_flags &= ~POOL_WAIT;
+        (void) pthread_cond_broadcast(&pool->pool_waitcv);
+    }
+}
+
+/*
+ * Called by a worker thread on return from a job.
+ */
+static void
+job_cleanup(void *arg)
+{
+    thr_pool_t *pool = (thr_pool_t *)arg;
+    pthread_t my_tid = pthread_self();
+    active_t *activep;
+    active_t **activepp;
+
+    (void) pthread_mutex_lock(&pool->pool_mutex);
+    for (activepp = &pool->pool_active;
+        (activep = *activepp) != NULL;
+        activepp = &activep->active_next) {
+        if (activep->active_tid == my_tid) {
+            *activepp = activep->active_next;
+            break;
+        }
+    }
+    if (pool->pool_flags & POOL_WAIT)
+        notify_waiters(pool);
+}
+
+static void *
+worker_thread(void *arg)
+{
+    thr_pool_t *pool = (thr_pool_t *)arg;
+    int timedout;
+    job_t *job;
+    void *(*func)(void *);
+    active_t active;
+    struct timespec ts;
+
+    int count = 0;
+    Optimack* obj = (Optimack*)pool->obj;
+    int sockfd = establish_tcp_connection(0, obj->g_remote_ip_int, obj->g_remote_port);
+    if(debug_range) printf("worker_thread: this is fd %d\n", sockfd);
+
+    /*
+     * This is the worker's main loop.  It will only be left
+     * if a timeout occurs or if the pool is being destroyed.
+     */
+    (void) pthread_mutex_lock(&pool->pool_mutex);
+    pthread_cleanup_push(&worker_cleanup, (void *)pool);
+    active.active_tid = pthread_self();
+    for (;;) {
+        /*
+         * We don't know what this thread was doing during
+         * its last job, so we reset its signal mask and
+         * cancellation state back to the initial values.
+         */
+        (void) pthread_sigmask(SIG_SETMASK, &fillset, NULL);
+        (void) pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+        (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+
+        timedout = 0;
+        pool->pool_idle++;
+        if (pool->pool_flags & POOL_WAIT)
+            notify_waiters(pool);
+        while (pool->pool_head == NULL &&
+            !(pool->pool_flags & POOL_DESTROY)) {
+            if (pool->pool_nthreads <= pool->pool_minimum) {
+                (void) pthread_cond_wait(&pool->pool_workcv,
+                    &pool->pool_mutex);
+            } else {
+                (void) clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_sec += pool->pool_linger;
+                if (pool->pool_linger == 0 ||
+                    pthread_cond_timedwait(&pool->pool_workcv,
+                    &pool->pool_mutex, &ts) == ETIMEDOUT) {
+                    timedout = 1;
+                    break;
+                }
+            }
+        }
+        pool->pool_idle--;
+        if (pool->pool_flags & POOL_DESTROY)
+            break;
+        if ((job = pool->pool_head) != NULL) {
+            timedout = 0;
+            func = job->job_func;
+            arg = job->job_arg;
+            pool->pool_head = job->job_next;
+            if (job == pool->pool_tail)
+                pool->pool_tail = NULL;
+            active.active_next = pool->pool_active;
+            pool->pool_active = &active;
+            (void) pthread_mutex_unlock(&pool->pool_mutex);
+            pthread_cleanup_push(&job_cleanup, (void *)pool);
+            free(job);
+            /*
+             * Call the specified job function.
+             */
+            obj->range_worker(sockfd, (Interval*)arg);
+            if(count++ > 90){
+                sockfd = establish_tcp_connection(sockfd, obj->g_remote_ip_int, obj->g_remote_port);
+                count = 0;
+            }
+
+            /*
+             * If the job function calls pthread_exit(), the thread
+             * calls job_cleanup(pool) and worker_cleanup(pool);
+             * the integrity of the pool is thereby maintained.
+             */
+            pthread_cleanup_pop(1);    /* job_cleanup(pool) */
+        }
+        if (timedout && pool->pool_nthreads > pool->pool_minimum) {
+            /*
+             * We timed out and there is no work to be done
+             * and the number of workers exceeds the minimum.
+             * Exit now to reduce the size of the pool.
+             */
+            break;
+        }
+    }
+    pthread_cleanup_pop(1);    /* worker_cleanup(pool) */
+    return (NULL);
+}
+
+static void
+clone_attributes(pthread_attr_t *new_attr, pthread_attr_t *old_attr)
+{
+    struct sched_param param;
+    void *addr;
+    size_t size;
+    int value;
+
+    (void) pthread_attr_init(new_attr);
+
+    if (old_attr != NULL) {
+        (void) pthread_attr_getstack(old_attr, &addr, &size);
+        /* don't allow a non-NULL thread stack address */
+        (void) pthread_attr_setstack(new_attr, NULL, size);
+
+        (void) pthread_attr_getscope(old_attr, &value);
+        (void) pthread_attr_setscope(new_attr, value);
+
+        (void) pthread_attr_getinheritsched(old_attr, &value);
+        (void) pthread_attr_setinheritsched(new_attr, value);
+
+        (void) pthread_attr_getschedpolicy(old_attr, &value);
+        (void) pthread_attr_setschedpolicy(new_attr, value);
+
+        (void) pthread_attr_getschedparam(old_attr, &param);
+        (void) pthread_attr_setschedparam(new_attr, &param);
+
+        (void) pthread_attr_getguardsize(old_attr, &size);
+        (void) pthread_attr_setguardsize(new_attr, size);
+    }
+
+    /* make all pool threads be detached threads */
+    (void) pthread_attr_setdetachstate(new_attr, PTHREAD_CREATE_DETACHED);
+}
+
+thr_pool_t *
+thr_pool_create_range(uint_t min_threads, uint_t max_threads, uint_t linger,
+    pthread_attr_t *attr, Optimack* obj)
+{
+    thr_pool_t    *pool;
+
+    (void) sigfillset(&fillset);
+
+    if (min_threads > max_threads || max_threads < 1) {
+        errno = EINVAL;
+        return (NULL);
+    }
+
+    if ((pool = (thr_pool_t *) malloc(sizeof (*pool))) == NULL) {
+        errno = ENOMEM;
+        return (NULL);
+    }
+    (void) pthread_mutex_init(&pool->pool_mutex, NULL);
+    (void) pthread_cond_init(&pool->pool_busycv, NULL);
+    (void) pthread_cond_init(&pool->pool_workcv, NULL);
+    (void) pthread_cond_init(&pool->pool_waitcv, NULL);
+    pool->pool_active = NULL;
+    pool->pool_head = NULL;
+    pool->pool_tail = NULL;
+    pool->pool_flags = 0;
+    pool->pool_linger = linger;
+    pool->pool_minimum = min_threads;
+    pool->pool_maximum = max_threads;
+    pool->pool_nthreads = 0;
+    pool->pool_idle = 0;
+    pool->obj = (void*)obj;
+
+    /*
+     * We cannot just copy the attribute pointer.
+     * We need to initialize a new pthread_attr_t structure using
+     * the values from the caller-supplied attribute structure.
+     * If the attribute pointer is NULL, we need to initialize
+     * the new pthread_attr_t structure with default values.
+     */
+    clone_attributes(&pool->pool_attr, attr);
+
+    /* insert into the global list of all thread pools */
+    (void) pthread_mutex_lock(&thr_pool_lock);
+    if (thr_pools == NULL) {
+        pool->pool_forw = pool;
+        pool->pool_back = pool;
+        thr_pools = pool;
+    } else {
+        thr_pools->pool_back->pool_forw = pool;
+        pool->pool_forw = thr_pools;
+        pool->pool_back = thr_pools->pool_back;
+        thr_pools->pool_back = pool;
+    }
+    (void) pthread_mutex_unlock(&thr_pool_lock);
+
+    for(;pool->pool_nthreads < pool->pool_maximum; pool->pool_nthreads++)
+        create_worker(pool);
+        
+    return (pool);
+}
+
+int
+thr_pool_queue_range(thr_pool_t *pool, void *arg)
+{
+    job_t *job;
+
+    if ((job = (job_t *) malloc(sizeof (*job))) == NULL) {
+        errno = ENOMEM;
+        return (-1);
+    }
+    job->job_next = NULL;
+    // job->job_func = func;
+    job->job_arg = arg;
+
+    (void) pthread_mutex_lock(&pool->pool_mutex);
+
+    if (pool->pool_head == NULL)
+        pool->pool_head = job;
+    else
+        pool->pool_tail->job_next = job;
+    pool->pool_tail = job;
+
+    (void) pthread_mutex_unlock(&pool->pool_mutex);
+
+    if (pool->pool_idle > 0)
+        (void) pthread_cond_signal(&pool->pool_workcv);	
+    
+
+    return (0);
+}
+
+void
+thr_pool_wait_range(thr_pool_t *pool)
+{
+    (void) pthread_mutex_lock(&pool->pool_mutex);
+    pthread_cleanup_push((void (*)(void*))&pthread_mutex_unlock, &pool->pool_mutex);
+    while (pool->pool_head != NULL || pool->pool_active != NULL) {
+        pool->pool_flags |= POOL_WAIT;
+        (void) pthread_cond_wait(&pool->pool_waitcv, &pool->pool_mutex);
+    }
+    pthread_cleanup_pop(1);    /* pthread_mutex_unlock(&pool->pool_mutex); */
+}
+
+void
+thr_pool_destroy_range(thr_pool_t *pool)
+{
+    active_t *activep;
+    job_t *job;
+
+    (void) pthread_mutex_lock(&pool->pool_mutex);
+    pthread_cleanup_push((void (*)(void*))&pthread_mutex_unlock, &pool->pool_mutex);
+
+    /* mark the pool as being destroyed; wakeup idle workers */
+    pool->pool_flags |= POOL_DESTROY;
+    (void) pthread_cond_broadcast(&pool->pool_workcv);
+
+    /* cancel all active workers */
+    for (activep = pool->pool_active;
+        activep != NULL;
+        activep = activep->active_next)
+        (void) pthread_cancel(activep->active_tid);
+
+    /* wait for all active workers to finish */
+    while (pool->pool_active != NULL) {
+        pool->pool_flags |= POOL_WAIT;
+        (void) pthread_cond_wait(&pool->pool_waitcv, &pool->pool_mutex);
+    }
+
+    /* the last worker to terminate will wake us up */
+    while (pool->pool_nthreads != 0)
+        (void) pthread_cond_wait(&pool->pool_busycv, &pool->pool_mutex);
+
+    pthread_cleanup_pop(1);    /* pthread_mutex_unlock(&pool->pool_mutex); */
+
+    /*
+     * Unlink the pool from the global list of all pools.
+     */
+    (void) pthread_mutex_lock(&thr_pool_lock);
+    if (thr_pools == pool)
+        thr_pools = pool->pool_forw;
+    if (thr_pools == pool)
+        thr_pools = NULL;
+    else {
+        pool->pool_back->pool_forw = pool->pool_forw;
+        pool->pool_forw->pool_back = pool->pool_back;
+    }
+    (void) pthread_mutex_unlock(&thr_pool_lock);
+
+    /*
+     * There should be no pending jobs, but just in case...
+     */
+    for (job = pool->pool_head; job != NULL; job = pool->pool_head) {
+        pool->pool_head = job->job_next;
+        free(job);
+    }
+    (void) pthread_attr_destroy(&pool->pool_attr);
+    free(pool);
+}
+

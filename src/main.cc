@@ -88,6 +88,7 @@
 #include <libnfnetlink/libnfnetlink.h>
 #include <pthread.h>
 #include <errno.h>
+#include "optimack/logging.h"
 /** end **/
 
 #if USE_ADAPTATION
@@ -1932,10 +1933,13 @@ SquidMain(int argc, char **argv)
     const char cmd[] = "sudo iptables -A PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT; \
                   sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT; \
                   sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333; \
-                  sudo iptables -A PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333; \
-                  sudo iptables -A OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; \
+                  sudo iptables -A OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; ";
+
+                //   sudo iptables -A PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333; \
                   sudo iptables -A OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 333; ";
+
     // sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333");
+
     // system(cmd);
     // sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333");
     // system(cmd);
@@ -1946,6 +1950,7 @@ SquidMain(int argc, char **argv)
     setup_nfq(333);
     nfq_stop = 0;
     setup_nfqloop();
+    init_log();
     /* end */
 
     mainLoop.run();

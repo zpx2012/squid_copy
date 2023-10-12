@@ -12,6 +12,7 @@
 #include "interval_geeks.h"
 #include <netinet/in.h>
 #include <thread>
+#include <condition_variable>
 
 #define GPROF_CHECK 0
 #ifndef GPROF_CHECK
@@ -42,7 +43,7 @@ class TLS_Record_Number_Seq_Map;
 
 extern struct nfq_q_handle *g_nfq_qh;
 
-const int multithread = 0;
+const int multithread = 1;
 const int debug_subconn_recvseq = 0;
 const int use_optimack = 1;
 const int forward_packet = 0;
@@ -143,7 +144,7 @@ struct http_header {
 };
 
 struct range_conn{
-    int sockfd, sockfd_old, range_request_count, requested_bytes, erase_count;
+    int sockfd, sockfd_old, range_request_count, requested_bytes, erase_count, port;
     int in_use;
     http_header* header;
 #ifdef USE_OPENSSL
@@ -229,6 +230,7 @@ public:
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_subconn(struct subconn_info* conn, bool to_client, unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_server_and_update_seq(struct subconn_info* conn, unsigned char* payload, int payload_len);
+    bool store_and_send_data(uint seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn);
     
     // void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();
@@ -340,20 +342,23 @@ public:
     // range
 
     void range_watch();
+    void range_watch_multi();
     int range_recv(std::vector<Interval>& range_job_vector, struct range_conn* range_conn_this);
     int check_range_conn(struct range_conn* range_conn_this, std::vector<Interval>& range_job_vector);
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
     uint get_byte_seq(uint tcp_seq);
     uint get_tcp_seq(uint byte_seq);
-    int get_lost_range(Interval* intvl);
+    int insert_lost_range(uint start, uint end);
     int get_http_response_header_len(subconn_info* subconn, unsigned char* payload, int payload_len);
     //IntervalList* get_lost_range(uint start, uint end);
-    int send_http_range_request(void* sockfd, Interval range);
+    int send_http_range_request(void* sockfd, Interval* range);
     void start_range_recv(IntervalList* list);
     void we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_lis);
     void we2squid_loss_and_insert(uint start, uint end);
     uint get_min_next_seq_rem();
+    int range_worker(int& sockfd, Interval* it);
+    int range_recv_block(int sockfd, Interval* it);
     std::thread range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
@@ -383,6 +388,13 @@ public:
     int send_out_of_order_recv_buffer_withLock(uint start, uint end);
     int send_last_inorder_recv_buffer_withLock(uint end);
     int resend_cnt = 0;
+
+
+    std::mutex stdmutex_rb;
+    std::condition_variable cv_rb;
+    uint last_send = 1;
+    bool send_squid_stop = false;
+    int send_data_to_squid_thread();
 
     //TLS
     bool is_ssl = false;
@@ -427,5 +439,18 @@ bool is_static_object(std::string request);
 void check_and_free_shared(std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy);
 
 int get_content_length(const char* payload, int payload_len);
+
+
+
+extern thr_pool_t *thr_pool_create_range(uint_t min_threads, uint_t max_threads,
+                uint_t linger, pthread_attr_t *attr, Optimack* obj);
+            
+extern int thr_pool_queue_range(thr_pool_t *pool, void *arg);
+
+extern void thr_pool_wait_range(thr_pool_t *pool);
+
+extern void thr_pool_destroy_range(thr_pool_t *pool);
+
+
 
 #endif

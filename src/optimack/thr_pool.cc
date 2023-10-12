@@ -8,10 +8,11 @@
 #endif
 
 #include "thr_pool.h"
+#include <cstdio>
 
-/* pool_flags */
-#define    POOL_WAIT    0x01        /* waiting in thr_pool_wait() */
-#define    POOL_DESTROY    0x02        /* pool is being destroyed */
+
+/* set of all signals */
+static sigset_t fillset;
 
 /* the list of all created and not yet destroyed thread pools */
 static thr_pool_t *thr_pools = NULL;
@@ -19,8 +20,7 @@ static thr_pool_t *thr_pools = NULL;
 /* protects thr_pools */
 static pthread_mutex_t thr_pool_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* set of all signals */
-static sigset_t fillset;
+
 
 static void *worker_thread(void *);
 
@@ -372,4 +372,5 @@ thr_pool_destroy(thr_pool_t *pool)
     (void) pthread_attr_destroy(&pool->pool_attr);
     free(pool);
 }
+
 
