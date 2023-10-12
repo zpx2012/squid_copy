@@ -1,3 +1,5 @@
+#ifndef THR_POOL_H
+#define THR_POOL_H
 /*
  * Declarations for the clients of a thread pool.
  */
@@ -6,6 +8,10 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <errno.h>
+
+/* pool_flags */
+#define    POOL_WAIT    0x01        /* waiting in thr_pool_wait() */
+#define    POOL_DESTROY    0x02        /* pool is being destroyed */
 
 /*
  * The thr_pool_t type is opaque to the client.
@@ -56,6 +62,7 @@ struct thr_pool {
         int                     pool_maximum;    /* maximum number of worker threads */
         int                     pool_nthreads;    /* current number of worker threads */
         int                     pool_idle;    /* number of idle workers */
+        void* obj;
 };  
 
 
@@ -100,3 +107,8 @@ extern void thr_pool_wait(thr_pool_t *pool);
  * Cancel all queued jobs and destroy the pool.
  */
 extern void thr_pool_destroy(thr_pool_t *pool);
+
+
+int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short remote_port);
+
+#endif

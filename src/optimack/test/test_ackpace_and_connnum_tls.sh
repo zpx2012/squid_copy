@@ -11,8 +11,8 @@
 
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.iso' #837M
 # url='http://mirrors.mit.edu/ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template' #83M
-url='https://mirrors.mit.edu/ubuntu/indices/md5sums.gz' #28.5M
-site='mirrors.mit.edu'
+url='https://mirrors.cat.pdx.edu/ubuntu/ls-lR.gz' #28.5M
+site='mirrors.cat.pdx.edu'
 
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.iso' #837M
 # url='http://mirror.math.princeton.edu/pub/ubuntu-archive/releases/xenial/ubuntu-16.04.5-server-i386.template'
@@ -49,7 +49,7 @@ while true; do
             make install
             echo
             echo ${nums[i/2%${#nums[@]}]}optim+1range_ackpace${fix_ackpace}
-            bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn_num_ackpace${fix_ackpace} ${nums[i/2%${#nums[@]}]}optim+1range_ackpace${fix_ackpace} $site $url
+            bash ~/squid_copy/src/optimack/test/ABtest_onerun_tls.sh conn_num_ackpace${fix_ackpace} ${nums[i/2%${#nums[@]}]}optim+1range_ackpace${fix_ackpace} $site $url
         else
             sed -i "s/define CONN_NUM .*/define CONN_NUM ${fix_num}/g" ~/squid_copy/src/optimack/Optimack.cc
             sed -i "s/define ACKPACING .*/define ACKPACING ${ackpaces[i/2%${#ackpaces[@]}]}/g" ~/squid_copy/src/optimack/Optimack.cc

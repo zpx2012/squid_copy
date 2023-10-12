@@ -11,6 +11,7 @@
 
 static FILE *log_file;
 static FILE *exp_log_file;
+static FILE *time_file;// = fopen("/var/time_file.log", "a");
 
 // 0 - print log to stdout, 1 - output log to file
 int opt_logging_to_file = 1;
@@ -29,6 +30,10 @@ int init_log()
         }
         chmod(LOG_FILE, 0644);
         setbuf(log_file, NULL);
+
+        time_file = fopen("/var/time_file.log", "a");
+        setbuf(time_file, NULL);
+
     }
     return 0;
 }
@@ -71,15 +76,15 @@ void log_func(int level, const char *fmt, ...)
     char buffer[1024];
     char time_str[64];
     time_t rawtime;
-    struct tm * timeinfo;
+    struct tm timeinfo;
     struct timespec ts;
     double time_ts;
 
     if (level == 99) {
         /* experiment log */
         time(&rawtime);
-        timeinfo = localtime(&rawtime);
-        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+        localtime_r(&rawtime, &timeinfo);
+        strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", &timeinfo);
 
         va_start(ap, fmt);
         vsnprintf(buffer, sizeof(buffer), fmt, ap);
@@ -100,8 +105,8 @@ void log_func(int level, const char *fmt, ...)
         return;
 
     time(&rawtime);
-    timeinfo = localtime(&rawtime);
-    strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+    localtime_r(&rawtime, &timeinfo);
+    strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", &timeinfo);
 
     /* a more acurate timestamp */
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -126,4 +131,28 @@ void log_func(int level, const char *fmt, ...)
 }
 
 
+void print_func(const char *fmt, ...)
+{
+    va_list ap;
+    char buffer[1024];
+    char time_str[64];
+    time_t rawtime;
+    struct tm timeinfo;
+    struct timespec ts;
+    double time_ts;
 
+    // time(&rawtime);
+    // localtime_r(&rawtime, &timeinfo);
+    // strftime(time_str, 20, "%Y-%m-%d %H:%M:%S", &timeinfo);
+
+    /* a more acurate timestamp */
+    clock_gettime(CLOCK_REALTIME, &ts);
+    time_ts = ts.tv_sec + ts.tv_nsec / 1000000000.0;
+    fprintf(time_file, "%lf\n", time_ts);
+
+    va_start(ap, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, ap);
+    fprintf(stdout, "%lf [%s] %s\n", time_ts, "INFO", buffer);
+    // fprintf(stdout, "%s [%s] %s", time_str, "INFO", buffer);
+    va_end(ap);
+}

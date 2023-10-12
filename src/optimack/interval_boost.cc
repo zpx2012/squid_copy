@@ -5,6 +5,8 @@
 #include <string.h>
 #include <iostream>
 
+bool debug = false;
+
 void IntervalList::clear(){
     Intervals.clear();
 }
@@ -67,18 +69,30 @@ bool IntervalList::checkAndinsertNewInterval(unsigned int start, unsigned int en
     std::string before = Intervals2str();
     insertNewInterval(start, end);
     unsigned int last_first_end = getFirstEnd();
+    if(debug)
+        printf("[interval]: before-%s insert[%u,%u], after-%s,", before.substr(0,4900).c_str(), start, end, Intervals2str().c_str());
+
     // snprintf(log, 10000, "[interval]: before-%s insert[%u,%u], after-%s", before.substr(0,4900).c_str(), start, end, Intervals2str().c_str());
     if(last_first_end < end){
         order_flag = OUT_OF_ORDER;
-        log_debug("%s out-of-order", log);
+        if(debug){
+            printf(" out-of-order\n");
+            log_debug("%s out-of-order", log);
+        }
     }
     else if (last_first_end == end){
         order_flag = IN_ORDER_NEWEST;
-        log_debug("%s in order newest", log);
+        if(debug){
+            printf(" in order newest\n");
+            log_debug("%s in order newest", log);
+        }
     }
     else{
         order_flag = IN_ORDER_FILL;
-        log_debug("%s in order fill", log);
+        if(debug){
+            printf(" in order fill\n");
+            log_debug("%s in order fill", log);
+        }
     }
     return true;
 }

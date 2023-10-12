@@ -69,8 +69,10 @@ bool IntervalListWithTime::checkAndinsertNewInterval(unsigned int start, unsigne
     insertNewInterval(start, end);
     unsigned int last_first_end = getFirstEnd();
     // snprintf(log, 10000, "[interval]: before-%s insert[%u,%u], after-%s", before.substr(0,4900).c_str(), start, end, Intervals2str().c_str());
+    printf("[interval]: before-%s insert[%u,%u], after-%s\n", before.substr(0,4900).c_str(), start, end, Intervals2str().c_str());
     if(last_first_end < end){
         order_flag = OUT_OF_ORDER;
+        
         log_debug("%s out-of-order", log);
     }
     else if (last_first_end == end){

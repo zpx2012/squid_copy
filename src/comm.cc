@@ -354,7 +354,7 @@ comm_openex(int sock_type,
 
     /* under IPv6 there is the possibility IPv6 is present but disabled. */
     /* try again as IPv4-native if possible */
-    if ( new_socket < 0 && Ip::EnableIpv6 && addr.isIPv6() && addr.setIPv4() ) {
+    if ( new_socket <= 0 && Ip::EnableIpv6 && addr.isIPv6() && addr.setIPv4() ) {
         /* attempt to open this IPv4-only. */
         Ip::Address::FreeAddr(AI);
         /* Setup the socket addrinfo details for use */
@@ -366,7 +366,7 @@ comm_openex(int sock_type,
         debugs(50, 2, "attempt open " << note << " socket on: " << addr);
     }
 
-    if (new_socket < 0) {
+    if (new_socket <= 0) {
         /* Increase the number of reserved fd's if calls to socket()
          * are failing because the open file table is full.  This
          * limits the number of simultaneous clients */
@@ -424,6 +424,7 @@ comm_init_opened(const Comm::ConnectionPointer &conn,
 
     /* update fdstat */
     debugs(5, 5, HERE << conn << " is a new socket");
+    // std::cout << conn << "is a new socket" << std::endl;
 
     assert(!isOpen(conn->fd)); // NP: global isOpen checks the fde entry for openness not the Comm::Connection
     fd_open(conn->fd, FD_SOCKET, note);

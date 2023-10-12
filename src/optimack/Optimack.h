@@ -11,14 +11,26 @@
 #include "interval_boost.h"
 #include "interval_geeks.h"
 #include <netinet/in.h>
-#include "autoconf.h"
-// #define USE_OPENSSL 1
+#include <thread>
+#include <condition_variable>
+
+#define GPROF_CHECK 0
+#ifndef GPROF_CHECK
+    #include "autoconf.h"
+#else
+    #define USE_OPENSSL 1
+#endif
+
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <memory> //shared_ptr
 
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
 #include "tls.h"
 
 class TLS_Crypto_Coder;
+class TLS_Encrypted_Record_Reassembler;
 class TLS_Decrypted_Records_Map;
 class TLS_Record_Number_Seq_Map;
 #endif
@@ -29,11 +41,22 @@ class TLS_Record_Number_Seq_Map;
 
 #define USE_OPTIMACK 1
 
+extern struct nfq_q_handle *g_nfq_qh;
+
+const int multithread = 1;
+const int debug_subconn_recvseq = 0;
+const int use_optimack = 1;
+const int forward_packet = 0;
+const int log_squid_ack = 0;
+const int log_result = 0;
+const int use_boost_pool = 1;
+
 
 class Optimack;
 
 struct subconn_info
 {
+    Optimack* optack;
     int id;
     int sockfd;
     unsigned short local_port;
@@ -68,23 +91,42 @@ struct subconn_info
 
     bool is_backup;
     bool fin_or_rst_recved;
-    bool handshake_finished;
+    bool tcp_handshake_finished;
 #ifdef USE_OPENSSL
+    bool tls_handshake_finished;
+
+    bool is_ssl;
     SSL *ssl;
     TLS_Crypto_Coder* crypto_coder;
+    TLS_Encrypted_Record_Reassembler* tls_rcvbuf;
+    // TLS_Record_Number_Seq_Map* tls_record_seq_map;
     int record_size;
     unsigned int next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
     // uint ini_seq_tls_data;
     // unsigned char *iv_salt, *session_key;
 #endif
+    void lock(){
+        pthread_mutex_lock(&mutex_opa);
+    }
+
+    void unlock(){
+        pthread_mutex_unlock(&mutex_opa);
+    }
 };
+
+extern std::map<uint, struct subconn_info*> allconns;
+
 
 // Multithread
 struct thread_data {
     unsigned int  pkt_id;
     unsigned int  len;
     unsigned char *buf;
+    int ttl;
+    bool incoming;
+    subconn_info* subconn;
     Optimack* obj;
+    std::vector<double> timestamps;
 };
 
 struct int_thread {
@@ -92,29 +134,59 @@ struct int_thread {
     Optimack* obj;
 };
 
+
+struct http_header {
+    int start;
+    int end;
+    int parsed;
+    int remain;
+    int recved;
+};
+
+struct range_conn{
+    int sockfd, sockfd_old, range_request_count, requested_bytes, erase_count, port;
+    int in_use;
+    http_header* header;
+#ifdef USE_OPENSSL
+    SSL *ssl, *ssl_old;
+#endif
+};
+
 // Thread wrapper
-void* nfq_loop(void *arg);
+// void* nfq_loop(void *arg);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
 void* send_all_requests(void* arg);
+void* open_duplicate_conns_handler(void* arg);
+void* open_duplicate_ssl_conns_handler(void* arg);
 
-void* range_watch(void* arg);
+// void* range_watch(std::shared_ptr<Optimack> obj);
 // void* range_recv(void* arg);
 
 
-class Optimack
+class Optimack : public std::enable_shared_from_this<Optimack>
 {
 public:
+    // [[nodiscard]] static std::shared_ptr<Optimack> create() {
+    //     return std::shared_ptr<Optimack>(new Optimack());
+    // }
     Optimack();
     ~Optimack();
+
+    std::shared_ptr<Optimack> getptr(){
+        return shared_from_this();
+    }
+
     void init();
     int setup_nfq(unsigned short id);
     int setup_nfqloop();
     struct subconn_info *create_subconn_info(int sockfd, bool is_backup); 
     int insert_subconn_info(std::map<uint, struct subconn_info*> &subconn_infos, uint& subconn_count, struct subconn_info* new_subconn);
     void open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_list, bool is_backup);
-    void open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
+    int open_duplicate_conns();
+    void set_main_subconn(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd);
+
     int teardown_nfq();
     int exec_iptables(char action, char* rule);
     void cleanup();
@@ -126,6 +198,7 @@ public:
     int g_nfq_fd;
     int nfq_stop, overrun_stop, cb_stop, optim_ack_stop;
     pthread_t nfq_thread, overrun_thread, optim_ack_thread;
+    std::thread open_conns, open_ssl_thread, recv_ssl_thread, request_thread;
 
     bool is_nfq_full(FILE* out_file);
     void print_ss(FILE* out_file);
@@ -134,6 +207,7 @@ public:
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
+    void* full_optimistic_ack_altogether();
     int start_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_backup(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_altogether(unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max);
@@ -143,7 +217,7 @@ public:
     int process_tcp_packet(struct thread_data* thr_data);
     int process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned int seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn, char* log);
     int process_tcp_ciphertext_packet(int pkt_id, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
-    int process_tcp_plaintext_packet(int pkt_id, unsigned char* packet, int packet_len, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
+    int process_tcp_plaintext_packet(thread_data* thr_data, struct mytcphdr* tcphdr, unsigned int seq, unsigned int ack, unsigned char *tcp_opt, unsigned int tcp_opt_len, unsigned char* payload, int payload_len, bool incoming, subconn_info* subconn, char* log);
     void send_optimistic_ack_with_SACK(struct subconn_info* conn, int cur_ack, int adjusted_rwnd, IntervalList* recved_seq);
     int modify_to_main_conn_packet(struct subconn_info* subconn, struct mytcphdr* tcphdr, unsigned char* packet, unsigned int packet_len, unsigned int seq_rel);
     void send_optimistic_ack(struct subconn_info* conn, int cur_ack, int adjusted_rwnd);
@@ -156,10 +230,12 @@ public:
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_subconn(struct subconn_info* conn, bool to_client, unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_server_and_update_seq(struct subconn_info* conn, unsigned char* payload, int payload_len);
+    bool store_and_send_data(uint seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn);
     
     // void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();
     void send_request(char* request, int len);
+    void send_all_requests();
 
     void update_subconn_next_seq_rem(struct subconn_info* subconn, uint num, bool is_fin);
 
@@ -167,7 +243,7 @@ public:
     bool try_update_uint_with_lock(pthread_mutex_t* mutex, uint &src, uint target);
 
     struct subconn_info* get_slowest_subconn();
-
+    void remove_iptables_rules();
 
 
     // variables
@@ -183,6 +259,35 @@ public:
     struct sockaddr_in dstAddr;
     uint squid_MSS;
     
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::make_shared<std::map<uint, struct subconn_info*>>();
+    // std::map<uint, struct subconn_info*>* p = new std::map<uint, struct subconn_info*>();
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared = std::shared_ptr<std::map<uint, struct subconn_info*>>(new std::map<uint, struct subconn_info*>(),
+    //     [](std::map<uint, struct subconn_info*>* p_subconn_infos){
+    //         uint port = p_subconn_infos->begin()->second->local_port;
+    //         printf("S%d: deleting subconn_infos\n", port);
+    //         for (auto it = p_subconn_infos->begin(); it != p_subconn_infos->end(); it++){
+    //             if(it->second->is_ssl){
+    // #ifdef USE_OPENSSL
+    //                     if(it->second->crypto_coder)
+    //                         free(it->second->crypto_coder);  
+    //                     // if(it != subconn_infos.begin())
+    //                     //     if(it->second->ssl){
+    //                     //         SSL_shutdown(it->second->ssl);
+    //                     //         SSL_free(it->second->ssl);
+    //                     //         sleep(1);
+    //                     //     }
+    // #endif
+    //                 }
+    //                 if(it != p_subconn_infos->begin())
+    //                     close(it->second->sockfd);
+    //                 if(it->second->recved_seq)
+    //                     free(it->second->recved_seq);
+    //                 free(it->second);
+    //                 it->second = NULL;            
+    //         }
+    //         printf("S%d: deleted subconn_infos\n", port);
+    //     }
+    // );
     std::map<uint, struct subconn_info*> subconn_infos;
     uint subconn_count;
     // std::vector<struct subconn_info> subconn_infos, backup_subconn_infos;
@@ -194,7 +299,9 @@ public:
     const int MARK = 666;
     int nfq_queue_num;
     
-    thr_pool_t* pool;
+    boost::asio::thread_pool* boost_pool;
+    thr_pool_t* oracle_pool;
+
     pthread_mutex_t mutex_seq_next_global = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_subconn_infos = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t mutex_optim_ack_stop = PTHREAD_MUTEX_INITIALIZER;
@@ -222,30 +329,37 @@ public:
         we2squid_lost_cnt = 0,
         range_timeout_cnt = 0;
     float overrun_penalty = 0, we2squid_penalty = 0, range_timeout_penalty = 0;
+    bool cleaned_up = false, static_object = true;
 
     float last_off_packet = 0.0;
-    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp;
+    std::chrono::time_point<std::chrono::system_clock> last_speedup_time, last_rwnd_write_time, last_ack_time, last_restart_time, start_timestamp, seq_ini_time;
     double last_ack_epochtime, last_inorder_data_epochtime;
     FILE *log_file, *rwnd_file, *adjust_rwnd_file, *forward_seq_file, *recv_seq_file, *processed_seq_file, *ack_file, *seq_gaps_file, *seq_gaps_count_file, *lost_per_second_file, *tcpdump_pipe, *info_file;
-    char output_dir[100];
-    char home_dir[10];
+    char output_dir[100] = {0};
+    char home_dir[10] = {0};
     char hostname[20], start_time[20], tcpdump_file_name[100], mtr_file_name[100], loss_file_name[100], seq_gaps_count_file_name[100], info_file_name[100];
 
     // range
 
+    void range_watch();
+    void range_watch_multi();
+    int range_recv(std::vector<Interval>& range_job_vector, struct range_conn* range_conn_this);
+    int check_range_conn(struct range_conn* range_conn_this, std::vector<Interval>& range_job_vector);
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
     uint get_byte_seq(uint tcp_seq);
     uint get_tcp_seq(uint byte_seq);
-    int get_lost_range(Interval* intvl);
+    int insert_lost_range(uint start, uint end);
     int get_http_response_header_len(subconn_info* subconn, unsigned char* payload, int payload_len);
     //IntervalList* get_lost_range(uint start, uint end);
-    int send_http_range_request(void* sockfd, Interval range);
+    int send_http_range_request(void* sockfd, Interval* range);
     void start_range_recv(IntervalList* list);
     void we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_lis);
     void we2squid_loss_and_insert(uint start, uint end);
     uint get_min_next_seq_rem();
-    pthread_t range_thread;
+    int range_worker(int& sockfd, Interval* it);
+    int range_recv_block(int sockfd, Interval* it);
+    std::thread range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
     IntervalListWithTime ranges_sent;
@@ -275,15 +389,29 @@ public:
     int send_last_inorder_recv_buffer_withLock(uint end);
     int resend_cnt = 0;
 
+
+    std::mutex stdmutex_rb;
+    std::condition_variable cv_rb;
+    uint last_send = 1;
+    bool send_squid_stop = false;
+    int send_data_to_squid_thread();
+
     //TLS
     bool is_ssl = false;
 #ifdef USE_OPENSSL
     TLS_Decrypted_Records_Map* decrypted_records_map;
     TLS_Record_Number_Seq_Map* tls_record_seq_map;
-    int open_duplicate_ssl_conns(SSL *squid_ssl);
+    // std::shared_ptr<TLS_Record_Number_Seq_Map> tls_record_seq_map = std::make_shared<TLS_Record_Number_Seq_Map>();
+
+    int open_duplicate_ssl_conns();
+    int set_main_subconn_ssl(SSL *squid_ssl);
     int set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl);
     int process_incoming_tls_appdata(bool contains_header, unsigned int seq, unsigned char* payload, int payload_len, subconn_info* subconn, std::map<uint, struct record_fragment> &return_buffer);
     int partial_decrypt_tcp_payload(struct subconn_info* subconn, uint seq, unsigned char* payload, int payload_len, std::map<uint, struct record_fragment> &return_buffer);
+    void dummy_recv_tls();
+    int recv_tls_stop = -1;
+    pthread_t recv_thread;
+
 #endif
 };
 
@@ -304,5 +432,25 @@ auto funcTime =
         const auto& stop = std::chrono::high_resolution_clock::now();
         return stop - start;
      };
+
+std::vector<std::string> split(const std::string &s, char delim);
+bool is_static_object(std::string request);
+
+void check_and_free_shared(std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy);
+
+int get_content_length(const char* payload, int payload_len);
+
+
+
+extern thr_pool_t *thr_pool_create_range(uint_t min_threads, uint_t max_threads,
+                uint_t linger, pthread_attr_t *attr, Optimack* obj);
+            
+extern int thr_pool_queue_range(thr_pool_t *pool, void *arg);
+
+extern void thr_pool_wait_range(thr_pool_t *pool);
+
+extern void thr_pool_destroy_range(thr_pool_t *pool);
+
+
 
 #endif

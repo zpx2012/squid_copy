@@ -45,21 +45,7 @@ class TLS_Decrypted_Records_Map;
 
 class TLS_Crypto_Coder{
 public:
-    TLS_Crypto_Coder(const EVP_CIPHER * ec, unsigned char* salt, unsigned char* key, unsigned int vs_rvs, unsigned short lp){
-        this->evp_cipher = ec;
-        
-        memcpy(this->iv_salt, salt, 4);
-        this->iv_salt[4] = 0;
-
-        memcpy(this->write_key_buffer, key, 100);//100 to be modified
-        this->write_key_buffer[99] = 0;
-
-        this->key_obtained = true;
-
-        this->version_rvs = vs_rvs;
-
-        this->local_port = lp;
-    }
+    TLS_Crypto_Coder(const EVP_CIPHER * ec, unsigned char* salt, unsigned char* key, unsigned int vs_rvs, unsigned short lp);
 
     int partial_decrypt_record();
     int decrypt_record(uint64_t record_num, unsigned char* record_data, int record_len, unsigned char* plaintext);
@@ -75,10 +61,13 @@ public:
         return this->key_obtained;
     }
 
-    void set_iv_explicit_init(unsigned char* iv_ex){
-        memcpy(this->iv_xplct_ini, iv_ex, 8);
-        this->iv_xplct_ini[8] = 0;
+    bool get_iv_xplct_ini_set(){
+        return this->iv_xplct_ini_set;
     }
+    
+    void set_iv_explicit_init(unsigned char* iv_ex);
+
+    int get_record_num_from_iv_explicit(unsigned char* iv_ex);
 
     uint get_plaintext_seq(uint ciphertext_seq){
         return ciphertext_seq / MAX_FULL_GCM_RECORD_LEN * (TLSHDR_SIZE + 8 + 16);
@@ -89,16 +78,46 @@ public:
     }
 
 private:
-    bool key_obtained = false;
+    bool key_obtained = false, iv_xplct_ini_set = false;
     const EVP_CIPHER *evp_cipher;
-    unsigned char iv_salt[5], iv_xplct_ini[9]; // 4 to be modified
-    unsigned char write_key_buffer[100]; // 100 to be modified
+    unsigned char iv_salt[5] = {0}, iv_xplct_ini[9] = {0}; // 4 to be modified
+    unsigned long long iv_num_ini;
+    unsigned char write_key_buffer[100] = {0}; // 100 to be modified
     // int record_size = 0, record_full_size = 0;
     unsigned short version_rvs;
-
     unsigned short local_port;
     // TLS_Decrypted_Records_Map* decrypted_records_map;
     friend TLS_Decrypted_Record_Reassembler;
+};
+
+
+class TLS_Encrypted_Record_Reassembler{
+public:
+    TLS_Encrypted_Record_Reassembler(int rs, int vs, TLS_Crypto_Coder* cc) { 
+        record_full_size = rs;
+        version_rvs = vs;
+        crypto_coder = cc;
+        tls_ciphertext_rcvbuf.clear(); 
+    }
+    int insert_to_record_fragment(uint seq, unsigned char* ciphertext, int ciphertext_len);
+    int merge_record_fragment();
+    int merge_two_record_fragment(struct record_fragment* frag, unsigned char* first_data, int first_data_len, unsigned char* second_data, int second_data_len);
+    int decrypt_record_fragment(std::map<uint, struct record_fragment> &plaintext_rcvbuf);
+    int decrypt_one_payload(uint seq, unsigned char* payload, int payload_len, int& decrypt_start, int& decrypt_end, std::map<uint, struct record_fragment> &plaintext_rcvbuf);
+
+    bool empty(){
+        return tls_ciphertext_rcvbuf.empty();
+    }
+
+    void lock();
+    void unlock();
+    // std::map<uint, struct record_fragment> tls_plaintext_rcvbuf;
+
+private:
+    int record_full_size, version_rvs;
+    TLS_Crypto_Coder* crypto_coder;
+    std::map<uint, struct record_fragment, std::less<uint>> tls_ciphertext_rcvbuf;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 };
 
 
@@ -110,8 +129,8 @@ public:
     ~TLS_Decrypted_Record_Reassembler();
     int insert_plaintext(TLS_Crypto_Coder* cryto_coder, uint seq, u_char* data, int data_len);
     int insert_tag(TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len);
-    int check_complete(u_char* &buf, int &buf_len, u_short* &return_ports, int& return_ports_len);
-    int get_complete_plaintext(u_char* &buf, int &buf_len);
+    int check_complete(u_char* buf, int buf_len, u_short* &return_ports, int& return_ports_len);
+    int get_complete_plaintext(u_char* buf, int buf_len);
     bool verify(u_char* plntxt, int plntxt_len, TLS_Crypto_Coder* crypto_coder, u_char* tag);
     void cleanup();
     
@@ -149,20 +168,7 @@ public:
         // }
         
     }
-    ~TLS_Decrypted_Records_Map() {
-        // lock();
-        // for(size_t i = 0; i < 42750; i++)
-        //     delete decrypted_record_reassembler_map[i];
-        // delete [] decrypted_record_reassembler_map;
-        // unlock();
-        
-        for(auto it = decrypted_record_reassembler_map.begin(); it != decrypted_record_reassembler_map.end(); ){
-            delete it->second;
-            lock();
-            decrypted_record_reassembler_map.erase(it++);
-            unlock();  
-        }      
-    }
+    ~TLS_Decrypted_Records_Map();
 
     int insert_plaintext(int record_num, uint seq, u_char* data, int data_len, u_char* &return_str);
     // int insert_tag(int record_num, TLS_Crypto_Coder* cryto_coder, uint offset, u_char* tag, int tag_len, u_char* &return_str);
@@ -207,16 +213,29 @@ public:
     TLS_Record_Number_Seq_Map();
 
     ~TLS_Record_Number_Seq_Map();
-    int insert(uint start_seq, int record_size_with_header);
+    TLS_Record_Seq_Info* insert(uint start_seq, int record_num, int record_size_with_header);
+    TLS_Record_Seq_Info* insert_nolock(uint start_seq, int record_num, int record_size_with_header);
     // int insert(uint start_seq, TLS_Record_Seq_Info* seq_info);
-    int set_record_seq_info(uint seq, struct mytlshdr* tlshdr);
+    TLS_Record_Seq_Info* check_if_tlshdr(uint seq, unsigned char* payload, int payload_len, TLS_Crypto_Coder* crypto_coder);
+    TLS_Record_Seq_Info* find_record_seq_info(uint seq, unsigned char* payload, int payload_len, TLS_Crypto_Coder* crypto_coder);
     int set_size(uint start_seq, int record_size_with_header);
-    int get_record_seq_info(uint seq, TLS_Record_Seq_Info* return_info);
+    TLS_Record_Seq_Info* get_record_seq_info(uint seq);
     int get_record_num(uint seq);
+
+    void print_record_seq_map();
+    
+    void set_localport(int lp){
+        local_port = lp;
+    }
+
+    bool empty(){
+        return tls_seq_map.empty();
+    }
 
     void lock();
     void unlock();
 private:
+    int local_port;
     uint next_record_start_seq;
     int record_num_count;
     uint first_max_frag_seq, last_piece_start_seq;

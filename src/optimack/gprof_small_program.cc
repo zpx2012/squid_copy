@@ -64,12 +64,26 @@ int RecvPacket(SSL *ssl)
     do {
         len=SSL_read(ssl, buf, 4000);
         count += len;
-        if(count >= 2000000) // 29980133
+        // if(count >= 87548090) {// 29980133
+        //     printf("RecvPacket: exits.\n");
+        //     break;
+        // }
+        if (len > 0)
+            printf("RecvPacket: recved %d bytes.\n", len);
+        else if(len == 0)
             break;
-        if(len == 0)
-            break;
-        if(len<0){
+        else if(len < 0){
             printf("Receive error\n");
+            int err = SSL_get_error(ssl, len);
+            if (err == SSL_ERROR_WANT_READ){
+                printf("SSL_read_error: SSL_ERROR_WANT_READ\n");
+            }
+            if (err == SSL_ERROR_WANT_WRITE){
+                printf("SSL_read_error: SSL_ERROR_WANT_WRITE\n");
+            }
+            if (err == SSL_ERROR_ZERO_RETURN || err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL){
+                printf("SSL_read_error: %d\n", err);
+            }
             usleep(100);
             continue;
         }
@@ -77,25 +91,67 @@ int RecvPacket(SSL *ssl)
         // printf("RecvPacket: Received Record No.%d, len = %d\n\n", ++count, len);
 //        fprintf(fp, "%s",buf);
     } while(true);
-    // } while (len > 0);
-    if (len < 0) {
-        int err = SSL_get_error(ssl, len);
-        if (err == SSL_ERROR_WANT_READ){
-            printf("SSL_r ead_error: SSL_ERROR_WANT_READ\n");
-            return 0;
-        }
-        if (err == SSL_ERROR_WANT_WRITE){
-            printf("SSL_read_error: SSL_ERROR_WANT_WRITE\n");
-            return 0;
-        }
-        if (err == SSL_ERROR_ZERO_RETURN || err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL){
-            printf("SSL_read_error: %d\n", err);
-            return -1;
-        }
-    }
+    
+    printf("RecvPacket: exits. new\n");
+
     return 0;
 }
 
+SSL * open_ssl_conn_blocking(int sockfd, bool limit_recordsize){
+    if(sockfd == 0){
+        printf("open_ssl_conn: sockfd can't be 0!Q\n");
+    }
+    
+    printf("open_ssl_conn: for fd %d\n", sockfd);
+    
+    const SSL_METHOD *method = TLS_client_method(); /* Create new client-method instance */
+    SSL_CTX *ctx = SSL_CTX_new(method);
+    if (ctx == nullptr)
+    {
+        fprintf(stderr, "SSL_CTX_new() failed\n");
+        return nullptr;
+    }
+    SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+    
+    int max_frag_len_version = std::log2(MAX_FRAG_LEN / 256);
+    if(limit_recordsize){
+        SSL_CTX_set_tlsext_max_fragment_length(ctx, max_frag_len_version);
+        // SSL_CTX_set_max_send_fragment(ctx, MAX_FRAG_LEN);
+    }
+    
+    SSL *ssl = SSL_new(ctx);
+    if (ssl == nullptr)
+    {
+        fprintf(stderr, "SSL_new() failed\n");
+        return nullptr;
+    }
+    if(limit_recordsize)
+        SSL_set_tlsext_max_fragment_length(ssl, max_frag_len_version);
+    
+    SSL_set_fd(ssl, sockfd);
+
+    const char* const PREFERRED_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256";
+    // SSL_CTX_set_ciphersuites(ctx, PREFERRED_CIPHERS);
+    SSL_CTX_set_cipher_list(ctx, PREFERRED_CIPHERS);
+
+    const int status = SSL_connect(ssl);
+    if (status != 1)
+    {
+        SSL_get_error(ssl, status);
+        fprintf(stderr, "SSL_connect failed with SSL_get_error code %d\n", status);
+        return nullptr;
+    }
+    printf("open_ssl_conn: fd %d Connected with %s encryption\n", sockfd, SSL_get_cipher(ssl));
+
+    // STACK_OF(SSL_CIPHER)* sk = SSL_get1_supported_ciphers(ssl);
+    // for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
+    //     printf("%s", SSL_CIPHER_get_name(sk_SSL_CIPHER_value(sk, i)));
+    // }
+    // free(sk);
+    SSL_CTX_free(ctx);
+
+    return ssl;
+}
 
 int hostname_to_ip(char *hostname , char *ip)
 {
@@ -126,6 +182,31 @@ int hostname_to_ip(char *hostname , char *ip)
 	return 0;
 }
 
+void test_optimack(char* remote_ip, char* local_ip, short remote_port, short local_port, int sockfd, SSL* ssl){
+    std::shared_ptr<Optimack> optimack = std::make_shared<Optimack>();
+
+    optimack->init();
+    optimack->setup_nfq(local_port);
+    optimack->nfq_stop = 0;
+    optimack->setup_nfqloop();
+    optimack->set_main_subconn(remote_ip, local_ip, remote_port, local_port, sockfd);
+    sleep(2);
+    optimack->set_main_subconn_ssl(ssl);
+    sleep(10);
+
+    char request[400];
+    //https://mirrors.cat.pdx.edu/centos/2/centos2-scripts-v1.tar
+    sprintf(request, "GET /centos/2/centos2-scripts-v1.tar HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
+    // sprintf(request, "GET /ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
+    optimack->send_request(request, strlen(request));
+    SendRequest(ssl, request, strlen(request));
+
+    RecvPacket(ssl);
+    optimack->cleanup();
+ 
+}
+
+
 int main(int argc, char *argv[])
 {
     int opt;
@@ -137,14 +218,11 @@ int main(int argc, char *argv[])
 
     remote_domain =  argv[1];
     hostname_to_ip(remote_domain, remote_ip);
-
-    Optimack optimack;
-
-    strncpy(local_ip, "169.235.25.244", 16);
+    strncpy(local_ip, "119.23.104.145", 16);
 
     int sockfd = establish_tcp_connection(0, remote_ip, remote_port);
     local_port = get_localport(sockfd);
-    SSL* ssl = open_ssl_conn(sockfd, false);
+    SSL* ssl = open_ssl_conn_blocking(sockfd, false);
     // local_port = 36000;
 
     printf("Local IP: %s\n", local_ip);
@@ -152,22 +230,10 @@ int main(int argc, char *argv[])
     printf("Remote IP: %s\n", remote_ip);
     printf("Remote Port: %d\n", remote_port);
 
-    optimack.init();
-    optimack.setup_nfq(local_port);
-    optimack.nfq_stop = 0;
-    optimack.setup_nfqloop();
-    optimack.open_duplicate_conns(remote_ip, local_ip, remote_port, local_port, sockfd);
-    optimack.open_duplicate_ssl_conns(ssl);
-
-    char request[400];
-    sprintf(request, "GET /ubuntu/indices/md5sums.gz HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
-    // sprintf(request, "GET /ubuntu-releases/16.04/ubuntu-16.04.6-server-i386.template HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n", remote_domain);
-    SendRequest(ssl, request, strlen(request));
-    optimack.send_request(request, strlen(request));
-
-    RecvPacket(ssl);
+    test_optimack(remote_ip, local_ip, remote_port, local_port, sockfd, ssl);
+    sleep(10);
+   // SSL_CTX_free(ctx);
     SSL_free(ssl);
     close(sockfd);
-    // SSL_CTX_free(ctx);
 
 }

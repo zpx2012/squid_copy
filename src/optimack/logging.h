@@ -8,6 +8,7 @@ int init_exp_log(const char *filepath);
 int fin_log(void);
 
 void log_func(int level, const char *msg, ...);
+void print_func(const char *fmt, ...);
 
 #define log_error(args...) log_func(0, args)
 #define log_warn(args...) log_func(1, args)

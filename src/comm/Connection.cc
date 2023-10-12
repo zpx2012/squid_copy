@@ -36,7 +36,9 @@ Comm::Connection::Connection() :
     tlsHistory(nullptr)
 {
     *rfc931 = 0; // quick init the head. the rest does not matter.
+#ifdef USE_OPTIMACK
     optimack_server = nullptr;
+#endif
 }
 
 static int64_t lost_conn = 0;
@@ -53,25 +55,39 @@ Comm::Connection::~Connection()
     delete tlsHistory;
 
     /* Our code */
-    if(optimack_server)
-        delete optimack_server;
+    // if(optimack_server){
+        // optimack_server->cleanup();
+        // delete optimack_server;
+        // optimack_server = nullptr;
+    // }
 }
 
+#ifdef USE_OPTIMACK
 void Comm::Connection::setOptimack(){
-    optimack_server = new Optimack();
+    // optimack_server = new Optimack();
+    char remote_ip[16], local_ip[16];
+    remote.toStr(remote_ip, 16);
+    local.toStr(local_ip, 16);
+    // printf(remote_ip);
+    // printf(local_ip);
+
+    std::string ips[5] = {"52.41.132.37", "34.215.6.110", "34.160.144.191", "34.120.158.37", "34.102.187.140"};
+    for(uint i = 0; i < 5; i++)
+        if(ips[i].compare(remote_ip) == 0)
+            return;
+
+    optimack_server = std::make_shared<Optimack>();
     if (optimack_server){
         optimack_server->init();
-        optimack_server->setup_nfq(local.port());
-        optimack_server->nfq_stop = 0;
-        optimack_server->setup_nfqloop();
+        // optimack_server->setup_nfq(local.port());
+        // optimack_server->nfq_stop = 0;
+        // optimack_server->setup_nfqloop();
 
-        char remote_ip[16], local_ip[16];
-        remote.toStr(remote_ip, 16);
-        local.toStr(local_ip, 16);
-        optimack_server->open_duplicate_conns(remote_ip, local_ip, remote.port(), local.port(), fd);
+
+        optimack_server->set_main_subconn(remote_ip, local_ip, remote.port(), local.port(), fd);
     }
 }
-
+#endif
 
 
 Comm::ConnectionPointer

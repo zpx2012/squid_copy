@@ -10,7 +10,7 @@
 #include "util.h"
 #include "logging.h"
 
-void send_ACK_payload(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port,unsigned char* payload, int payload_len, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 128)
+void send_ACK_payload(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port,unsigned char* payload, int payload_len, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     opts.size = 0;
@@ -24,7 +24,7 @@ void send_ACK_payload(char* remote_ip, char* local_ip, unsigned short remote_por
     send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, payload, payload_len, 1);
 }
 
-void send_SYN(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
+void send_SYN(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     unsigned char* bytes = opts.bytes;
@@ -50,7 +50,7 @@ void send_SYN(char* remote_ip, char* local_ip, unsigned short remote_port, unsig
 }
 
 
-void send_ACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 128)
+void send_ACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     opts.size = 0;
@@ -61,11 +61,11 @@ void send_ACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsig
     header.th_ack = ack;
     header.th_win = (win_size >= 65525)? 65525 : win_size;
 
+    // printf("Pkg sent lport %d dport %d ack %d win %d\n", local_port, remote_port, ack, win_size);
     send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, (u_char*)payload, strlen(payload), 1);
-    // printf("Pkg sent ack %d win %d\n", ack, win_size);
 }
 
-void send_ACK_with_SACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, unsigned char* sack_str, int sack_len, char* payload, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 128)
+void send_ACK_with_SACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, unsigned char* sack_str, int sack_len, char* payload, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     opts.size = 0;
@@ -81,7 +81,7 @@ void send_ACK_with_SACK(char* remote_ip, char* local_ip, unsigned short remote_p
     // printf("Pkg sent ack %d win %d\n", ack, win_size);
 }
 
-void send_request(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
+void send_request(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     opts.size = 0;
@@ -96,7 +96,7 @@ void send_request(char* remote_ip, char* local_ip, unsigned short remote_port, u
 }
 
 
-void send_FIN_ACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char *payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 128)
+void send_FIN_ACK(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char *payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     opts.size = 0;

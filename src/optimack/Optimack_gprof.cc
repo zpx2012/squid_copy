@@ -32,15 +32,14 @@ using namespace std;
 // #include <cstring>
 // #include <algorithm>
 // #include "squid.h" //otherwise open_ssl_conns is undefined
-
+#include <sys/select.h>
+#include <sys/time.h>
 
 #include "Optimack_gprof.h"
 
-
-
 /** Our code **/
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
@@ -82,10 +81,13 @@ using namespace std;
 #define DEBUG_PRINT_LEVEL 0
 #endif
 
-#define LOG_SQUID_ACK 1
-
-const int multithread = 0;
+const int multithread = 1;
 const int debug_subconn_recvseq = 0;
+const int use_optimack = 0;
+const int forward_packet = 1;
+const int log_squid_ack = 0;
+const int log_result = 0;
+const int use_boost_pool = 1;
 
 // Utility
 double get_current_epoch_time_second(){
@@ -115,7 +117,9 @@ string exec(const char* cmd) {
     char buffer[128];
     std::string result = "";
     FILE* pipe = popen(cmd, "r");
-    if (!pipe) throw std::runtime_error("popen() failed!");
+    if (!pipe)
+        return ""; 
+        // throw std::runtime_error("popen() failed!");
     try {
         while (fgets(buffer, sizeof buffer, pipe) != NULL) {
             result += buffer;
@@ -221,63 +225,6 @@ nfq_loop(void *arg)
     //return placeholder;
 }
 
-void* 
-pool_handler(void* arg)
-{
-    //char log[LOGSIZE];
-    struct thread_data* thr_data = (struct thread_data*)arg;
-    Optimack* obj = (Optimack*)(thr_data->obj);
-    u_int32_t id = thr_data->pkt_id;
-    int ret = -1;
-
-    if(obj->cb_stop)
-        return NULL;
-    //debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
-    if(!thr_data->buf)
-        return NULL;
-
-    short protocol = ip_hdr(thr_data->buf)->protocol;
-    if (protocol == 6)
-        ret = obj->process_tcp_packet(thr_data);
-    else{ 
-        printf("Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
-        //debugs(0, DBG_CRITICAL, log);
-        struct myiphdr *iphdr = ip_hdr(thr_data->buf);
-        // struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
-
-        //unsigned char *payload = tcp_payload(thr_data->buf);
-        // unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
-        char sip[16], dip[16];
-        ip2str(iphdr->saddr, sip);
-        ip2str(iphdr->daddr, dip);
-
-        //memset(log, 0, LOGSIZE);
-        //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-        //debugs(0, DBG_CRITICAL, log);
-        // char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
-        //debugs(0, DBG_CRITICAL, hex_str);
-        // free(hex_str);
-        // hex_str = NULL;
-    }
-
-    if (ret == 0){
-        nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
-        // log_info("Verdict: Accept");
-        //debugs(0, DBG_CRITICAL, "Verdict: Accept");
-    }
-    else{
-        nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
-        // log_info("Verdict: Drop");
-        //debugs(0, DBG_CRITICAL, "Verdict: Drop");
-    }
-
-    free(thr_data->buf);
-    thr_data->buf = NULL;
-    free(thr_data);
-    thr_data = NULL;
-    // TODO: ret NULL?
-    return NULL;
-}
 
 void adjust_optimack_speed(struct subconn_info* conn, int id, int mode, int offset){
     //mode: 1 - speedup, -1 - slowdown
@@ -423,7 +370,7 @@ void Optimack::send_optimistic_ack(struct subconn_info* conn, int cur_ack, int a
         return;
     uint cur_win_scaled = adjusted_rwnd / conn->win_scale;
     send_ACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, empty_payload, conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
-    log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
+    // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u, tcp_win(scaled) %u, payload_len %u, next_seq_rem %u", conn->local_port, cur_ack, conn->next_seq_loc, adjusted_rwnd, cur_win_scaled, conn->payload_len, conn->next_seq_rem);
     return;
 }
 
@@ -517,6 +464,44 @@ void Optimack::backup_try_fill_gap(){
             pthread_mutex_unlock(conn->recved_seq->getMutex());
         }
     }
+}
+
+void* dummy_recv(void* arg){
+    long sockfd =(long)arg;
+    int rv;
+    u_char recv_buf[10000] = {0};
+    do{
+        rv = recv(sockfd, recv_buf, 10000, 0);
+    } while(rv > 0);
+    printf("Sockfd %d: dummy recv exits...\n", sockfd);
+    return NULL;
+}
+
+void* dummy_recv_ssl(void* arg)
+{
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
+    Optimack* obj = (Optimack*)arg;
+    obj->dummy_recv_tls();
+    // SSL* ssl = (SSL*)arg;
+    // if(!ssl)
+    //     return NULL;
+
+    // int len=100;
+    // char buf[4001];
+    // do {
+    //     len=SSL_read(ssl, buf, 4000);
+    //     if(len == 0)
+    //         break;
+    //     if(len<0){
+    //         printf("Receive error\n");
+    //         usleep(100);
+    //         break;
+    //     }
+    //     buf[len]=0;
+    // } while(ssl);
+    log_info("Dummy recv ssl ends");
+    return NULL;
 }
 
 
@@ -814,16 +799,323 @@ void* selective_optimistic_ack(void* arg){
 //     pthread_exit(NULL);
 // }
 
+// void* 
+// full_optimistic_ack_altogether(void* arg)
+// {
+//     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
+//     struct int_thread* ack_thr = (struct int_thread*)arg;
+//     // uint id = ack_thr->thread_id;
+//     Optimack* obj = ack_thr->obj;
+//     uint mss = obj->squid_MSS;
+//     // struct subconn_info* conn = (obj->subconn_infos[id]);
+//     free(ack_thr);
+//     ack_thr = NULL;
+
+//     log_info("Optimistic ack started");
+
+//     auto last_send_ack = std::chrono::system_clock::now(), last_zero_window = std::chrono::system_clock::now(), 
+//          last_restart  = std::chrono::system_clock::now(), last_overrun_check = std::chrono::system_clock::now();
+//     unsigned int opa_ack_start = 1,  last_opa_ack = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
+//     long zero_window_start = 0;
+//     // unsigned int ack_step = conn->payload_len;
+//     double send_ack_pace = ACKPACING / 1000000.0;
+//     int adjusted_rwnd = 0;
+//     char log[2000] = {0};
+//     bool is_in_overrun = false;
+
+//     struct timespec deadline;
+//     // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
+//     while (!obj->optim_ack_stop) {
+//         if (elapsed(last_send_ack) >= send_ack_pace){
+//             //calculate adjusted window size
+//             adjusted_rwnd = obj->get_adjusted_rwnd(opa_ack_start);
+//             obj->adjusted_rwnd = adjusted_rwnd;
+//             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+//                 if(!it->second->is_backup && !it->second->fin_or_rst_recved){
+//                     if (adjusted_rwnd < it->second->win_scale){
+//                         // if(elapsed(last_zero_window) < 2){
+//                             adjusted_rwnd = 0;
+//                             // if(elapsed(last_zero_window) )
+//                             // obj->send_optimistic_ack(it->second, it->second->next_seq_rem, obj->get_adjusted_rwnd(it->second->next_seq_rem));
+//                             // continue;
+//                             // break;
+//                         // }
+//                         // else{
+//                         //     adjusted_rwnd = mss;
+//                         // }
+//                     }
+                    
+//                     if ((opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS))){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
+//                         if (obj->ack_end > 1 && opa_ack_start >= obj->ack_end)
+//                             continue;
+//                         if(opa_ack_start == last_opa_ack)
+//                             continue;
+//                         obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+//                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
+//                         it->second->opa_ack_start = opa_ack_start;
+//                     }
+//                 }
+//             }
+//             if(adjusted_rwnd > 0){
+//                 if(opa_ack_start > obj->max_opt_ack){
+//                     obj->max_opt_ack = opa_ack_start;
+//                     zero_window_start = 0;
+//                 }
+//             }
+//             obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
+//             if(adjusted_rwnd <= 0){
+//                 zero_window_start = opa_ack_start;
+//                 // uint min_next_seq_rem = obj->get_min_next_seq_rem();
+//                 // if(abs(zero_window_start-min_next_seq_rem) > 2*obj->squid_MSS){
+//                 //     opa_ack_start = min_next_seq_rem-10*obj->squid_MSS;
+//                 //     // printf("zero window restart at %u, zero_window_start %u\n", opa_ack_start, zero_window_start);
+//                 // }
+//             }
+//             else {
+//                 last_opa_ack = opa_ack_start;
+//                 if(obj->ack_end > 1 && obj->cur_ack_rel == obj->ack_end && opa_ack_start == obj->ack_end){
+//                     // log_info("S%d: [Optimack]: cur_ack_rel(%u) == ack_end(%u), mission completed, continue", obj->squid_port, obj->cur_ack_rel, obj->ack_end);
+//                     continue;
+//                 }
+//                 opa_ack_start += mss;
+//                 // if (obj->ack_end > 1 && opa_ack_start > obj->ack_end){
+//                 //     opa_ack_start = obj->ack_end;
+//                 //     for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+//                 //         if(!it->second->is_backup && !it->second->fin_or_rst_recved){
+//                 //             obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+//                 //         }
+//                 //     }
+//                 // }
+//             }
+
+//             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
+
+//             if (SPEEDUP_CONFIG){
+//                 uint min_next_seq_rem = obj->get_min_next_seq_rem();
+//                 if(obj->cur_ack_rel > opa_ack_start && min_next_seq_rem > opa_ack_start){
+//                     opa_ack_start = obj->cur_ack_rel;
+//                     printf("speedup: cur ack %u, to %u\n", opa_ack_start, obj->cur_ack_rel);
+//                 }
+//             //     if(conn->next_seq_rem > opa_ack_start){
+//             //         opa_ack_start = conn->next_seq_rem;
+//             //     }
+//             }
+//         }
+
+//         //Overrun detection
+//         if (elapsed(last_overrun_check) >= 0.1){
+//             uint min_next_seq_rem = -1;            
+//             uint stall_seq = 0, stall_port = 0;
+//             bool is_stall = false;
+//             pthread_mutex_lock(&obj->mutex_subconn_infos);
+//             // Get slowest subconn
+//             struct subconn_info* slowest_subconn = obj->get_slowest_subconn();
+//             if(slowest_subconn){
+//                 min_next_seq_rem = slowest_subconn->next_seq_rem;
+// // #ifdef USE_OPENSSL
+// //                 if(obj->is_ssl)
+// //                     min_next_seq_rem = slowest_subconn->next_seq_rem_tls; //for tls's optimack overrun recover, otherwise recover won't work
+// // #endif                
+//                 if(elapsed(slowest_subconn->last_data_received) >= 1.5){
+//                     is_stall = true;
+//                     stall_port = slowest_subconn->local_port;
+//                     stall_seq = min_next_seq_rem;
+
+//                     // printf("[Optimack]: S%d-%d stalls at %u\n", stall_port, stall_seq);
+//                     sprintf(log, "O: S%d-%d stalls at %u\n", slowest_subconn->id, stall_port, stall_seq);
+//                     if(slowest_subconn->stall_seq != stall_seq){
+//                         slowest_subconn->restart_counter = 0;
+//                         slowest_subconn->stall_seq = stall_seq;
+//                         log_debug("[Optimack]: S%d-%d stalls at %u, min_next_seq_rem %u", slowest_subconn->id, stall_port, stall_seq, min_next_seq_rem);
+//                         printf("[Optimack]: S%d-%d stalls at %u, min_next_seq_rem %u\n", slowest_subconn->id, stall_port, stall_seq, min_next_seq_rem);
+//                     }
+//                     // last_stall_seq = stall_seq;
+//                 }
+//             }
+//             pthread_mutex_unlock(&obj->mutex_subconn_infos);
+
+//             if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
+//                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
+//                 if(abs(int(zero_window_start-stall_seq)) <= 3*mss && elapsed(last_zero_window) <= 0.7){ //zero window, exhausted receive window, waiting for new squid ack   
+//                 // if (elapsed(last_zero_window) <= 2)//should be 2*rtt || abs(zero_window_start-min_next_seq_rem) < 5*obj->squid_MSS
+//                     // log_debug("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
+//                     // printf("%u-%u <= %u && elapsed(last_zero_window) == %f <= 0.7, continue\n", zero_window_start, min_next_seq_rem, 3*obj->squid_MSS, elapsed(last_zero_window));
+//                     continue;
+//                 }
+//                 char time_str[20];
+//                 // log_info("[optack]: last_zero_window %s > 2s\n", print_chrono_time(last_zero_window, time_str));
+//                 if((stall_seq == last_stall_seq && stall_port == last_stall_port && elapsed(last_restart) <= 2) || (stall_seq > last_stall_seq && elapsed(last_restart) <= 2)){
+//                     // log_debug("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1", stall_seq, elapsed(last_restart));
+//                     // printf("stall_seq == last_stall_seq == %u && elapsed(last_restart) == %f <= 1\n", stall_seq, elapsed(last_restart));
+//                     continue;
+//                 }
+
+//                 if(slowest_subconn->restart_counter >= MAX_RESTART_COUNT){
+//                     if(CONN_NUM == 1 && slowest_subconn->restart_counter == 6){
+//                         slowest_subconn->restart_counter = 0;//Give one connection more chance
+//                     }
+//                     else if(slowest_subconn->restart_counter == MAX_RESTART_COUNT){ //Giving up, retreat it as no overrun
+//                         opa_ack_start = obj->max_opt_ack;
+//                         slowest_subconn->stall_seq = obj->max_opt_ack;
+//                         //slowest_subconn->next_seq_rem = obj->max_opt_ack; //bug
+//                         slowest_subconn->last_data_received = std::chrono::system_clock::now();
+//                     }
+//                     slowest_subconn->restart_counter++;
+//                     continue;
+                    
+//                     // if(obj->max_opt_ack != obj->ack_end){
+//                     //     for(int i = 0; i < 10; i++){
+//                     //         int adjust_rwnd_tmp = obj->get_adjusted_rwnd(opa_ack_dup_countdown);
+//                     //         if(adjust_rwnd_tmp > 0){
+//                     //             if(opa_ack_dup_countdown > mss){
+//                     //                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+//                     //                     if(elapsed(it->second->last_data_received) >= 1.5 && abs(int(it->second->next_seq_rem-stall_seq)) < 5*mss){
+//                     //                         for(int j = 0; j < 5; j++)
+//                     //                             obj->send_optimistic_ack(it->second, opa_ack_dup_countdown, adjust_rwnd_tmp);
+//                     //                         usleep(10000);
+//                     //                     }
+//                     //                 }
+//                     //                 opa_ack_dup_countdown -= mss;
+//                     //             }
+//                     //         }
+//                     //     }
+//                     // }
+//                     // else{
+//                     //     slowest_subconn->next_seq_rem = obj->max_opt_ack;
+//                     //     // slowest_subconn->last_data_received = std::chrono::system_clock::now();
+//                     //     // opa_ack_start = obj->max_opt_ack;
+//                     // }
+//                 }
+
+//                 if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
+//                     // log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
+//                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
+//                     continue;
+//                 }
+
+//                 // if(opa_ack_start == obj->ack_end)
+//                 //     continue;
+
+//                 // else{
+//                 //     if(SPEEDUP_CONFIG)
+//                 //         log_debug("in SPEEDUP mode");
+//                 //     else if(opa_ack_start == obj->ack_end)
+//                 //         log_debug("opa_ack_start(%u) == obj->ack_end(%u)", opa_ack_start, obj->ack_end);
+//                 //     else if(opa_ack_start <= m)
+//                 // }
+
+//                 is_in_overrun = true;
+//                 for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                    
+//                     if(elapsed(it->second->last_data_received) >= 1.5 && it->second->restart_counter < MAX_RESTART_COUNT){           
+//                         uint next_seq_rem = it->second->next_seq_rem;
+// // #ifdef USE_OPENSSL                
+// //                         if(obj->is_ssl)
+// //                             next_seq_rem = it->second->next_seq_rem_tls;
+// // #endif
+//                         long next_seq_rem_long = next_seq_rem, stall_seq_long = stall_seq;
+//                         if(abs(next_seq_rem_long - stall_seq_long) < 5*mss){
+//                             for(int i = 0; i < 2; i++)
+//                                 obj->send_optimistic_ack(it->second, next_seq_rem, obj->get_adjusted_rwnd(next_seq_rem));
+//                             sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, next_seq_rem, it->second->local_port);
+
+//                         }
+//                         else if(it->second == slowest_subconn){
+//                             printf("next_seq_rem %u, stall_seq %u, abs diff %ld\n", next_seq_rem, stall_seq, abs(next_seq_rem_long - stall_seq_long));
+//                         }
+//                         // else{
+//                         //     for(int i = 0; i < 10; i++)
+//                         //         obj->send_optimistic_ack(it->second, obj->max_opt_ack, obj->get_adjusted_rwnd(obj->max_opt_ack));
+//                         //     sprintf(log, "O: S%d-%d stalls, restart No.%u, send 5 max_opt_acks %u to trigger retranx in case of bursty loss, ", stall_port, same_restart_cnt, obj->max_opt_ack);
+//                         //     usleep(10000);
+//                         // }
+//                     }
+//                 }
+//                 usleep(10000);//One RTT, wait for server to send out packets
+//                 sprintf(log, "%s, current ack %u", log, opa_ack_start);
+//                 uint restart_seq = slowest_subconn->restart_counter < MAX_RESTART_COUNT? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
+//                 opa_ack_start = restart_seq > mss? restart_seq - mss : 1; // - 5*mss to give the server time to send the following packets
+//                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
+//                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
+//                 //     continue;
+//                 // if(adjusted_rwnd <= 0 && zero_window_start <= min_next_seq_rem-obj->squid_MSS) //Is in zero window period, received upon the window end, not overrun
+//                 //     continue;
+//                 // if(elapsed(last_restart) <= 0)
+//                 //     continue;
+//                 slowest_subconn->restart_counter++;
+//                     obj->overrun_cnt++;
+//                     if(stall_seq != last_stall_seq){
+//                         obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
+//                         // same_restart_cnt = 0;
+//                     }
+//                     else{
+//                         obj->overrun_penalty += elapsed(last_restart);
+//                         // if(stall_port == last_stall_port && stall_seq == last_stall_seq){
+//                             // slowest_subconn->restart_counter++;
+//                             // if(same_restart_cnt == 6)
+//                             //     same_restart_cnt = 0;
+//                         // }
+//                         // else
+//                         //     same_restart_cnt = 0;
+//                     }
+
+//                 // }
+//                 // else{
+//                     // sprintf(log, "O: recover from zero window, ");
+//                     // sprintf(log, "%scurrent ack %u, ", log, opa_ack_start);
+//                     // if (min_next_seq_rem > obj->squid_MSS)
+//                     //     opa_ack_start = min_next_seq_rem - obj->squid_MSS;
+//                     // else
+//                     //     opa_ack_start = 1;
+//                 // }
+//                 last_stall_port = stall_port;
+//                 last_stall_seq = stall_seq;
+//                 last_restart_seq = restart_seq;
+//                 last_restart = std::chrono::system_clock::now();
+//                 opa_ack_dup_countdown = obj->max_opt_ack;
+//                 sprintf(log, "%s, restart at %u, zero_window_start %lu, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
+//                 log_info(log);
+//                 // printf(log);
+//             }
+//             last_overrun_check = std::chrono::system_clock::now();
+//             // if(elapsed(conn->last_data_received) >= 120){
+//             //     printf("Overrun bug occurs: S%u, %u\n", id, conn->next_seq_rem);
+//             //     exit(-1);
+//             // }
+//         }
+//         log[0] = '\0';
+
+//         clock_gettime(CLOCK_MONOTONIC, &deadline);
+//         deadline.tv_nsec += ACKPACING*100/4;
+//         if(deadline.tv_nsec >= 1000000000) {
+//             deadline.tv_nsec -= 1000000000;
+//             deadline.tv_sec++;
+//         }
+//         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
+//         // usleep(ACKPACING/4);
+//     }
+ 
+//     // conn->optim_ack_stop = 0;
+//     log_info("Optimistic ack ends");
+//     // pthread_exit(NULL);
+//     return NULL;
+// }
+
+
 void* 
-full_optimistic_ack_altogether(void* arg)
+Optimack::full_optimistic_ack_altogether()
 {
-    struct int_thread* ack_thr = (struct int_thread*)arg;
+    // pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+
+    // struct int_thread* ack_thr = (struct int_thread*)arg;
     // uint id = ack_thr->thread_id;
-    Optimack* obj = ack_thr->obj;
-    uint mss = obj->squid_MSS;
+    // Optimack* obj = ack_thr->obj;
+    uint mss = squid_MSS;
     // struct subconn_info* conn = (obj->subconn_infos[id]);
-    free(ack_thr);
-    ack_thr = NULL;
+    // free(ack_thr);
+    // ack_thr = NULL;
 
     log_info("Optimistic ack started");
 
@@ -833,16 +1125,19 @@ full_optimistic_ack_altogether(void* arg)
     long zero_window_start = 0;
     // unsigned int ack_step = conn->payload_len;
     double send_ack_pace = ACKPACING / 1000000.0;
-    int adjusted_rwnd = 0;
+    int adjusted_rwnd_lc = 0;
     char log[2000] = {0};
     bool is_in_overrun = false;
 
-    while (!obj->optim_ack_stop) {
+    struct timespec deadline;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
+    while (!optim_ack_stop) {
         if (elapsed(last_send_ack) >= send_ack_pace){
             //calculate adjusted window size
-            adjusted_rwnd = obj->get_adjusted_rwnd(opa_ack_start);
-            obj->adjusted_rwnd = adjusted_rwnd;
-            for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+            adjusted_rwnd_lc = get_adjusted_rwnd(opa_ack_start);
+            adjusted_rwnd = adjusted_rwnd_lc;
+            for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
                 if(!it->second->is_backup && !it->second->fin_or_rst_recved){
                     if (adjusted_rwnd < it->second->win_scale){
                         // if(elapsed(last_zero_window) < 2){
@@ -857,24 +1152,24 @@ full_optimistic_ack_altogether(void* arg)
                         // }
                     }
                     
-                    if ((opa_ack_start >= obj->max_opt_ack || (opa_ack_start < obj->max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*obj->squid_MSS))){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
-                        if (obj->ack_end > 1 && opa_ack_start >= obj->ack_end)
+                    if ((opa_ack_start >= max_opt_ack || (opa_ack_start < max_opt_ack && it->second->next_seq_rem <= opa_ack_start+10*squid_MSS))){ //&& same_restart_cnt < 3 -> this will cause normal optimistic acks are not sent and server missing lots of acks
+                        if (ack_end > 1 && opa_ack_start >= ack_end)
                             continue;
                         if(opa_ack_start == last_opa_ack)
                             continue;
-                        obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                        send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
                         // log_info("[send_optimistic_ack] S%u: sent ack %u, seq %u, tcp_win %u", it->second->local_port, opa_ack_start, it->second->next_seq_loc, adjusted_rwnd);
                         it->second->opa_ack_start = opa_ack_start;
                     }
                 }
             }
             if(adjusted_rwnd > 0){
-                if(opa_ack_start > obj->max_opt_ack){
-                    obj->max_opt_ack = opa_ack_start;
+                if(opa_ack_start > max_opt_ack){
+                    max_opt_ack = opa_ack_start;
                     zero_window_start = 0;
                 }
             }
-            obj->update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
+            update_optimistic_ack_timer(adjusted_rwnd <= 0,last_send_ack, last_zero_window);
             if(adjusted_rwnd <= 0){
                 zero_window_start = opa_ack_start;
                 // uint min_next_seq_rem = obj->get_min_next_seq_rem();
@@ -885,28 +1180,28 @@ full_optimistic_ack_altogether(void* arg)
             }
             else {
                 last_opa_ack = opa_ack_start;
-                if(obj->ack_end > 1 && obj->cur_ack_rel == obj->ack_end && opa_ack_start == obj->ack_end){
-                    log_info("S%d: [Optimack]: cur_ack_rel(%u) == ack_end(%u), mission completed, continue", obj->squid_port, obj->cur_ack_rel, obj->ack_end);
+                if(ack_end > 1 && cur_ack_rel == ack_end && opa_ack_start == ack_end){
+                    // log_info("S%d: [Optimack]: cur_ack_rel(%u) == ack_end(%u), mission completed, continue", obj->squid_port, obj->cur_ack_rel, obj->ack_end);
                     continue;
                 }
                 opa_ack_start += mss;
-                if (obj->ack_end > 1 && opa_ack_start > obj->ack_end){
-                    opa_ack_start = obj->ack_end;
-                    for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-                        if(!it->second->is_backup && !it->second->fin_or_rst_recved){
-                            obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
-                        }
-                    }
-                }
+                // if (obj->ack_end > 1 && opa_ack_start > obj->ack_end){
+                //     opa_ack_start = obj->ack_end;
+                //     for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+                //         if(!it->second->is_backup && !it->second->fin_or_rst_recved){
+                //             obj->send_optimistic_ack(it->second, opa_ack_start, adjusted_rwnd);
+                //         }
+                //     }
+                // }
             }
 
             // log_info("O: sent ack %u, zero_window_start %u, tcp_win %d, rwnd %d", opa_ack_start, zero_window_start, adjusted_rwnd, obj->rwnd);
 
             if (SPEEDUP_CONFIG){
-                uint min_next_seq_rem = obj->get_min_next_seq_rem();
-                if(obj->cur_ack_rel > opa_ack_start && min_next_seq_rem > opa_ack_start){
-                    opa_ack_start = obj->cur_ack_rel;
-                    printf("speedup: cur ack %u, to %u\n", opa_ack_start, obj->cur_ack_rel);
+                uint min_next_seq_rem = get_min_next_seq_rem();
+                if(cur_ack_rel > opa_ack_start && min_next_seq_rem > opa_ack_start){
+                    opa_ack_start = cur_ack_rel;
+                    printf("speedup: cur ack %u, to %u\n", opa_ack_start, cur_ack_rel);
                 }
             //     if(conn->next_seq_rem > opa_ack_start){
             //         opa_ack_start = conn->next_seq_rem;
@@ -919,9 +1214,9 @@ full_optimistic_ack_altogether(void* arg)
             uint min_next_seq_rem = -1;            
             uint stall_seq = 0, stall_port = 0;
             bool is_stall = false;
-            pthread_mutex_lock(&obj->mutex_subconn_infos);
+            pthread_mutex_lock(&mutex_subconn_infos);
             // Get slowest subconn
-            struct subconn_info* slowest_subconn = obj->get_slowest_subconn();
+            struct subconn_info* slowest_subconn = get_slowest_subconn();
             if(slowest_subconn){
                 min_next_seq_rem = slowest_subconn->next_seq_rem;
 // #ifdef USE_OPENSSL
@@ -944,7 +1239,7 @@ full_optimistic_ack_altogether(void* arg)
                     // last_stall_seq = stall_seq;
                 }
             }
-            pthread_mutex_unlock(&obj->mutex_subconn_infos);
+            pthread_mutex_unlock(&mutex_subconn_infos);
 
             if (is_stall){ //zero_window_start - conn->next_seq_rem > 3*conn->payload_len && 
                 // if((send_ret >= 0 || (send_ret < 0 && zero_window_start > conn->next_seq_rem)){
@@ -967,8 +1262,8 @@ full_optimistic_ack_altogether(void* arg)
                         slowest_subconn->restart_counter = 0;//Give one connection more chance
                     }
                     else if(slowest_subconn->restart_counter == MAX_RESTART_COUNT){ //Giving up, retreat it as no overrun
-                        opa_ack_start = obj->max_opt_ack;
-                        slowest_subconn->stall_seq = obj->max_opt_ack;
+                        opa_ack_start = max_opt_ack;
+                        slowest_subconn->stall_seq = max_opt_ack;
                         //slowest_subconn->next_seq_rem = obj->max_opt_ack; //bug
                         slowest_subconn->last_data_received = std::chrono::system_clock::now();
                     }
@@ -999,7 +1294,7 @@ full_optimistic_ack_altogether(void* arg)
                     // }
                 }
 
-                if(!SPEEDUP_CONFIG && opa_ack_start != obj->ack_end && opa_ack_start <= stall_seq+10*mss){ //
+                if(!SPEEDUP_CONFIG && opa_ack_start != ack_end && opa_ack_start <= stall_seq+10*mss){ //
                     // log_debug("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS", opa_ack_start, stall_seq);
                     // printf("not in SPEEDUP mode, opa_ack_start(%u) <= min_next_seq_rem(%u)+10*obj->squid_MSS\n", opa_ack_start, min_next_seq_rem);
                     continue;
@@ -1017,7 +1312,7 @@ full_optimistic_ack_altogether(void* arg)
                 // }
 
                 is_in_overrun = true;
-                for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end();it++){
+                for (auto it = subconn_infos.begin(); it != subconn_infos.end();it++){
                     
                     if(elapsed(it->second->last_data_received) >= 1.5 && it->second->restart_counter < MAX_RESTART_COUNT){           
                         uint next_seq_rem = it->second->next_seq_rem;
@@ -1028,7 +1323,7 @@ full_optimistic_ack_altogether(void* arg)
                         long next_seq_rem_long = next_seq_rem, stall_seq_long = stall_seq;
                         if(abs(next_seq_rem_long - stall_seq_long) < 5*mss){
                             for(int i = 0; i < 2; i++)
-                                obj->send_optimistic_ack(it->second, next_seq_rem, obj->get_adjusted_rwnd(next_seq_rem));
+                                send_optimistic_ack(it->second, next_seq_rem, get_adjusted_rwnd(next_seq_rem));
                             sprintf(log, "%srestart No.%u, send 2 acks %u to S%d, last received in case of ack being lost\n", log, it->second->restart_counter, next_seq_rem, it->second->local_port);
 
                         }
@@ -1043,9 +1338,9 @@ full_optimistic_ack_altogether(void* arg)
                         // }
                     }
                 }
-                // usleep(10000);//One RTT, wait for server to send out packets
+                usleep(10000);//One RTT, wait for server to send out packets
                 sprintf(log, "%s, current ack %u", log, opa_ack_start);
-                uint restart_seq = slowest_subconn->restart_counter < MAX_RESTART_COUNT? stall_seq / mss * mss + 1 + mss : obj->max_opt_ack;//Find the closest optimack we have sent
+                uint restart_seq = slowest_subconn->restart_counter < MAX_RESTART_COUNT? stall_seq / mss * mss + 1 + mss : max_opt_ack;//Find the closest optimack we have sent
                 opa_ack_start = restart_seq > mss? restart_seq - mss : 1; // - 5*mss to give the server time to send the following packets
                 // if(restart_seq-last_restart_seq < 10*obj->squid_MSS)
                 // if(restart_seq == last_restart_seq && elapsed(last_restart) <= 1)
@@ -1055,13 +1350,13 @@ full_optimistic_ack_altogether(void* arg)
                 // if(elapsed(last_restart) <= 0)
                 //     continue;
                 slowest_subconn->restart_counter++;
-                    obj->overrun_cnt++;
+                    overrun_cnt++;
                     if(stall_seq != last_stall_seq){
-                        obj->overrun_penalty += elapsed(slowest_subconn->last_data_received);
+                        overrun_penalty += elapsed(slowest_subconn->last_data_received);
                         // same_restart_cnt = 0;
                     }
                     else{
-                        obj->overrun_penalty += elapsed(last_restart);
+                        overrun_penalty += elapsed(last_restart);
                         // if(stall_port == last_stall_port && stall_seq == last_stall_seq){
                             // slowest_subconn->restart_counter++;
                             // if(same_restart_cnt == 6)
@@ -1084,7 +1379,7 @@ full_optimistic_ack_altogether(void* arg)
                 last_stall_seq = stall_seq;
                 last_restart_seq = restart_seq;
                 last_restart = std::chrono::system_clock::now();
-                opa_ack_dup_countdown = obj->max_opt_ack;
+                opa_ack_dup_countdown = max_opt_ack;
                 sprintf(log, "%s, restart at %u, zero_window_start %lu, min_next_seq_rem %u\n", log, opa_ack_start, zero_window_start, min_next_seq_rem);
                 log_info(log);
                 // printf(log);
@@ -1097,7 +1392,14 @@ full_optimistic_ack_altogether(void* arg)
         }
         log[0] = '\0';
 
-        usleep(ACKPACING/2);
+        clock_gettime(CLOCK_MONOTONIC, &deadline);
+        deadline.tv_nsec += ACKPACING*100/4;
+        if(deadline.tv_nsec >= 1000000000) {
+            deadline.tv_nsec -= 1000000000;
+            deadline.tv_sec++;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
+        // usleep(ACKPACING/4);
     }
  
     // conn->optim_ack_stop = 0;
@@ -1105,7 +1407,6 @@ full_optimistic_ack_altogether(void* arg)
     // pthread_exit(NULL);
     return NULL;
 }
-
 
 int Optimack::start_optim_ack_backup(uint id, unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max)
 {
@@ -1196,11 +1497,13 @@ int Optimack::start_optim_ack_altogether(unsigned int opa_ack_start, unsigned in
     ack_thr->thread_id = 0;
     ack_thr->obj = this;
 
-    if (pthread_create(&optim_ack_thread, NULL, full_optimistic_ack_altogether, (void *)ack_thr) != 0) {
-        //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
-        printf("Fail to create optimistic_ack thread\n");
-        return -1;
-    }
+    std::thread optim_ack_thread(&Optimack::full_optimistic_ack_altogether, getptr());
+    optim_ack_thread.detach();
+    // if (pthread_create(&optim_ack_thread, NULL, full_optimistic_ack_altogether, (void *)ack_thr) != 0) {
+    //     //debugs(0, DBG_CRITICAL, "Fail to create optimistic_ack thread");
+    //     printf("Fail to create optimistic_ack thread\n");
+    //     return -1;
+    // }
     //debugs(1, DBG_CRITICAL, "S" << id <<": optimistic ack thread created");   
     // printf("S%d-%d: optimistic ack thread created\n", id);
     return 0;
@@ -1231,18 +1534,18 @@ void Optimack::log_seq_gaps(){
     // system("bash /root/squid_copy/src/optimack/test/ks.sh mtr");
     // pclose(tcpdump_pipe);
 
-    pthread_mutex_lock(&mutex_seq_next_global);
-    uint seq_next_global_copy = seq_next_global;
-    pthread_mutex_unlock(&mutex_seq_next_global);
+    // pthread_mutex_lock(&mutex_seq_next_global);
+    // uint seq_next_global_copy = seq_next_global;
+    // pthread_mutex_unlock(&mutex_seq_next_global);
     
-    pthread_mutex_lock(&mutex_subconn_infos);
-    int counts_len = seq_next_global_copy/1460+1;
-    int* counts = (int*)malloc(counts_len*sizeof(int));
-    memset(counts, 0, counts_len);
-    map<string, int> lost_per_second;
-    for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
-        counts[j/1460] = 0;
-    }
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // int counts_len = seq_next_global_copy/1460+1;
+    // int* counts = (int*)malloc(counts_len*sizeof(int));
+    // memset(counts, 0, counts_len);
+
+    // for(size_t j = 1; j < seq_next_global_copy; j+=1460){ //first row
+    //     counts[j/1460] = 0;
+    // }
 
 
     if(is_ssl){
@@ -1256,6 +1559,7 @@ void Optimack::log_seq_gaps(){
         // sleep(10);
 #endif
     }
+    // map<string, int> lost_per_second;
     // for(size_t k = 0; k < subconn_infos.size(); k++){
     //     size_t n = 1;
     //     pthread_mutex_lock(&subconn_infos[k].mutex_opa);
@@ -1325,51 +1629,170 @@ void Optimack::log_seq_gaps(){
         is_nfq_full(info_file);
         fprintf(info_file,"\n");
         // fprintf(info_file, "Request: %s\n", request);
-        fprintf(info_file, "Response: %s\n", response);
+        // if(response)
+            // fprintf(info_file, "Response: %s\n", response);
         fclose(info_file);
     }
 
-    free(counts);
-    counts = NULL;
+    // free(counts);
+    // counts = NULL;
     printf("Finished writing seq_gaps.\n");
-    pthread_mutex_unlock(&mutex_subconn_infos);
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 }
+
+
+void Optimack::remove_iptables_rules(){
+    if(iptables_rules.empty())
+        return;
+
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+        iptables_rules[i] = NULL;
+    }
+    iptables_rules.clear();
+}
+
+Optimack::Optimack()
+{
+    main_fd = 0;
+    iptables_rules.clear();
+    subconn_infos.clear();
+    bytes_per_second.clear();
+    recv_buffer.clear();
+    recved_seq.insertNewInterval(0,1);
+    range_stop = -1;
+    seq_next_global = 1;
+    subconn_count = 0;
+    request = response = NULL;
+    g_nfq_qh = NULL;
+    g_nfq_h = NULL;
+    optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
+    subconn_infos.clear();
+    
+    if(use_boost_pool){
+        boost_pool = new boost::asio::thread_pool(2);
+        if (!boost_pool) {
+            printf("couldn't create boost thread pool\n");
+            return;             
+        }
+    }
+    else
+        oracle_pool = thr_pool_create(1, 1, 300, NULL);
+
+#ifdef USE_OPENSSL
+    SSL_library_init();
+    SSLeay_add_ssl_algorithms();
+    SSL_load_error_strings();
+#endif
+
+}
+
 
 void
 Optimack::cleanup()
 {
-    printf("S%d: enter cleanup. Closed.\n", squid_port);
-    log_info("S%d: enter cleanup", squid_port);
+    if(cleaned_up)
+        return;
 
+    // printf("S%d: enter cleanup. Closed.\n", squid_port);
+    // log_info("S%d: enter cleanup", squid_port);
+    cleaned_up = true;
+    
     cb_stop = 1;
-
-    log_seq_gaps();
+    bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
+    if(!nfq_stop){
+        nfq_stop = 1;
+        ask_nfq_stop = true;        
+        // pthread_cancel(nfq_thread);
+    }
 
     if(!overrun_stop){
         overrun_stop++;
-        // pthread_join(overrun_thread, NULL);
-        log_info("ask overrun_thread to exit");    
+        ask_overrun_stop = true;
+        // pthread_cancel(overrun_thread);
+        // log_info("ask overrun_thread to exit");    
         printf("ask overrun_thread to exit\n");    
     }
 
     if(!range_stop){
         range_stop++;
-        // pthread_join(range_thread, NULL);
-        log_info("ask overrun_thread to exit");    
-        printf("ask range_watch_thread to exit\n");    
+        ask_range_stop = true;
+        // pthread_cancel(range_thread);
+        // log_info("ask overrun_thread to exit");    
+        printf("ask range_watch_thread to exit\n");
     }
+
 
     if(!optim_ack_stop){
         optim_ack_stop++;
-        // pthread_join(optim_ack_thread, NULL);
-        log_info("ask optimack_altogether_thread to exit");    
-        printf("ask optimack_altogether_thread to exit\n");    
+        ask_optim_stop = true;
+        // pthread_cancel(optim_ack_thread);
+        // log_info("ask optimack_altogether_thread to exit");    
+        printf("ask optimack_altogether_thread to exit\n");
+    }
+
+    if(!recv_tls_stop){
+        recv_tls_stop++;
+        ask_recv_tls_stop = true;
+        // pthread_cancel(recv_thread);
+        // log_info("ask dummy_recv_tls to exit");
+        printf("ask dummy_recv_tls to exit\n");
     }
 
     if(BACKUP_MODE && backup_port && !subconn_infos[backup_port]->optim_ack_stop){
         subconn_infos[backup_port]->optim_ack_stop++;
-        log_info("ask selective_optimack_thread to exit");
+        // log_info("ask selective_optimack_thread to exit");
     }
+
+    // if(ask_nfq_stop){
+    //     pthread_join(nfq_thread, NULL);
+    //     log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+    //     printf("NFQ %d nfq_thread exited", nfq_queue_num);
+    // }
+
+    // if(ask_overrun_stop){
+    //     pthread_join(overrun_thread, NULL);
+    //     printf("Overrun_thread exit\n");    
+    // }
+
+    // if(ask_range_stop){
+    //     pthread_join(range_thread, NULL);
+    //     printf("Range_watch_thread exit\n");
+    // }
+
+    // if(ask_optim_stop){
+    //     pthread_join(optim_ack_thread, NULL);
+    //     printf("Optimack_altogether_thread exit\n");
+    // }
+
+
+    // if(ask_recv_tls_stop){
+    //     pthread_join(recv_thread, NULL);
+    //     printf("dummy_recv_tls exited\n");
+    // }
+
+    // delete pool;
+    if(use_boost_pool){
+        if(boost_pool){
+            // printf("S%d: cleanup: thr_pool_destroy\n", squid_port);
+            //pool->shutdown();
+            // pool->destroy();
+            boost_pool->stop();
+            delete boost_pool;
+            boost_pool = nullptr;
+
+        }
+    }
+    else{
+        thr_pool_destroy(oracle_pool);
+        oracle_pool = NULL;
+        log_info("destroy thr_pool");
+
+    }
+
+    if(log_result)
+        log_seq_gaps();
 
     // stop other optimistic_ack threads and close fd
     // pthread_mutex_lock(&mutex_subconn_infos);
@@ -1385,62 +1808,91 @@ Optimack::cleanup()
     // log_info("NFQ %d all optimistic threads exited", nfq_queue_num);
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
-    sleep(2);
+    // sleep(2);
 
-    pthread_mutex_lock(&mutex_subconn_infos);
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
-        free(it->second);
-        it->second = NULL;
-    }
-    subconn_infos.clear();
+    // pthread_mutex_lock(&mutex_subconn_infos);
+//     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+//         if(is_ssl){
+// #ifdef USE_OPENSSL
+//             if(it->second->crypto_coder)
+//                 free(it->second->crypto_coder);  
+//             // if(it != subconn_infos.begin())
+//             //     if(it->second->ssl){
+//             //         SSL_shutdown(it->second->ssl);
+//             //         SSL_free(it->second->ssl);
+//             //         sleep(1);
+//             //     }
+// #endif
+//         }
+//         if(it != subconn_infos.begin())
+//             close(it->second->sockfd);
+//         if(it->second->recved_seq)
+//             free(it->second->recved_seq);
+//         free(it->second);
+//         it->second = NULL;
+//     }
+//     subconn_infos.clear();
     // clear iptables rules
-    for (size_t i=0; i<iptables_rules.size(); i++) {
-        exec_iptables('D', iptables_rules[i]);
-        free(iptables_rules[i]);
-        iptables_rules[i] = NULL;
-    }
-    iptables_rules.clear();
-    request_recved = false;
-    pthread_mutex_unlock(&mutex_subconn_infos);
-}
 
-Optimack::Optimack()
-{
-    main_fd = 0;
-    iptables_rules.clear();
-    subconn_infos.clear();
-    bytes_per_second.clear();
-    recv_buffer.clear();
-    recved_seq.insertNewInterval(0,1);
-    range_stop = -1;
-    seq_next_global = 1;
-    subconn_count = 0;
+    // pthread_mutex_unlock(&mutex_subconn_infos);
+
+    // printf("S%d: cleanup finished\n", squid_port);
 }
 
 Optimack::~Optimack()
 {
-    printf("S%d: enter destructor. Closed.\n", squid_port);
-    log_info("S%d:enter destructor", squid_port);
+    printf("S%d: enter destructor.\n", squid_port);
+    // log_info("S%d:enter destructor", squid_port);
 
     // stop nfq_loop thread
     // pthread_mutex_lock(&mutex_subconn_infos);
-    if(nfq_stop)
-        return;
-
-    nfq_stop = 1;
-    pthread_join(nfq_thread, NULL);
-    log_info("NFQ %d nfq_thread exited", nfq_queue_num);
+    // if(nfq_stop)
+    //     return;
 
     cleanup();
+
+    remove_iptables_rules();
+    for (size_t i=0; i<iptables_rules.size(); i++) {
+        // exec_iptables('D', iptables_rules[i]);
+        free(iptables_rules[i]);
+        iptables_rules[i] = NULL;
+    }
+    iptables_rules.clear();
+
+    request_recved = false;
+
+    if(request){
+        free(request);
+        request = NULL;
+    }
+    if(response){
+        free(response);
+        response = NULL;
+    }
+
+
+    // if(open_conns.joinable())
+    //     open_conns.join();
+    
+    // if(range_thread.joinable())
+    //     range_thread.join();
+    
+    // if(open_ssl_thread.joinable())
+    //     open_ssl_thread.join();
+    
+    // if(recv_ssl_thread.joinable())
+    //     recv_ssl_thread.join();
+    
+    // if(request_thread.joinable())
+    //     request_thread.join();
+
     // pthread_mutex_unlock(&mutex_subconn_infos);
 
      // clear thr_pool
-    if(pool){
-        thr_pool_destroy(pool);
-        log_info("destroy thr_pool");
-    }
+    // if(pool){
+
     teardown_nfq();
-    log_info("teared down nfq");
+    // log_info("teared down nfq");
 
     pthread_mutex_destroy(&mutex_seq_next_global);
     pthread_mutex_destroy(&mutex_subconn_infos);
@@ -1448,7 +1900,8 @@ Optimack::~Optimack()
 
     // fclose(seq_gaps_file);
     // fclose(seq_gaps_count_file);
-    exit(2);
+    // exit(2);
+    printf("S%d: ~Optimack completed.\n", squid_port);
 }
 
 void
@@ -1487,13 +1940,8 @@ Optimack::init()
         //exit(EXIT_FAILURE);
     //}
 
-    pool = thr_pool_create(4, 16, 300, NULL);
-    if (!pool) {
-            // debugs(0, DBG_CRITICAL, "couldn't create thr_pool");
-            exit(1);                
-    }
 
-    char tmp_str[600], time_str[64];
+    char tmp_str[600] = {0}, time_str[64] = {0};
     time_in_YYYY_MM_DD(time_str);
     // home_dir = getenv("HOME");
 
@@ -1540,7 +1988,7 @@ Optimack::init()
     // processed_seq_file = fopen(tmp_str, "w");
     // fprintf(processed_seq_file, "time,port,processed_seq_num\n");
    
-    if(LOG_SQUID_ACK){
+    if(log_squid_ack){
         memset(tmp_str, 0, 600);
         sprintf(tmp_str, "%s/squid_ack_%s_%s.csv", output_dir, hostname, start_time);
         ack_file = fopen(tmp_str, "w");
@@ -1560,7 +2008,6 @@ Optimack::init()
 
     last_speedup_time = last_rwnd_write_time = last_restart_time = last_ack_time = std::chrono::system_clock::now();
 
-    optim_ack_stop = nfq_stop = overrun_stop = cb_stop = range_stop = -1;
 
     sprintf(tcpdump_file_name, "tcpdump_%s.pcap", start_time);
     sprintf(tmp_str,"tcpdump -w %s/%s -s 96 tcp &", output_dir, tcpdump_file_name);
@@ -1571,7 +2018,6 @@ Optimack::init()
     // sprintf(tcpdump_file_name, "tcpdump_%s.tshark", start_time);
     // sprintf(tmp_str, "tshark -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80 and tcp.len > 0' > %s/%s &", output_dir, tcpdump_file_name);
     // system(tmp_str);
-    subconn_infos.clear();
 }
 
 void log_seq(FILE* file, uint seq){
@@ -1660,7 +2106,7 @@ Optimack::setup_nfqloop()
 int 
 Optimack::teardown_nfq()
 {
-    log_info("unbinding from queue %d", nfq_queue_num);
+    // log_info("unbinding from queue %d", nfq_queue_num);
     if (g_nfq_qh && nfq_destroy_queue(g_nfq_qh) != 0) {
         log_error("error during nfq_destroy_queue()");
         return -1;
@@ -1692,6 +2138,15 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     if(obj->cb_stop)
         return -1;
 
+    // sanity check, could be abbr later
+    struct nfqnl_msg_packet_hdr *ph;
+    ph = nfq_get_msg_packet_hdr(nfa);
+    // printf("P%d: hook %d\n", ph->packet_id, ph->hook);
+    if (!ph) {
+        // debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
+        return -1;
+    }
+
     struct myiphdr *iphdr = ip_hdr(packet);
     // struct mytcphdr *tcphdr = tcp_hdr(packet);
     //unsigned char *payload = tcp_payload(thr_data->buf);
@@ -1711,20 +2166,11 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
         return -1;
     }
     memset(thr_data, 0, sizeof(struct thread_data));
-
-    // sanity check, could be abbr later
-    struct nfqnl_msg_packet_hdr *ph;
-    ph = nfq_get_msg_packet_hdr(nfa);
-    // printf("P%d: hook %d\n", ph->packet_id, ph->hook);
-    if (!ph) {
-        // debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
-        return -1;
-    }
-
     thr_data->pkt_id = htonl(ph->packet_id);
     thr_data->len = packet_len;
     thr_data->buf = (unsigned char *)malloc(packet_len+1);
     thr_data->obj = obj;
+    thr_data->ttl = 10;
     if (!thr_data->buf){
             // debugs(0, DBG_CRITICAL, "cb: error during malloc");
             return -1;
@@ -1735,17 +2181,100 @@ cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *
     // hex_dump(thr_data->buf, packet_len);
     // printf("packet:\n");
     // hex_dump(packet, packet_len);
+    if(forward_packet)
+        nfq_set_verdict(obj->g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
 
-    // if(multithread == 0)
+
+    if(multithread == 0)
         pool_handler((void *)thr_data);
-    // else{
-    //     if(thr_pool_queue(obj->pool, pool_handler, (void *)thr_data) < 0) {
-    //         // debugs(0, DBG_CRITICAL, "cb: error during thr_pool_queue");
-    //         return -1;
-    //     }
-    // }
+    else{
+        if(use_boost_pool){
+            if(obj->boost_pool)
+                boost::asio::post(*obj->boost_pool, [thr_data]{ pool_handler((void *)thr_data); });
+        }
+        else{
+            if(obj->oracle_pool && thr_pool_queue(obj->oracle_pool, pool_handler, (void *)thr_data) < 0) {
+                printf("cb: error during thr_pool_queue");
+                return -1;
+            }
+        }
+    }
     return 0;
 }
+
+
+void* 
+pool_handler(void* arg)
+{
+    //char log[LOGSIZE];
+    struct thread_data* thr_data = (struct thread_data*)arg;
+    Optimack* obj = (Optimack*)(thr_data->obj);
+    u_int32_t id = thr_data->pkt_id;
+    int ret = -1;
+
+    if(obj->cb_stop)
+        return NULL;
+    //debugs(0, DBG_CRITICAL, "pool_handler: "<<id);
+    if(!thr_data->buf)
+        return NULL;
+
+    short protocol = ip_hdr(thr_data->buf)->protocol;
+    if (protocol == 6)
+        ret = obj->process_tcp_packet(thr_data);
+    else{ 
+        printf("pool_handler: Invalid protocol: 0x%04x, len %d", protocol, thr_data->len);
+        //debugs(0, DBG_CRITICAL, log);
+        struct myiphdr *iphdr = ip_hdr(thr_data->buf);
+        // struct mytcphdr *tcphdr = tcp_hdr(thr_data->buf);
+
+        //unsigned char *payload = tcp_payload(thr_data->buf);
+        // unsigned int payload_len = thr_data->len - iphdr->ihl*4 - tcphdr->th_off*4;
+        char sip[16], dip[16];
+        ip2str(iphdr->saddr, sip);
+        ip2str(iphdr->daddr, dip);
+
+        //memset(log, 0, LOGSIZE);
+        //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
+        //debugs(0, DBG_CRITICAL, log);
+        // char* hex_str = hex_dump_str(thr_data->buf, thr_data->len);
+        //debugs(0, DBG_CRITICAL, hex_str);
+        // free(hex_str);
+        // hex_str = NULL;
+    }
+
+    if(!forward_packet)
+        if (ret == 0){
+            nfq_set_verdict(obj->g_nfq_qh, id, NF_ACCEPT, thr_data->len, thr_data->buf);
+            // log_info("Verdict: Accept");
+            //debugs(0, DBG_CRITICAL, "Verdict: Accept");
+        }
+        else{
+            nfq_set_verdict(obj->g_nfq_qh, id, NF_DROP, 0, NULL);
+            // log_info("Verdict: Drop");
+            //debugs(0, DBG_CRITICAL, "Verdict: Drop");
+        }
+
+    if(ret == -5 && multithread){
+        thr_data->ttl--;
+        if(thr_data->ttl > 0){
+            if(thr_data->ttl == 9){
+                printf("P%d: record_seq_info for seq not found!\n", id);
+                obj->tls_record_seq_map->print_record_seq_map();
+            }
+            printf("pool_handler: Seq info not found: reshuffle to work pool, ttl %d\n", thr_data->ttl);
+            // boost::asio::post(*obj->pool, [thr_data]{ pool_handler((void *)thr_data); });
+        }
+        return NULL;
+    }
+
+    free(thr_data->buf);
+    thr_data->buf = NULL;
+    free(thr_data);
+    thr_data = NULL;
+    // TODO: ret NULL?
+    return NULL;
+}
+
 
 void Optimack::print_seq_table(){
     char time_str[30];
@@ -1815,7 +2344,7 @@ void Optimack::print_seq_table(){
 
     if(is_all_fin_or_rst){
         printf("All received FIN/ACK. Send FIN/ACK to %u\n", squid_port);
-        send_FIN_ACK(g_local_ip, g_remote_ip, squid_port, g_remote_port, "", subconn_infos[squid_port]->next_seq_loc, subconn_infos[squid_port]->next_seq_rem);
+        // send_FIN_ACK(g_local_ip, g_remote_ip, squid_port, g_remote_port, "", subconn_infos[squid_port]->next_seq_loc, subconn_infos[squid_port]->next_seq_rem);
         // sleep(10);
         // exit(-1);
     }
@@ -1846,29 +2375,50 @@ void Optimack::print_seq_table(){
 
 
 void* overrun_detector(void* arg){
-    return NULL;
 
+    // return NULL;
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+    
     Optimack* obj = (Optimack* )arg;
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = obj->subconn_infos_shared;
+
     // std::chrono::time_point<std::chrono::system_clock> *timers = new std::chrono::time_point<std::chrono::system_clock>[num_conns];
 
-    sleep(2);//Wait for the packets to come
+    // bool is_all_seq_ini = true;
+    // do {
+    //     is_all_seq_ini = true;
+    //     pthread_mutex_lock(&obj->mutex_subconn_infos);
+    //     for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
+    //         is_all_seq_ini &= it->second->seq_init;     
+    //     }
+    //     pthread_mutex_unlock(&obj->mutex_subconn_infos);
+    //     sleep(1);
+    // } while(!is_all_seq_ini && !obj->overrun_stop);
+
+    // sleep(2);//Wait for the packets to come
     log_info("Start overrun_detector thread");
+    printf("Start overrun_detector thread");
 
 
-    auto last_print_seqs = std::chrono::system_clock::now();
+    // auto last_print_seqs = std::chrono::system_clock::now();
     while(!obj->overrun_stop){
-        if(is_timeout_and_update(last_print_seqs, 1)){
+        // if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
             // obj->is_nfq_full(stdout);
-            // obj->print_ss(stdout);
+            obj->print_ss(stdout);
             printf("\n");
-        }
+        // }
 
         // if (RANGE_MODE) {
         //     // if(is_timeout_and_update(obj->last_ack_time, 2))
         //     obj->try_for_gaps_and_request();
         // }
-        usleep(10);
+        struct timespec deadline;
+        for(int sec = 0; sec < 2 && !obj->overrun_stop; sec++){
+            clock_gettime(CLOCK_MONOTONIC, &deadline);
+            deadline.tv_sec++;
+            clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
+        }
     }
     // free(timers);
     log_info("overrun_detector thread ends");
@@ -2001,14 +2551,13 @@ void Optimack::send_request(char* rq, int rq_len){
 
     printf("S%d-%d: send_request(%p): send request len %d, request:\n%s\n", 0, squid_port, this, rq_len, rq);
 
-    for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++)
-        it->second->handshake_finished = true;
-
     if(CONN_NUM > 1){
-        pthread_t request_thread;
-        if (pthread_create(&request_thread, NULL, send_all_requests, (void*)this) != 0) {
-            log_error("Fail to create send_all_requests thread.");
-        }
+        request_thread = std::thread(&Optimack::send_all_requests, getptr());
+        request_thread.detach();
+        // pthread_t request_thread;
+        // if (pthread_create(&request_thread, NULL, send_all_requests, (void*)this) != 0) {
+        //     log_error("Fail to create send_all_requests thread.");
+        // }
         log_info("Squid-out: sent request to all connections\n");
     }
 
@@ -2021,28 +2570,119 @@ void* send_all_requests(void* arg){
     Optimack* obj = (Optimack*)arg;
     // for (size_t i=0; i<obj->subconn_infos.size(); i++) {
     int rv = -1;
+
+    bool all_subconns_created = false;
+    while(!all_subconns_created){
+        pthread_mutex_lock(&obj->mutex_subconn_infos);
+        if(obj->subconn_infos.size() == CONN_NUM)
+            all_subconns_created = true;
+        pthread_mutex_unlock(&obj->mutex_subconn_infos);
+        usleep(10);
+    }
+
     for (auto it = ++obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
         // printf("S%d-%d: sockfd %d\n", it->second->local_port, it->second->sockfd);
         do {
+            while(!it->second->tcp_handshake_finished)
+                usleep(100);
+
             if(obj->is_ssl){
 #ifdef USE_OPENSSL
-                rv = SSL_write(it->second->ssl, obj->request, obj->request_len);
-                printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, obj->request_len);
+                int count;
+                for(count = 0; count < 10 && !it->second->tls_handshake_finished; count++)
+                    usleep(100);
+                if(count == 10)
+                    break;
+
+                if(it->second->ssl){
+                //     pthread_t recv_thread;
+                //     if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
+                //         log_error("Fail to create send_all_requests thread.");
+                //     }
+                    rv = SSL_write(it->second->ssl, obj->request, obj->request_len);
+                    printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, obj->request_len);
+                }
 #endif
             }
             else{
+                pthread_t recv_thread;
+                if (pthread_create(&recv_thread, NULL, dummy_recv, (void*)it->second->sockfd) != 0) {
+                    log_error("Fail to create send_all_requests thread.");
+                }
+
                 rv = send(it->second->sockfd, obj->request, obj->request_len, 0);
                 printf("S%d-%d: Push request len=%d to sockfd %d.\n", it->second->id, it->second->local_port, obj->request_len, it->second->sockfd);
                 // printf("S%d-%d: Push request len=%d to sockfd %d. Mainconn is sockfd %d, port %d\nRequest: %s\n", it->second->id, it->second->local_port, obj->request_len, it->second->sockfd, obj->subconn_infos.begin()->second->sockfd, obj->subconn_infos.begin()->second->local_port, obj->request);
             }
             if(rv <= 0){
                 printf("S%d-%d: Send request failed, error %d, sockfd %d\n", it->second->id, it->second->local_port, errno, it->second->sockfd);
-                sleep(1);
+                break;
             }
         } while(rv < 0);
+
     }
+
     log_info("send_all_requests: leave...");
     return NULL;
+}
+
+void Optimack::send_all_requests(){
+    // for (size_t i=0; i<obj->subconn_infos.size(); i++) {
+    int rv = -1;
+
+    bool all_subconns_created = false;
+    while(!all_subconns_created){
+        pthread_mutex_lock(&mutex_subconn_infos);
+        if(subconn_infos.size() == CONN_NUM)
+            all_subconns_created = true;
+        pthread_mutex_unlock(&mutex_subconn_infos);
+        usleep(10);
+    }
+
+    for (auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+        // printf("S%d-%d: sockfd %d\n", it->second->local_port, it->second->sockfd);
+        do {
+            while(!it->second->tcp_handshake_finished)
+                usleep(100);
+
+            if(is_ssl){
+#ifdef USE_OPENSSL
+                int count;
+                for(count = 0; count < 10 && !it->second->tls_handshake_finished; count++)
+                    usleep(100);
+                if(count == 10)
+                    break;
+
+                if(it->second->ssl){
+                //     pthread_t recv_thread;
+                //     if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)it->second->ssl) != 0) {
+                //         log_error("Fail to create send_all_requests thread.");
+                //     }
+                    rv = SSL_write(it->second->ssl, request, request_len);
+                    printf("S%d-%d: Push request len=%d to ssl send\n", it->second->id, it->second->local_port, request_len);
+                }
+#endif
+            }
+            else{
+                pthread_t recv_thread;
+                if (pthread_create(&recv_thread, NULL, dummy_recv, (void*)it->second->sockfd) != 0) {
+                    log_error("Fail to create send_all_requests thread.");
+                }
+
+                rv = send(it->second->sockfd, request, request_len, 0);
+                printf("S%d-%d: Push request len=%d to sockfd %d.\n", it->second->id, it->second->local_port, request_len, it->second->sockfd);
+                // printf("S%d-%d: Push request len=%d to sockfd %d. Mainconn is sockfd %d, port %d\nRequest: %s\n", it->second->id, it->second->local_port, obj->request_len, it->second->sockfd, obj->subconn_infos.begin()->second->sockfd, obj->subconn_infos.begin()->second->local_port, obj->request);
+            }
+            if(rv <= 0){
+                printf("S%d-%d: Send request failed, error %d, sockfd %d\n", it->second->id, it->second->local_port, errno, it->second->sockfd);
+                break;
+            }
+        } while(rv < 0);
+
+    }
+
+    log_info("send_all_requests: leave...");
+    return;    
 }
 
 
@@ -2094,6 +2734,7 @@ int Optimack::process_tcp_packet(struct thread_data* thr_data){
     else
         sprintf(log, "P%d-S%d: %s:%d -> %s:%d <%s> seq %x(%u) ack %x(%u) ttl %u plen %d", thr_data->pkt_id, subconn->id, sip, sport, dip, dport, tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, seq-subconn->ini_seq_loc, tcphdr->th_ack, ack-subconn->ini_seq_rem, iphdr->ttl, payload_len);
 
+    log_info(log);
     // printf("%s\n", log);
 
 // #ifdef USE_OPENSSL
@@ -2162,31 +2803,32 @@ int Optimack::process_tcp_plaintext_packet(
     char time_str[64];
 
 
-    if(!subconn->handshake_finished){
+    if(!subconn->tcp_handshake_finished){
         pthread_mutex_lock(&subconn->mutex_opa);
-        if(!subconn->handshake_finished){
-            // if(payload_len && subconn->seq_init){
-            //     if (subconn->next_seq_loc < seq_rel+payload_len) {//overlap: seq_next_global:100, seq_rel:95, payload_len = 10
-            //         subconn->next_seq_loc = seq_rel+payload_len;
-            //         log_info("S%d: (within handshake) update next_seq_loc to %u\n", subconn_i, subconn->next_seq_loc);
-            //     }
-            // }
+        if(!subconn->tcp_handshake_finished){
             pthread_mutex_unlock(&subconn->mutex_opa);
-
-#ifdef USE_OPENSSL
-        if(from_server){
-            // alter_tls_handshake_hello_extension_max_frag_len(payload, payload_len, from_server, 1, 0);
-            // compute_checksums(packet, 20, packet_len);
-        }
-#endif
-            sprintf(log, "%s - handshake hasn't completed. let it pass.", log);
+            strcat(log, "- TCP handshake hasn't completed. let it pass.");
             log_info(log);
-
             return 0;
         }
         pthread_mutex_unlock(&subconn->mutex_opa);
     }
-    
+
+    if(is_ssl){    
+#ifdef USE_OPENSSL
+        if(!subconn->tls_handshake_finished){
+            pthread_mutex_lock(&subconn->mutex_opa);
+            if(!subconn->tls_handshake_finished){
+                pthread_mutex_unlock(&subconn->mutex_opa);
+                strcat(log, "- TLS handshake hasn't completed. let it pass.");
+                log_info(log);
+                return 0;
+            }
+            pthread_mutex_unlock(&subconn->mutex_opa);
+        }
+#endif
+    }
+
     // Outgoing Packets
     if (!from_server) 
     {
@@ -2206,12 +2848,14 @@ int Optimack::process_tcp_plaintext_packet(
                             subconn->ini_seq_loc = seq - 1;
                             subconn->next_seq_loc = 1 + payload_len;
                             subconn->seq_init = true;
+                            seq_ini_time = std::chrono::system_clock::now();
                             printf("S%d: seq_init done - ini_seq_rem 0x%x(%u), ini_seq_loc 0x%x(%u)\n", local_port, subconn->ini_seq_rem, subconn->ini_seq_rem, subconn->ini_seq_loc, subconn->ini_seq_loc);
                             log_info("S%d: seq_init done - ini_seq_rem 0x%x(%u), ini_seq_loc 0x%x(%u)\n", local_port, subconn->ini_seq_rem, subconn->ini_seq_rem, subconn->ini_seq_loc, subconn->ini_seq_loc);
                         }
                         pthread_mutex_unlock(&subconn->mutex_opa);
                         log_debugv("P%d-S%d-out: process_tcp_packet:685: subconn->mutex_opa - unlock", pkt_id, subconn_i); 
                     }
+
 
                     unsigned int seq_rel = seq - subconn->ini_seq_loc;
                     log_info(log);
@@ -2252,7 +2896,7 @@ int Optimack::process_tcp_plaintext_packet(
                         if(pass)
                             return 0;
                         else
-                            return -1;
+                            return 0;
                     }
 
                     if(BACKUP_MODE && !payload_len && subconn->is_backup){ //let backup ACK to pass through
@@ -2269,8 +2913,11 @@ int Optimack::process_tcp_plaintext_packet(
                         this->cur_ack_rel = ack - subconn->ini_seq_rem;
                         uint cur_ack_rel_local = ack - subconn->ini_seq_rem;
                         this->win_end = cur_ack_rel + rwnd;
-                        // log_seq(ack_file, cur_ack_rel_local);
-                        fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
+
+                        if(log_squid_ack){
+                            // log_seq(ack_file, cur_ack_rel_local);
+                            fprintf(ack_file, "%f, %u, %d\n", get_current_epoch_time_nanosecond(), cur_ack_rel_local, rwnd);
+                        }
 
                         // if (is_timeout_and_update(subconn->timer_print_log, 2))
                         // printf("P%d-Squid-out: squid ack %d, win_size %d, max win_size %d\n", pkt_id, cur_ack_rel, rwnd, max_win_size);
@@ -2350,8 +2997,10 @@ int Optimack::process_tcp_plaintext_packet(
                         pthread_mutex_unlock(&mutex_cur_ack_rel);
                         log_debugv("P%d-S%d-out: process_tcp_packet:710: mutex_cur_ack_rel - unlock", pkt_id, subconn_i); 
 
-                        if (!payload_len) {      
+                        if(is_new_ack && cur_ack_rel > recved_seq.getFirstEnd())
+                            recved_seq.insertNewInterval_withLock(1, cur_ack_rel);
 
+                        if (!payload_len) {      
                             if (subconn_infos.begin()->second->payload_len && seq_next_global > cur_ack_rel) { ////packet received from subconn 0
                                 float off_packet_num = (seq_next_global-cur_ack_rel)/subconn_infos.begin()->second->payload_len;
                                 subconn_infos.begin()->second->off_pkt_num = off_packet_num;
@@ -2363,13 +3012,13 @@ int Optimack::process_tcp_plaintext_packet(
                                     last_off_packet = off_packet_num;
                                 }
                             }
-                            return -1;
+                            return 0;
                         }
                     }
                     else{
                         log_info("P%d-S%d-out: ack %u, win %d", pkt_id, subconn_i, ack - subconn->ini_seq_rem, ntohs(tcphdr->th_win) * subconn->win_scale);
                     }
-                    return -1;
+                    return 0;
                     break;
                 }
             
@@ -2379,7 +3028,7 @@ int Optimack::process_tcp_plaintext_packet(
                 printf("S%d: received FIN from squid.\n", local_port);
                 log_info("%s, received FIN from squid.\n", log);
                 send_ACK(g_local_ip, g_remote_ip, local_port, g_remote_port, "", seq+1, ack);
-                return 0;
+                return -1;
             }
 
             default://Could be FIN
@@ -2403,6 +3052,15 @@ int Optimack::process_tcp_plaintext_packet(
             // }
             // pthread_mutex_unlock(&subconn->mutex_opa);
         // }
+
+        for(int s = 0; !subconn->seq_init && s < 10; s++) 
+            usleep(10);
+            
+        if(!subconn->seq_init)
+            return -1;
+
+        if(seq < subconn->ini_seq_rem)
+            return -1;
 
         unsigned int seq_rel = seq - subconn->ini_seq_rem;
         // log_info(log);
@@ -2482,9 +3140,11 @@ int Optimack::process_tcp_plaintext_packet(
                         pthread_mutex_lock(&mutex_range);
                         if(seq_rel > 1 && range_stop){
                             range_stop = 0;
-                            if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
-                                log_error("Fail to create range_watch thread.");
-                            }
+                            range_thread = std::thread(&Optimack::range_watch, getptr());
+                            range_thread.detach();
+                            // if (pthread_create(&range_thread, NULL, range_watch, (void*)this) != 0) {
+                            //     log_error("Fail to create range_watch thread.");
+                            // }
                         }
                         pthread_mutex_unlock(&mutex_range);
 
@@ -2511,88 +3171,87 @@ int Optimack::process_tcp_plaintext_packet(
                         bool start_optimack = false;
                         if(is_ssl){
 #ifdef USE_OPENSSL
-                            if(it == subconn_infos.end())
+                            if(it == subconn_infos.end() && recved_seq.getFirstEnd() > 1) // && elapsed(seq_ini_time) >= 2
                                 start_optimack = true;
 #endif
                         }
-                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){
+                        else if (it == subconn_infos.end() && recved_seq.getFirstEnd() > 1){ //&& elapsed(seq_ini_time) > 2
                             start_optimack = true;
                         }
                         
                         if(start_optimack){
                         // if(recved_seq.getFirstEnd() > 1){
                             // if(optim_ack_stop){
+                            if(use_optimack){
                                 start_optim_ack_altogether(subconn->ini_seq_rem + 1, subconn->next_seq_loc+subconn->ini_seq_loc, payload_len, 0); //TODO: read MTU
                                 printf("P%d-S%d: Start optimistic_ack_altogether\n", pkt_id, subconn_i);
-                            // }
+                            }
                         }
                     }
                     pthread_mutex_unlock(&mutex_subconn_infos);
                     log_debugv("P%d-S%d: process_tcp_packet:991: subconn->mutex_opa - unlock", pkt_id, subconn_i); 
                 }
 
-                if(overrun_stop == -1) {
-                    // log_info("P%d-S%d-%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", pkt_id, subconn_i); 
-                    pthread_mutex_lock(&mutex_subconn_infos);
-                    std::map<uint, struct subconn_info*>::iterator it;
-                    for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
-                        if (subconn->optim_ack_stop == 1) {
-                            break;
-                        }
-                    if (it == subconn_infos.end()){
-                        if(overrun_stop == -1){
-                            overrun_stop++;
-                            if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
-                                log_error("Fail to create overrun_detector thread.");
-                            }
-                        }
-                    }
-                    pthread_mutex_unlock(&mutex_subconn_infos);
+                // if(overrun_stop == -1) {
+                //     // log_info("P%d-S%d-%d: process_tcp_packet:1003: mutex_subconn_infos - trying lock", pkt_id, subconn_i); 
+                //     pthread_mutex_lock(&mutex_subconn_infos);
+                //     std::map<uint, struct subconn_info*>::iterator it;
+                //     for (it = ++subconn_infos.begin(); it != subconn_infos.end(); it++)
+                //         if (subconn->optim_ack_stop == 1) {
+                //             break;
+                //         }
+                //     if (it == subconn_infos.end()){
+                //     }
+                //     pthread_mutex_unlock(&mutex_subconn_infos);
                     // log_info("P%d-S%d-%d: process_tcp_packet:1003: mutex_subconn_infos - unlock", pkt_id, subconn_i); 
-                }
+                // }
 
                 if(is_ssl){
 #ifdef USE_OPENSSL
-                    if(debug_subconn_recvseq)
-                        subconn->recved_seq->insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
-                    // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
-                    std::map<uint, struct record_fragment> plaintext_buf_local;
-                    int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
+                    if(subconn->ssl){
+                        if(debug_subconn_recvseq)
+                            subconn->recved_seq->insertNewInterval_withLock(seq_rel, seq_rel+payload_len);
+                        // process_tcp_packet_with_payload(tcphdr, seq_rel, payload, payload_len, subconn, log);
+                        std::map<uint, struct record_fragment> plaintext_buf_local;
+                        int verdict = process_incoming_tls_appdata(from_server, seq_rel, payload, payload_len, subconn, plaintext_buf_local);
+                        if(verdict == -5)
+                            return verdict;
 
-                    for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
-                        
-                        // unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
-                        // subconn_info* subconn_squid = subconn_infos[squid_port];
-                        // int ciphertext_len = subconn_squid->crypto_coder->generate_record(get_record_num(it->first), it->second.data, it->second.data_len, ciphertext);
-                        unsigned char *ciphertext = it->second.data;
-                        int ciphertext_len = it->second.data_len;
-                        if(ciphertext_len > 0){
-                            // printf("Reencrypt:\n");
-                            // for(int i = 0; i < ciphertext_len; i++){
-                            //     printf("%02x", *(payload+it->first-seq_rel+i));
-                            //     printf("%02x ", ciphertext[i]);
-                            //     if(i % 16 == 15)
-                            //         printf("\n");
-                            // }
-                            // printf("\n\n");
-                            // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
-                            log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
-                            // for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
-                            //     try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
-                            // if(rand() % 5 == 0){
-                                // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
-                                // print_hexdump(it->second.data, it->second.data_len);
-                                // printf("Original ciphertext: seq %u\n", it->first);
-                                // print_hexdump(ciphertext, ciphertext_len);
-                                // plaintext_buf_local.erase(it++);
-                                // continue;
-                            // }
-                            process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
-                            plaintext_buf_local.erase(it++);
+                        for(auto it = plaintext_buf_local.begin(); it != plaintext_buf_local.end();){
+                            
+                            // unsigned char ciphertext[MAX_FULL_GCM_RECORD_LEN+1];
+                            // subconn_info* subconn_squid = subconn_infos[squid_port];
+                            // int ciphertext_len = subconn_squid->crypto_coder->generate_record(get_record_num(it->first), it->second.data, it->second.data_len, ciphertext);
+                            unsigned char *ciphertext = it->second.data;
+                            int ciphertext_len = it->second.data_len;
+                            if(ciphertext_len > 0){
+                                // printf("Reencrypt:\n");
+                                // for(int i = 0; i < ciphertext_len; i++){
+                                //     printf("%02x", *(payload+it->first-seq_rel+i));
+                                //     printf("%02x ", ciphertext[i]);
+                                //     if(i % 16 == 15)
+                                //         printf("\n");
+                                // }
+                                // printf("\n\n");
+                                // printf("Process cipher packet: seq %u, len %u\n", it->first, ciphertext_len);
+                                log_info("Process cipher packet: seq %u, len %u", it->first, ciphertext_len);
+                                // for(auto conn = subconn_infos.begin(); conn != subconn_infos.end(); conn++)
+                                //     try_update_uint_with_lock(&conn->second->mutex_opa, conn->second->next_seq_rem, it->first+ciphertext_len);
+                                // if(rand() % 5 == 0){
+                                    // printf("Original plaintext: seq %u\n", get_byte_seq(it->first));
+                                    // print_hexdump(it->second.data, it->second.data_len);
+                                    // printf("Original ciphertext: seq %u\n", it->first);
+                                    // print_hexdump(ciphertext, ciphertext_len);
+                                    // plaintext_buf_local.erase(it++);
+                                    // continue;
+                                // }
+                                process_tcp_packet_with_payload(tcphdr, it->first, ciphertext, ciphertext_len, subconn, log);
+                                plaintext_buf_local.erase(it++);
+                            }
                         }
+                        update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
+                        // try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
                     }
-                    update_subconn_next_seq_rem(subconn, seq_rel+payload_len, tcphdr->th_flags | TH_FIN);
-                    // try_update_uint_with_lock(&subconn->mutex_opa, subconn->next_seq_rem_tls, seq_rel+payload_len);
 #endif
                 }
                 else
@@ -2610,7 +3269,9 @@ int Optimack::process_tcp_plaintext_packet(
 
                 strcat(log,"\n");
                 log_info(log);
-                if(subconn->is_backup)
+                if(forward_packet)
+                    return 0;
+                else if(subconn->is_backup)
                     return 0;
                 else
                     return -1;
@@ -2665,8 +3326,9 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
     IntervalList temp_range;
     temp_range.clear();
     temp_range.insertNewInterval(seq_rel, seq_rel+payload_len);
-    // pthread_mutex_lock(recved_seq.getMutex());
+    pthread_mutex_lock(recved_seq.getMutex());
     temp_range.substract(&recved_seq);
+    pthread_mutex_unlock(recved_seq.getMutex());
     auto temp_range_list = temp_range.getIntervalList();
     if(temp_range.size()){
         for(auto it = temp_range_list.rbegin(); it != temp_range_list.rend(); it++){
@@ -2680,6 +3342,7 @@ int Optimack::process_tcp_packet_with_payload(struct mytcphdr* tcphdr, unsigned 
                 // insert_to_recv_buffer_withLock(it->lower(), intvl_data, intvl_data_len);
                 if(order_flag == IN_ORDER_NEWEST){
                     subconn->last_inorder_data_time = std::chrono::system_clock::now();
+                    send_last_inorder_recv_buffer_withLock(it->lower());
                     send_data_to_squid(it->lower(), intvl_data, intvl_data_len);
                     sprintf(log, "%s inorder newest, forwarded to squid,", log); 
                 }
@@ -2808,172 +3471,6 @@ int get_localport(int fd){
     return ntohs(my_addr.sin_port);
 }
 
-struct subconn_info* Optimack::create_subconn_info(int sockfd, bool is_backup){
-    struct tcp_info tcp_info;
-    socklen_t tcp_info_length = sizeof(tcp_info);
-    if ( getsockopt(sockfd, SOL_TCP, TCP_INFO, (void *)&tcp_info, &tcp_info_length ) == 0 ) {
-        printf("Squid: snd_wscale-%u, rcv_wscale-%u, snd_mss-%u, rcv_mss-%u, advmss-%u, %u %u %u %u %u %u %u %u %u %u %u %u\n",
-            tcp_info.tcpi_snd_wscale,
-            tcp_info.tcpi_rcv_wscale,
-            tcp_info.tcpi_snd_mss,
-            tcp_info.tcpi_rcv_mss,
-            tcp_info.tcpi_advmss,
-            tcp_info.tcpi_last_data_sent,
-            tcp_info.tcpi_last_data_recv,
-            tcp_info.tcpi_snd_cwnd,
-            tcp_info.tcpi_snd_ssthresh,
-            tcp_info.tcpi_rcv_ssthresh,
-            tcp_info.tcpi_rtt,
-            tcp_info.tcpi_rttvar,
-            tcp_info.tcpi_unacked,
-            tcp_info.tcpi_sacked,
-            tcp_info.tcpi_lost,
-            tcp_info.tcpi_retrans,
-            tcp_info.tcpi_fackets
-            );
-    }
-    
-    struct subconn_info *new_subconn = (struct subconn_info *)malloc(sizeof(struct subconn_info));
-    if(!new_subconn){
-        printf("create_subconn_info: Can't malloc subconn_info\n");
-        return NULL;
-    }
-    memset(new_subconn, 0, sizeof(struct subconn_info));
-    new_subconn->sockfd = sockfd;
-    new_subconn->local_port = get_localport(sockfd);
-    new_subconn->ini_seq_loc = new_subconn->next_seq_loc = 0;
-    new_subconn->ini_seq_rem = new_subconn->next_seq_rem = 0;
-    new_subconn->last_next_seq_rem = 0;
-    new_subconn->win_scale = 1 << tcp_info.tcpi_rcv_wscale;
-    new_subconn->payload_len = tcp_info.tcpi_snd_mss;
-    new_subconn->ack_pacing = ACKPACING;
-    new_subconn->ack_sent = 0;
-    new_subconn->optim_ack_stop = 1;
-    new_subconn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
-    new_subconn->last_data_received = new_subconn->timer_print_log = std::chrono::system_clock::now();
-    new_subconn->is_backup = is_backup;
-    new_subconn->seq_init = false;
-    new_subconn->fin_or_rst_recved = false;
-    new_subconn->handshake_finished = false;
-    new_subconn->recved_seq = new IntervalList();
-    new_subconn->recved_seq->insertNewInterval_withLock(0,1);
-
-    return new_subconn;
-}
-
-int Optimack::insert_subconn_info(std::map<uint, struct subconn_info*> &subconn_infos_, uint& subconn_count_, struct subconn_info* new_subconn){
-    new_subconn->id = subconn_count_++;
-    subconn_infos_.insert(std::pair<uint, struct subconn_info*>(new_subconn->local_port, new_subconn));
-    log_info("New connection %d established: Port %u", subconn_count-1, new_subconn->local_port);
-    return 0;
-}
-
-
-
-void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_dict, bool is_backup){
-    int ret;
-
-    int sockfd = establish_tcp_connection(0, g_remote_ip, g_remote_port);
-    struct subconn_info* new_subconn = create_subconn_info(sockfd, is_backup);
-    insert_subconn_info(subconn_infos, subconn_count, new_subconn);
-
-    if(BACKUP_MODE && is_backup){
-        backup_port = new_subconn->local_port;
-    }
-
-    //TODO: iptables too broad??
-    char *cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    // debugs(11, 2, cmd << ret);
-
-    //TODO: iptables too broad??
-    cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-
-}
-
-
-void 
-Optimack::open_duplicate_conns(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
-{
-    printf("open_duplicate_conns: remote %s:%u, local %s:%u, CONN_NUM %d, ACK PACE %d\n", remote_ip, remote_port, local_ip, local_port, CONN_NUM, ACKPACING);
-
-    if(main_fd){
-        printf("open_duplicate_conns: main_fd has already been assigned! new(%d) - old(%u)\n", main_fd, fd);
-    }
-
-
-    time_in_HH_MM_SS_nospace(start_time);
-    start_timestamp = std::chrono::system_clock::now();
-
-
-    // unsigned int size = 6291456/2;
-    // if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
-    //     printf("Error: can't set SOL_SOCKET to %u!\n", size);
-    // }
-
-
-    main_fd = fd;
-
-    char* cmd;
-    int ret;
-
-    //TODO: iptables too broad??
-    cmd = (char*) malloc(IPTABLESLEN);
-    // sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j DROP", remote_ip, remote_port, local_port);
-    sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    // debugs(11, 2, cmd << ret);
-
-    cmd = (char*) malloc(IPTABLESLEN);
-    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
-    ret = exec_iptables('A', cmd);
-    iptables_rules.push_back(cmd);
-    // debugs(11, 2, cmd << ret);
- 
-    strncpy(g_local_ip, local_ip, 16); //TODO: change position
-    strncpy(g_remote_ip, remote_ip, 16);
-    g_local_ip[15] = 0;
-    g_remote_ip[15] = 0;
-    inet_pton(AF_INET, local_ip, &g_local_ip_int);
-    inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
-    g_remote_port = remote_port;
-    squid_port = local_port;
-    
-    dstAddr.sin_family = AF_INET;
-    memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
-
-
-    subconn_infos.clear();
-    struct subconn_info* squid_conn = create_subconn_info(fd, false);
-    insert_subconn_info(subconn_infos, subconn_count, squid_conn);
-    squid_MSS = squid_conn->payload_len;
-
-    // int conn_num = 3;
-    // range
-    if (RANGE_MODE) {
-        range_sockfd = 0;
-    }
-
-    for (int i = 1; i < CONN_NUM; i++) {
-        open_one_duplicate_conn(subconn_infos, false);
-    }
-
-    if(BACKUP_MODE){
-        int backup_num = 1;
-        for (int i = 0; i < backup_num; i++) {
-            open_one_duplicate_conn(subconn_infos, true);
-        }
-    }
-    log_info("[Squid Conn] port: %d, win_scale %d", local_port, squid_conn->win_scale);
-
-
-}
 
 
 int
@@ -3101,6 +3598,7 @@ int Optimack::send_out_of_order_recv_buffer(uint start, uint end, int max_count)
     return 0;
 }
 
+
 int Optimack::send_out_of_order_recv_buffer(uint start, uint end)
 {
     // struct subconn_info* squid_conn = subconn_infos[squid_port];
@@ -3126,6 +3624,30 @@ int Optimack::send_out_of_order_recv_buffer(uint start, uint end)
     return 0;
 }
 
+
+int Optimack::send_last_inorder_recv_buffer_withLock(uint end)
+{
+    pthread_mutex_lock(&mutex_recv_buffer);
+    for(auto prev = recv_buffer.begin(); prev != recv_buffer.end();){
+        auto cur = next(prev);
+        uint prev_upper = prev->first+prev->second.len;
+        if(prev_upper >= cur->first && prev_upper < end){//&& cur->first+cur->second.len <= win_end, when to send the unsend ones?
+            send_data_to_squid(prev->first, prev->second.data, prev->second.len);
+            // usleep(10);
+        }
+        else{
+            break;
+        }
+        free(prev->second.data);
+        recv_buffer.erase(prev);
+        prev = cur;
+    }
+    // log_info("[ofo]: leave send_out_of_order_recv_buffer, seq %u", seq);
+    pthread_mutex_unlock(&mutex_recv_buffer);
+    return 0;
+}
+
+
 int Optimack::send_out_of_order_recv_buffer(uint seq)
 {
     // struct subconn_info* squid_conn = subconn_infos[squid_port];
@@ -3144,6 +3666,7 @@ int Optimack::send_out_of_order_recv_buffer(uint seq)
                     // log_info("[ofo]: prev [%u,%u], cur %u, break, seq %u", prev->first, prev->first+it->second.len, cur->first, seq);
                     break;
                 }
+                free(prev->second.data);
                 recv_buffer.erase(prev);
                 prev = cur;
             }
@@ -3249,12 +3772,12 @@ void Optimack::send_data_to_subconn(struct subconn_info* conn, bool to_client, u
         if(to_client){
             unsigned int seq_to_send = conn->ini_seq_rem + seq + sent;
             send_ACK_payload(g_local_ip, g_remote_ip, conn->local_port, g_remote_port, payload_to_send, packet_len, conn->ini_seq_loc + conn->next_seq_loc, seq_to_send);
-            log_info("send_data_to_subconn: seq %u, ack %u, len %d", seq+sent, conn->next_seq_loc, packet_len);
+            log_info("send_data_to_subconn: seq %u, ack %u, len %d, seq_next %u", seq+sent, conn->next_seq_loc, packet_len, seq+sent+packet_len);
         }
         else{
             unsigned int seq_to_send = conn->ini_seq_loc + seq + sent;
             send_ACK_payload(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, payload_to_send, packet_len, conn->ini_seq_rem + conn->next_seq_rem, seq_to_send);
-            log_info("send_data_to_server: seq %u, ack %u, len %d", seq+sent, conn->next_seq_rem, packet_len);
+            log_info("send_data_to_server: seq %u, ack %u, len %d, seq_next %u", seq+sent, conn->next_seq_rem, packet_len, seq+sent+packet_len);
         }
         // usleep(100);
     }
@@ -3265,16 +3788,282 @@ void Optimack::send_data_to_server_and_update_seq(struct subconn_info* conn, uns
     conn->next_seq_loc += payload_len;
 }
 
+struct subconn_info* Optimack::create_subconn_info(int sockfd, bool is_backup){
+    struct tcp_info tcp_info;
+    socklen_t tcp_info_length = sizeof(tcp_info);
+    if ( getsockopt(sockfd, SOL_TCP, TCP_INFO, (void *)&tcp_info, &tcp_info_length ) == 0 ) {
+        printf("Squid: snd_wscale-%u, rcv_wscale-%u, snd_mss-%u, rcv_mss-%u, advmss-%u, %u %u %u %u %u %u %u %u %u %u %u %u\n",
+            tcp_info.tcpi_snd_wscale,
+            tcp_info.tcpi_rcv_wscale,
+            tcp_info.tcpi_snd_mss,
+            tcp_info.tcpi_rcv_mss,
+            tcp_info.tcpi_advmss,
+            tcp_info.tcpi_last_data_sent,
+            tcp_info.tcpi_last_data_recv,
+            tcp_info.tcpi_snd_cwnd,
+            tcp_info.tcpi_snd_ssthresh,
+            tcp_info.tcpi_rcv_ssthresh,
+            tcp_info.tcpi_rtt,
+            tcp_info.tcpi_rttvar,
+            tcp_info.tcpi_unacked,
+            tcp_info.tcpi_sacked,
+            tcp_info.tcpi_lost,
+            tcp_info.tcpi_retrans,
+            tcp_info.tcpi_fackets
+            );
+    }
+    
+    struct subconn_info *new_subconn = (struct subconn_info *)malloc(sizeof(struct subconn_info));
+    if(!new_subconn){
+        printf("create_subconn_info: Can't malloc subconn_info\n");
+        return NULL;
+    }
+    memset(new_subconn, 0, sizeof(struct subconn_info));
+    new_subconn->sockfd = sockfd;
+    new_subconn->local_port = get_localport(sockfd);
+    new_subconn->ini_seq_loc = new_subconn->next_seq_loc = 0;
+    new_subconn->ini_seq_rem = new_subconn->next_seq_rem = 0;
+    new_subconn->last_next_seq_rem = 0;
+    new_subconn->win_scale = 1 << tcp_info.tcpi_rcv_wscale;
+    new_subconn->payload_len = tcp_info.tcpi_snd_mss;
+    new_subconn->ack_pacing = ACKPACING;
+    new_subconn->ack_sent = 0;
+    new_subconn->optim_ack_stop = 1;
+    new_subconn->mutex_opa = PTHREAD_MUTEX_INITIALIZER;
+    new_subconn->last_data_received = new_subconn->timer_print_log = std::chrono::system_clock::now();
+    new_subconn->is_backup = is_backup;
+    new_subconn->seq_init = false;
+    new_subconn->fin_or_rst_recved = false;
+    new_subconn->tcp_handshake_finished = true;
+    new_subconn->recved_seq = new IntervalList();
+    new_subconn->recved_seq->insertNewInterval_withLock(0,1);
+
+    if(is_ssl){
 #ifdef USE_OPENSSL
-int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
+        new_subconn->tls_handshake_finished = false;
+#endif
+    }
+
+    return new_subconn;
+}
+
+int Optimack::insert_subconn_info(std::map<uint, struct subconn_info*> &subconn_infos_, uint& subconn_count_, struct subconn_info* new_subconn){
+    new_subconn->id = subconn_count_++;
+    subconn_infos_.insert(std::pair<uint, struct subconn_info*>(new_subconn->local_port, new_subconn));
+    printf("S%d-%d: established\n", subconn_count-1, new_subconn->local_port);
+    return 0;
+}
+
+
+
+void Optimack::open_one_duplicate_conn(std::map<uint, struct subconn_info*> &subconn_info_dict, bool is_backup){
+    int ret;
+
+    int sockfd = establish_tcp_connection(0, g_remote_ip, g_remote_port);
+    if(sockfd <= 0){
+        printf("S%d: open_one_duplicate_conn: establish tcp connection failed\n", squid_port);
+        return;
+    }
+    struct subconn_info* new_subconn = create_subconn_info(sockfd, is_backup);
+
+    //TODO: iptables too broad??
+    char *cmd = (char*) malloc(IPTABLESLEN);
+    sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
+    // debugs(11, 2, cmd << ret);
+
+    //TODO: iptables too broad??
+    cmd = (char*) malloc(IPTABLESLEN);
+    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", g_remote_ip, g_remote_port, new_subconn->local_port, nfq_queue_num);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
+
+    pthread_mutex_lock(&mutex_subconn_infos);
+    insert_subconn_info(subconn_infos, subconn_count, new_subconn);
+    pthread_mutex_unlock(&mutex_subconn_infos);
+
+    if(BACKUP_MODE && is_backup){
+        backup_port = new_subconn->local_port;
+    }
+
+}
+
+
+void 
+Optimack::set_main_subconn(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, int fd)
+{
+    printf("open_duplicate_conns: remote %s:%u, local %s:%u, CONN_NUM %d, ACK PACE %d\n", remote_ip, remote_port, local_ip, local_port, CONN_NUM, ACKPACING);
+
+    if(main_fd){
+        printf("open_duplicate_conns: main_fd has already been assigned! new(%d) - old(%u)\n", main_fd, fd);
+    }
+
+
+    time_in_HH_MM_SS_nospace(start_time);
+    start_timestamp = std::chrono::system_clock::now();
+
+
+    // unsigned int size = 6291456/2;
+    // if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char *) &size, sizeof(size)) < 0) {
+    //     printf("Error: can't set SOL_SOCKET to %u!\n", size);
+    // }
+
+
+    main_fd = fd;
+
+    char* cmd;
+    int ret;
+
+    //TODO: iptables too broad??
+    cmd = (char*) malloc(IPTABLESLEN);
+    // sprintf(cmd, "INPUT -p tcp -s %s --sport %d --dport %d -j DROP", remote_ip, remote_port, local_port);
+    sprintf(cmd, "PREROUTING -t mangle -p tcp -s %s --sport %d --dport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
+    // debugs(11, 2, cmd << ret);
+
+    cmd = (char*) malloc(IPTABLESLEN);
+    sprintf(cmd, "OUTPUT -p tcp -d %s --dport %d --sport %d -j NFQUEUE --queue-num %d", remote_ip, remote_port, local_port, nfq_queue_num);
+    ret = exec_iptables('A', cmd);
+    iptables_rules.push_back(cmd);
+    // debugs(11, 2, cmd << ret);
+ 
+    strncpy(g_local_ip, local_ip, 16); //TODO: change position
+    strncpy(g_remote_ip, remote_ip, 16);
+    g_local_ip[15] = 0;
+    g_remote_ip[15] = 0;
+    inet_pton(AF_INET, local_ip, &g_local_ip_int);
+    inet_pton(AF_INET, remote_ip, &g_remote_ip_int);
+    g_remote_port = remote_port;
+    squid_port = local_port;
+    
+    dstAddr.sin_family = AF_INET;
+    memcpy((char*)&dstAddr.sin_addr, &g_remote_ip_int, sizeof(g_remote_ip_int));
+
+
+    subconn_infos.clear();
+    struct subconn_info* squid_conn = create_subconn_info(fd, false);
+    insert_subconn_info(subconn_infos, subconn_count, squid_conn);
+    squid_MSS = squid_conn->payload_len;
+    log_info("[Squid Conn] port: %d, win_scale %d", squid_port, squid_conn->win_scale);
+
+    open_conns = std::thread(&Optimack::open_duplicate_conns, getptr());
+    open_conns.detach();
+    // pthread_t open_thread;
+    // if (pthread_create(&open_thread, NULL, open_duplicate_conns_handler, (void*)shared_from_this()) != 0) {
+    //     log_error("Fail to create open_duplicate_conns thread.");
+    // }
+    // printf("S%d: open_duplicate_conns thread created\n", squid_port);
+}
+
+void* open_duplicate_conns_handler(void* arg){
+    Optimack* obj = (Optimack*)arg;
+    obj->open_duplicate_conns();
+    return NULL;
+}
+
+
+int Optimack::open_duplicate_conns(){
+    // int conn_num = 3;
+    // range
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
+    printf("S%d: open_duplicate_conns\n", squid_port);
+    if (RANGE_MODE) {
+        range_sockfd = 0;
+    }
+
+    for (int i = 1; i < CONN_NUM; i++) {
+        open_one_duplicate_conn(subconn_infos, false);
+    }
+
+    if(BACKUP_MODE){
+        int backup_num = 1;
+        for (int i = 0; i < backup_num; i++) {
+            open_one_duplicate_conn(subconn_infos, true);
+        }
+    }
+
+    // if(overrun_stop == -1){
+    //     overrun_stop++;
+    //     if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
+    //         log_error("Fail to create overrun_detector thread.");
+    //     }
+    //     printf("S%d: overrun thread created\n", squid_port);
+    // }
+    printf("open_duplicate_conns: exiting...\n");
+    return 0;
+}
+
+
+bool is_static_object(std::string request){
+    bool static_object = false;
+    std::vector<std::string> whitelist = {"image", "video", "audio", "font", "x-7z-compressed", "pdf", "json", "x-tar", "gzip", "zip", "*"};
+    std::vector<std::string> request_fields = split(request, '\n');
+    for(auto const& s : request_fields){
+        //std::cout << s << std::endl;
+        std::vector<std::string> s_fields = split(s, ':');
+        //std::cout << s_fields.at(0) << std::endl;
+        if(s_fields.at(0).compare("Host") == 0){
+            if(s_fields.at(1).find("mozilla.com") != std::string::npos){
+                print_func("pre-loaded URI: %s, skipped\n", s_fields.at(1).c_str());
+                return false;
+            }
+        }
+        else if(s_fields.at(0).compare("Accept") == 0){
+            std::vector<std::string> accept_fields = split(s_fields.at(1).substr(1, s_fields.at(1).size()-1), ',');
+            std::cout << accept_fields.at(0) << std::endl;
+            std::vector<std::string> first_type = split(accept_fields.at(0),'/');
+            std::cout << first_type.at(0) << std::endl;
+            if(std::find(whitelist.begin(), whitelist.end(), first_type.at(0)) != whitelist.end() ||
+               std::find(whitelist.begin(), whitelist.end(), first_type.at(1)) != whitelist.end()){
+                   static_object = true;
+                   std::cout << "Is static_object: " << accept_fields.at(0) << std::endl; 
+            }
+        }
+    }
+    return static_object;
+}
+
+
+#ifdef USE_OPENSSL
+int Optimack::set_main_subconn_ssl(SSL *squid_ssl){
+    if(is_ssl){
+        return 0;
+    }    
     printf("enter open_duplicate_ssl_conns, ssl %p\n", squid_ssl);
-    struct subconn_info* squid_subconn = subconn_infos[squid_port];
     is_ssl = true;
+
+    // ERR_load_crypto_strings();
+
+    struct subconn_info* squid_subconn = subconn_infos[squid_port];
     set_subconn_ssl_credentials(squid_subconn, squid_ssl);
     squid_MSS = squid_subconn->payload_len;
     decrypted_records_map = new TLS_Decrypted_Records_Map(squid_subconn->crypto_coder);
     tls_record_seq_map = new TLS_Record_Number_Seq_Map();
+    tls_record_seq_map->set_localport(squid_port);
+    recved_seq.getIntervalList().clear();
+    recved_seq.insertNewInterval_withLock(0,1);
 
+    open_ssl_thread = std::thread(&Optimack::open_duplicate_ssl_conns, Optimack::getptr());
+    open_ssl_thread.detach();
+    // pthread_t open_ssl_thread;
+    // if (pthread_create(&open_ssl_thread, NULL, open_duplicate_ssl_conns_handler, (void*)this) != 0) {
+    //     log_error("Fail to create open_duplicate_conns thread.");
+    // }
+    printf("S%d: open_duplicate_ssl_conns thread created. set_main_subconn_ssl exits.\n", squid_port);
+
+
+    return 0;
+}
+
+// void* open_duplicate_ssl_conns_handler(void* arg){
+//     std::shared_ptr<Optimack>* obj = static_cast<std::shared_ptr<Optimack>*>(arg);
+//     obj->open_duplicate_ssl_conns();
+//     return NULL;
+// }
+
+int Optimack::open_duplicate_ssl_conns(){
     /*** bug: if we combine three blocks into one for loop, 
        * previous connections are set to be handshake finished, 
        * when retranx of previous connections' handshake packets arrive,
@@ -3282,28 +4071,59 @@ int Optimack::open_duplicate_ssl_conns(SSL *squid_ssl){
        * because not all ssl connnections have been opened, which caused all threads in deadlock,
        * preventing the handshake packets of current opening connections to pass
     ***/
-    pthread_mutex_lock(&mutex_subconn_infos);
-    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        it->second->handshake_finished = false;
-    }
-    pthread_mutex_unlock(&mutex_subconn_infos);
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+    //     it->second->handshake_finished = false;
+    // }
+    // pthread_mutex_unlock(&mutex_subconn_infos);
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
 
-    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        SSL* ssl = open_ssl_conn(it->second->sockfd, false);
-        set_subconn_ssl_credentials(it->second, ssl);
+    if(subconn_infos.size() < 2){
+        printf("open_duplicate_ssl_conns: subconn_infos.size() < 2\n");
+        return -1;
     }
 
-    pthread_mutex_lock(&mutex_subconn_infos);
+    printf("S%d: create open_duplicate_ssl_conns\n", squid_port);
     for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
-        it->second->handshake_finished = true;
+        if(it->second){
+            SSL* ssl = open_ssl_conn(it->second->sockfd, false);
+            if(ssl)
+                set_subconn_ssl_credentials(it->second, ssl);
+            else{
+                pthread_mutex_lock(&mutex_optim_ack_stop);
+                cleanup();
+                pthread_mutex_unlock(&mutex_optim_ack_stop);
+            }
+        }
     }
-    pthread_mutex_unlock(&mutex_subconn_infos);
+                             
+    // pthread_mutex_lock(&mutex_subconn_infos);
+    // for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+    //     it->second->lock();
+    //     it->second->tls_handshake_finished = true;
+    //     it->second->unlock();
+    // }
+    // pthread_mutex_unlock(&mutex_subconn_infos);
 
+    recv_tls_stop = 0;
+    printf("S%d: create dummy_recv_ssl\n", squid_port);
+    recv_ssl_thread = std::thread(&Optimack::dummy_recv_tls, Optimack::getptr());
+    recv_ssl_thread.detach();
+    // if (pthread_create(&recv_thread, NULL, dummy_recv_ssl, (void*)this) != 0) {
+    //     log_error("Fail to create dummy_recv_ssl thread.");
+    // }
     return 0;
 }
 
 
 int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl){
+    if(!ssl){
+        printf("Set subconn ssl credentials: S%d-%d, null ssl.\n", subconn->id, subconn->local_port);
+        return -1;
+    }
+
+    // printf("S%d-%d: set_subconn_ssl_credentials starts.\n", squid_port, subconn->local_port);
+
     unsigned char write_key_buffer[100],iv_salt[5];
     unsigned char master_key[100];
     unsigned char client_random[100];
@@ -3328,17 +4148,111 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     //     printf("%02x", iv_salt[i]);
     // printf("\n");
 
+    subconn->lock();
+    // printf("S%d-%d: set_subconn_ssl_credentials enter lock.\n", squid_port, subconn->local_port);
     subconn->ssl = ssl;
+    subconn->seq_init = false;
+    subconn->tls_handshake_finished = true;
     subconn->crypto_coder = new TLS_Crypto_Coder(evp_cipher, iv_salt, write_key_buffer, 0x0303, subconn->local_port);
+    subconn->tls_rcvbuf = new TLS_Encrypted_Record_Reassembler(MAX_FULL_GCM_RECORD_LEN, 0x0303, subconn->crypto_coder);
+
+    // subconn->tls_record_seq_map->insert(1, MAX_FULL_GCM_RECORD_LEN);
+    // subconn->tls_record_seq_map->set_size(1, MAX_FULL_GCM_RECORD_LEN);
 
     // subconn->handshake_finished = true;
     subconn->record_size = MAX_FULL_GCM_RECORD_LEN;
     if(subconn->record_size < subconn->payload_len)
         subconn->payload_len = subconn->record_size;
 
+    subconn->unlock();
+
+    // printf("S%d-%d: set_subconn_ssl_credentials ends.\n", squid_port, subconn->local_port);
+
     return 0;
 }
 
+
+void Optimack::dummy_recv_tls(){
+    fd_set readfds;
+    int ret = 0;
+    int maxfdp1 = -1;
+#define BUFSIZE 4001
+    char buf[BUFSIZE] = {0};
+    struct timeval timeout = {1,0};
+
+    printf("S%d: dummy recv tls starts\n", squid_port);
+
+    // std::shared_ptr<std::map<uint, struct subconn_info*>> subconn_infos_shared_copy = subconn_infos_shared;
+
+    std::vector<int> sockfds;
+    std::vector<SSL*> ssls;
+    for(auto it = ++subconn_infos.begin(); it != subconn_infos.end(); it++){
+        fcntl(it->second->sockfd, F_SETFL, O_NONBLOCK);
+        sockfds.push_back(it->second->sockfd);
+        ssls.push_back(it->second->ssl);
+    }
+    int sockfd_size = sockfds.size();
+
+    while(recv_tls_stop == 0){
+        FD_ZERO(&readfds);
+        for(int i = 0; i < sockfd_size; i++){
+            FD_SET(sockfds.at(i), &readfds);
+            maxfdp1 = max(sockfds.at(i), maxfdp1);
+        }
+        maxfdp1++;
+
+        ret = select(maxfdp1, &readfds, NULL, NULL, NULL);//timeout
+
+        if(recv_tls_stop)
+            break;
+
+        // printf("return from select: ret %d, recv_tls_stop %d\n", ret, recv_tls_stop);
+        if(ret == 0)
+            continue;
+        
+    
+        for(int i = 0; i < sockfd_size; i++){
+            if(FD_ISSET(sockfds.at(i), &readfds)){
+                SSL* ssl = ssls.at(i);
+                if(ssl){
+                    do {
+                        ret = SSL_read(ssl, buf, BUFSIZE);
+                        switch(SSL_get_error(ssl, ret)){
+                            case SSL_ERROR_NONE:
+                                break;
+                            case SSL_ERROR_ZERO_RETURN:
+                                /* End of data */
+                                // SSL_shutdown(ssl);
+                                break;
+                            case SSL_ERROR_WANT_READ:
+                                break;
+                            
+                            case SSL_ERROR_WANT_WRITE:
+                                break;
+                            default:
+                                // printf("dummy_recv_tls: SSL read problem!\n");
+                                break;
+                        }
+                        if(ret <= 0)
+                            break;
+                    }while (SSL_pending(ssl));
+                }
+            }
+        }
+    }
+
+    for(int i = 0; i < sockfd_size; i++){
+        SSL* ssl = ssls.at(i);
+        if(ssl){
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            ssl = NULL;
+        }
+    }
+
+    printf("dummy_recv_tls exits...\n");
+    return;
+}
 
 #endif
 

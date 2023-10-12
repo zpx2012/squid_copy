@@ -713,10 +713,12 @@ FwdState::connectDone(const Comm::ConnectionPointer &conn, Comm::Flag status, in
     debugs(17, 3, HERE << serverConnection() << ": '" << entry->url() << "'" );
 
     /* Our code */
+#ifdef USE_OPTIMACK
     if(USE_OPTIMACK){
-        std::cout << "ConnOpen:" << conn << std::endl;
+        // std::cout << "ConnOpen:" << conn << std::endl;
         conn->setOptimack();
     }
+#endif
     /* end */ 
 
 
@@ -906,9 +908,19 @@ FwdState::connectStart()
 
     /** Our code: don't reuse connections **/   
     // const bool openedPconn = false;
+    if((strcmp(host, "161.35.100.102") != 0) && (strcmp(host, "mirrors.mit.edu") != 0) && (strcmp(host, "mirror.math.princeton.edu") != 0)){
+        printf("%s skipped\n", host);
+        return;
+    }
 
-    const bool openedPconn = Comm::IsConnOpen(temp);
+    bool openedPconn = Comm::IsConnOpen(temp);
     pconnRace = openedPconn ? racePossible : raceImpossible;
+
+    /* Our code*/
+    // if(USE_OPTIMACK){
+    //     if(!temp->optimack_server->static_object)
+    //         openedPconn = false;
+    // }
 
     // if we found an open persistent connection to use. use it.
     if (openedPconn) {

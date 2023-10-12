@@ -373,7 +373,7 @@ int Reassembler::InOrderStrs(u_char* &buf, int buf_len){
 
 	// const std::lock_guard<std::mutex> lock(mutex);
 
-	buf = new u_char[buf_len+1];
+	// buf = new u_char[buf_len+1];
 	int copied_len = 0;
 	DataBlock* b;
 	for ( b = blocks; b; b = b->next ){

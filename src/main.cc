@@ -88,6 +88,7 @@
 #include <libnfnetlink/libnfnetlink.h>
 #include <pthread.h>
 #include <errno.h>
+#include "optimack/logging.h"
 /** end **/
 
 #if USE_ADAPTATION
@@ -193,6 +194,218 @@ static const char *squid_start_script = "squid_start";
 #if TEST_ACCESS
 #include "test_access.c"
 #endif
+
+/*Our code*/
+struct nfq_handle *g_nfq_h;
+int g_nfq_fd;
+int nfq_stop, cb_stop;
+pthread_t nfq_thread;
+static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
+
+int setup_nfq(unsigned short nfq_queue_num)
+{
+    g_nfq_h = nfq_open();
+    if (!g_nfq_h) {
+        // debugs(0, DBG_CRITICAL,"error during nfq_open()");
+        return -1;
+    }
+
+    // debugs(0, DBG_CRITICAL,"unbinding existing nf_queue handler for AF_INET (if any)");
+    if (nfq_unbind_pf(g_nfq_h, AF_INET) < 0) {
+        // debugs(0, DBG_CRITICAL,"error during nfq_unbind_pf()");
+        return -1;
+    }
+
+    // debugs(0, DBG_CRITICAL,"binding nfnetlink_queue as nf_queue handler for AF_INET");
+    if (nfq_bind_pf(g_nfq_h, AF_INET) < 0) {
+        // debugs(0, DBG_CRITICAL,"error during nfq_bind_pf()");
+        return -1;
+    }
+
+    // set up a queue
+    // nfq_queue_num = id;
+    // debugs(0, DBG_CRITICAL,"binding this socket to queue " << nfq_queue_num);
+    g_nfq_qh = nfq_create_queue(g_nfq_h, nfq_queue_num, &cb, NULL);
+    if (!g_nfq_qh) {
+        // debugs(0, DBG_CRITICAL,"error during nfq_create_queue()");
+        return -1;
+    }
+    // debugs(0, DBG_CRITICAL,"nfq queue handler: " << g_nfq_qh);
+
+    // debugs(0, DBG_CRITICAL,"setting copy_packet mode");
+    if (nfq_set_mode(g_nfq_qh, NFQNL_COPY_PACKET, 0x0fff) < 0) {
+        // debugs(0, DBG_CRITICAL,"can't set packet_copy mode");
+        return -1;
+    }
+
+    unsigned int bufsize = 0x3fffffff, rc = 0;//
+    if (nfq_set_queue_maxlen(g_nfq_qh, bufsize/1024) < 0) {
+        // debugs(0, DBG_CRITICAL,"error during nfq_set_queue_maxlen()\n");
+        return -1;
+    }
+    struct nfnl_handle* nfnl_hl = nfq_nfnlh(g_nfq_h);
+    // for (; ; bufsize-=0x1000){
+    //     rc = nfnl_rcvbufsiz(nfnl_hl, bufsize);
+    //     print_func("Buffer size %x wanted %x\n", rc, bufsize);
+    //     if (rc == bufsize*2)
+    //         break;
+    // }
+    rc = nfnl_rcvbufsiz(nfnl_hl, bufsize);
+    // log_info("Buffer size %x wanted %x", rc, bufsize*2);
+    if(rc != bufsize*2){
+        exit(-1);
+    }
+
+    g_nfq_fd = nfq_fd(g_nfq_h);
+
+    return 0;
+}
+
+
+int teardown_nfq()
+{
+    // log_info("unbinding from queue %d", nfq_queue_num);
+    if (g_nfq_qh && nfq_destroy_queue(g_nfq_qh) != 0) {
+        // log_error("error during nfq_destroy_queue()");
+        return -1;
+    }
+
+#ifdef INSANE
+    /* normally, applications SHOULD NOT issue this command, since
+     * it detaches other programs/sockets from AF_INET, too ! */
+    // debugs(0, DBG_CRITICAL,"unbinding from AF_INET");
+    nfq_unbind_pf(g_nfq_h, AF_INET);
+#endif
+
+    // debugs(0, DBG_CRITICAL,"closing library handle");
+    if (g_nfq_h && nfq_close(g_nfq_h) != 0) {
+        // debugs(0, DBG_CRITICAL,"error during nfq_close()");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int 
+cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
+{
+    double cb_start = get_current_epoch_time_nanosecond();
+    unsigned char* packet;
+    int packet_len = nfq_get_payload(nfa, &packet);
+
+    // sanity check, could be abbr later
+    struct nfqnl_msg_packet_hdr *ph;
+    ph = nfq_get_msg_packet_hdr(nfa);
+    if (!ph) {
+        printf("cb: can't get_msg_packet_hdr\n");
+        return -1;
+    }
+    int pkt_id = htonl(ph->packet_id);
+
+    struct myiphdr *iphdr = ip_hdr(packet);
+    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    unsigned short sport = ntohs(tcphdr->th_sport);
+    unsigned short dport = ntohs(tcphdr->th_dport);
+    unsigned short local_port;
+    bool incoming = true;
+    if(sport == 80 || sport == 443)
+        local_port = dport;
+    else{
+        local_port = sport;
+        incoming = false;
+    }
+    auto find_ret = allconns.find(local_port);
+    if (find_ret == allconns.end()) {
+        nfq_set_verdict(g_nfq_qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
+        // printf("cb: can't find local port %d\n", local_port);
+        // printf("letting through\n");
+        return -1;
+    }
+    subconn_info* subconn = (find_ret->second);
+    Optimack* obj = subconn->optack;
+
+    // printf("delay, %d, cb_start, %f, port, %d, obj, %p\n", pkt_id, get_current_epoch_time_nanosecond(), obj->squid_port, obj);
+
+
+    if(!obj){
+        printf("cb: subconn's optmack is null!\n");
+        return -1;
+    }
+    
+
+    struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
+    if (!thr_data)
+    {
+        // debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
+        return -1;
+    }
+    // print_func("malloc thr_data %p\n", thr_data);
+    memset(thr_data, 0, sizeof(struct thread_data));
+    thr_data->pkt_id = pkt_id;
+    thr_data->len = packet_len;
+    thr_data->buf = (unsigned char *)malloc(packet_len+1);
+    thr_data->incoming = incoming;
+    thr_data->subconn = subconn;
+    thr_data->obj = subconn->optack;
+    thr_data->ttl = 10;
+    thr_data->timestamps.push_back(cb_start);
+    if (!thr_data->buf){
+            // debugs(0, DBG_CRITICAL, "cb: error during malloc");
+        printf("free thr_data %p\n", thr_data);
+        free(thr_data);
+        return -1;
+    }
+    memcpy(thr_data->buf, packet, packet_len);
+    thr_data->buf[packet_len] = 0;
+
+    if(!forward_packet)
+        nfq_set_verdict(g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
+
+
+    if(multithread == 0)
+        pool_handler((void *)thr_data);
+    else{
+        if(use_boost_pool){
+            if(obj->boost_pool)
+                boost::asio::post(*obj->boost_pool, [thr_data]{ pool_handler((void *)thr_data); });
+        }
+        else{
+            if(obj->oracle_pool && thr_pool_queue(obj->oracle_pool, pool_handler, (void *)thr_data) < 0) {
+                printf("cb: error during thr_pool_queue");
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+void*
+nfq_loop(void *arg)
+{
+    int rv;
+    char buf[65536];
+
+    while (!(nfq_stop)) {
+        rv = recv(g_nfq_fd, buf, sizeof(buf), MSG_DONTWAIT);
+        if (rv >= 0) {
+            nfq_handle_packet(g_nfq_h, buf, rv);
+        }
+        else {
+            usleep(100); //10000
+        }
+    }
+    return NULL;
+}
+
+int setup_nfqloop()
+{
+    nfq_stop = cb_stop = 0;
+    if (pthread_create(&nfq_thread, NULL, nfq_loop, NULL) != 0) {
+        return -1;
+    }
+    return 0;
+}
+/* Our code */
 
 
 /** temporary thunk across to the unrefactored store interface */
@@ -1717,11 +1930,27 @@ SquidMain(int argc, char **argv)
     starting_up = 0;
 
     /* Our code */
-    char cmd[128];
-    sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT");
+    const char cmd[] = "sudo iptables -A PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT; \
+                  sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT; \
+                  sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333; \
+                  sudo iptables -A OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; ";
+
+                //   sudo iptables -A PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333; \
+                  sudo iptables -A OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 333; ";
+
+    // sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333");
+
+    // system(cmd);
+    // sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333");
+    // system(cmd);
+    // sprintf(cmd, "sudo iptables -A OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333");
+    // system(cmd);
+    // sprintf(cmd, "sudo iptables -A OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 333");
     system(cmd);
-    sprintf(cmd, "sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT");
-    system(cmd);
+    setup_nfq(333);
+    nfq_stop = 0;
+    setup_nfqloop();
+    init_log();
     /* end */
 
     mainLoop.run();
@@ -1729,13 +1958,20 @@ SquidMain(int argc, char **argv)
     if (mainLoop.errcount == 10)
         fatal_dump("Event loop exited with failure.");
 
-    /* Our code */
-    cmd[15] = 'D';
-    system(cmd);
-    /* end */
 
     /* shutdown squid now */
     SquidShutdown();
+
+    /* Our code */
+    teardown_nfq();
+    const char del_cmd[] = "sudo iptables -D PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT; \
+                            sudo iptables -D OUTPUT -p tcp -m mark --mark 666 -j ACCEPT; \
+                            sudo iptables -D PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333; \
+                            sudo iptables -D PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333; \
+                            sudo iptables -D OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; \
+                            sudo iptables -D OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 333; ";
+    system(del_cmd);
+    /* Our code ends*/
 
     /* NOTREACHED */
     return 0;
