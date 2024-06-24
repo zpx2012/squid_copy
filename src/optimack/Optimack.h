@@ -1,6 +1,7 @@
 #ifndef OPTIMACK_H
 #define OPTIMACK_H
 
+
 #include "thr_pool.h"
 #include <set>
 #include <map>
@@ -12,6 +13,7 @@
 #include "interval_geeks.h"
 #include <netinet/in.h>
 #include <thread>
+#include <mutex>
 #include <condition_variable>
 
 #define GPROF_CHECK 0
@@ -28,6 +30,7 @@
 #ifdef USE_OPENSSL
 #include <openssl/ssl.h>
 #include "tls.h"
+#include <functional> 
 
 class TLS_Crypto_Coder;
 class TLS_Encrypted_Record_Reassembler;
@@ -144,12 +147,18 @@ struct http_header {
 };
 
 struct range_conn{
-    int sockfd, sockfd_old, range_request_count, requested_bytes, erase_count, port;
+    int id, sockfd, sockfd_old, range_request_count, requested_bytes, erase_count, port;
     int in_use;
+    uint ranges[10];
+    pthread_mutex_t mutex_opa;
+    std::mutex std_mutex;
+    // std::unique_lock<std::mutex> lock((std_mutex));//std::defer_lock
     http_header* header;
 #ifdef USE_OPENSSL
     SSL *ssl, *ssl_old;
 #endif
+
+    range_conn(): id(0), sockfd(0), sockfd_old(0), range_request_count(0), requested_bytes(0), erase_count(0), port(0), in_use(0), header(NULL) {}
 };
 
 // Thread wrapper
@@ -171,6 +180,9 @@ public:
     // [[nodiscard]] static std::shared_ptr<Optimack> create() {
     //     return std::shared_ptr<Optimack>(new Optimack());
     // }
+    using TFunc = std::function<void (const char*, ssize_t)>;
+    TFunc fp_to_client_write;
+
     Optimack();
     ~Optimack();
 
@@ -207,7 +219,9 @@ public:
     // int find_seq_gaps(unsigned int seq);
     // void insert_seq_gaps(unsigned int start, unsigned int end, unsigned int step);
     // void delete_seq_gaps(unsigned int val);
+    void start_altogether_optimack();
     void* full_optimistic_ack_altogether();
+
     int start_optim_ack(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_backup(uint id, unsigned int seq, unsigned int ack, unsigned int payload_len, unsigned int seq_max);
     int start_optim_ack_altogether(unsigned int opa_ack_start, unsigned int opa_seq_start, unsigned int payload_len, unsigned int seq_max);
@@ -247,7 +261,7 @@ public:
 
 
     // variables
-    int main_fd;
+    int main_fd, client_fd;
     char g_local_ip[16]; //TODO: different connection from client
     char g_remote_ip[16];
     unsigned int g_local_ip_int;
@@ -343,7 +357,7 @@ public:
 
     void range_watch();
     void range_watch_multi();
-    int range_recv(std::vector<Interval>& range_job_vector, struct range_conn* range_conn_this);
+    int range_recv(struct range_conn* range_conn_this);
     int check_range_conn(struct range_conn* range_conn_this, std::vector<Interval>& range_job_vector);
     void try_for_gaps_and_request();
     bool check_packet_lost_on_all_conns(uint last_recv_inorder);
@@ -352,6 +366,9 @@ public:
     int insert_lost_range(uint start, uint end);
     int get_http_response_header_len(subconn_info* subconn, unsigned char* payload, int payload_len);
     //IntervalList* get_lost_range(uint start, uint end);
+    int send_http_range_request(struct range_conn* cur_range_conn);
+    int send_http_range_request(struct range_conn* cur_range_conn, const char* ranges);
+    int send_http_range_request(struct range_conn* cur_range_conn, Interval* range);
     int send_http_range_request(void* sockfd, Interval* range);
     void start_range_recv(IntervalList* list);
     void we2squid_loss_and_start_range_recv(uint start, uint end, IntervalList* intvl_lis);
@@ -359,11 +376,14 @@ public:
     uint get_min_next_seq_rem();
     int range_worker(int& sockfd, Interval* it);
     int range_recv_block(int sockfd, Interval* it);
+    int process_range_rv(struct range_conn* cur_range_conn, char* response, int rv, int& recv_offset);
+
     std::thread range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
     IntervalListWithTime ranges_sent;
     uint response_header_len = 0, requested_bytes = 0, file_size = 0, ack_end = 1;
+    char range_request_template[1000];
 
     //receive buffer
     struct data_segment{
@@ -395,6 +415,7 @@ public:
     uint last_send = 1;
     bool send_squid_stop = false;
     int send_data_to_squid_thread();
+    // void (*fp_to_client_write)(const char*, ssize_t) const = NULL;
 
     //TLS
     bool is_ssl = false;

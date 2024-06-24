@@ -62,6 +62,9 @@ struct thr_pool {
         int                     pool_maximum;    /* maximum number of worker threads */
         int                     pool_nthreads;    /* current number of worker threads */
         int                     pool_idle;    /* number of idle workers */
+
+        pthread_cond_t*         pool_workcvs;    /* synchronization with workers */
+        int                     last_worker;
         void* obj;
 };  
 

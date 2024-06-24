@@ -4,6 +4,7 @@
 #include "logging.h"
 #include <string.h>
 #include <iostream>
+#include <sstream>
 
 bool debug = false;
 
@@ -236,7 +237,9 @@ void IntervalList::substract(IntervalList* other){
 
 
 void IntervalList::printIntervals(){
-    std::cout << Intervals << std::endl;
+    std::stringstream ss;
+    ss << Intervals;
+    std::cout << ss.str().substr(0,100) << std::endl;
     // for(auto it = Intervals.begin(); it != Intervals.end(); it++)
     //     printf("[%u, %u), ", it->lower(), it->upper());
     // printf("\n");
