@@ -29,11 +29,11 @@ i=0
 sed -i "s/define BACKUP_MODE .*/define BACKUP_MODE 0/g" ~/squid_copy/src/optimack/Optimack.cc
 sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/Optimack.cc
 
-for ((cnt=0; cnt<50; cnt++)); do
+for ((cnt=0; cnt<10; cnt++)); do
     echo $cnt
-    for i in 1 2;do
+    for i in 1 2 3;do
         for j in 1 2 3 4 5 6 7 8; do #
-            for k in 1 2; do
+            for k in 1 2 3 4 5 6; do
                 iptables -F;
                 iptables -F -t mangle
                 sed -i "s/define CONN_NUM .*/define CONN_NUM ${i}/g" ~/squid_copy/src/optimack/Optimack.cc
@@ -43,12 +43,12 @@ for ((cnt=0; cnt<50; cnt++)); do
                 make install 2&>1 >  /dev/null
                 echo
                 echo ${i}optim+${j}*${k}range
-                bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn ${i}optim+${j}*${k}range_$1 $site $url
+                bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn ${i}optim+${j}*${k}range_${cnt}_$1 $site $url
                 sudo sh -c 'echo 3 >  /proc/sys/vm/drop_caches'
                 sudo sync && echo 1 > /proc/sys/vm/drop_caches
-                sleep 60    
+                sleep 15
             done
-        done
+        done    
     done
 done
 

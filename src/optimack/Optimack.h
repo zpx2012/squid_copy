@@ -244,7 +244,7 @@ public:
     void send_data_to_squid(unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_subconn(struct subconn_info* conn, bool to_client, unsigned int seq, unsigned char* payload, int payload_len);
     void send_data_to_server_and_update_seq(struct subconn_info* conn, unsigned char* payload, int payload_len);
-    bool store_and_send_data(uint seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn);
+    bool store_and_send_data(uint seq_rel, unsigned char* payload, int payload_len, struct subconn_info* subconn, bool is_backup, int id);
     
     // void update_subconn_next_seq_loc(struct subconn_info* subconn, uint num, bool is_fin);
     void backup_try_fill_gap();

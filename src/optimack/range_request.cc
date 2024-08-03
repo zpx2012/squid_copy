@@ -25,10 +25,10 @@
 
 
 
-const bool debug_range = false;
+const bool debug_range = true;
 const bool split_range = false;
-#define GROUP_NUM 2
-#define RANGE_NUM 1
+#define GROUP_NUM 8
+#define RANGE_NUM 2
 #define MAX_RANGE_REQ_CNT 99
 #define REQ_STEP 5
 #define BASE_RANGE_REQ_CNT MAX_RANGE_REQ_CNT - GROUP_NUM * REQ_STEP
@@ -64,15 +64,6 @@ opensocket:
     tv.tv_sec = 10;
     tv.tv_usec = 0;
     setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-
-    /* Set the option active */
-    int optval = 1;
-    socklen_t optlen = sizeof(optval);
-    if(setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
-        perror("setsockopt()");
-    }
-    else
-        print_func("establish_tcp_connection: sockfd %d SO_KEEPALIVE set on socket", sockfd);
 
     // Connect to server
     int count = 0;
@@ -111,6 +102,18 @@ int open_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned
     cur_range_conn->sockfd_old = cur_range_conn->sockfd;
     int rv = 0;
     while( (rv = establish_tcp_connection(cur_range_conn->sockfd_old, remote_ip, remote_port)) <= 0 ) sleep(1);
+    const int MARK = 666;
+    setsockopt(rv, SOL_SOCKET, SO_MARK, &MARK, sizeof(MARK));
+    /* Set the option active */
+    int optval = 1;
+    socklen_t optlen = sizeof(optval);
+    if(setsockopt(rv, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
+        perror("setsockopt()");
+    }
+    else
+        print_func("establish_tcp_connection: sockfd %d SO_KEEPALIVE set on socket", rv);
+
+
     cur_range_conn->sockfd = rv;
     cur_range_conn->port = get_localport(cur_range_conn->sockfd);
     cur_range_conn->range_request_count = 0;
@@ -277,7 +280,7 @@ int Optimack::process_range_rv(struct range_conn* cur_range_conn, char* response
                     // log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
             }
             if (seq_rel + consuming > cur_ack_rel){
-                store_and_send_data(seq_rel, (u_char*)(response), consuming, NULL);
+                store_and_send_data(seq_rel, (u_char*)(response), consuming, NULL, true, cur_range_conn->id);
                 if(debug_range) print_func("[Range]R%d-%d: [%d, %d] data sent to squid", cur_range_conn->id, cur_range_conn->port, header->start+header->recved, header->start+header->recved+consuming);
             }
             header->recved += consuming;
@@ -345,10 +348,12 @@ void Optimack::range_watch_multi() //void* arg
     //create array of range_conns
     int range_num = RANGE_NUM*GROUP_NUM;
     struct range_conn* range_conns = new struct range_conn[range_num];
-    for(int i = 0; i < RANGE_NUM*GROUP_NUM; i++){
-        // init_range_conn(&range_conns[i], g_remote_ip, g_remote_port, i, getptr());
-        std::thread init_range_conn_thread(init_range_conn, &range_conns[i], g_remote_ip, g_remote_port, i, getptr());
-        init_range_conn_thread.detach();
+    for(int i = 1, cnt=0; i <= GROUP_NUM; i++){
+        for(int j = 1; j <= RANGE_NUM; j++){
+            // init_range_conn(&range_conns[cnt++], g_remote_ip, g_remote_port, i*100+j, getptr());
+            std::thread init_range_conn_thread(init_range_conn, &range_conns[cnt++], g_remote_ip, g_remote_port, i*100+j, getptr());
+            init_range_conn_thread.detach();
+        }
     }
 
     while(!request_len) usleep(100);
@@ -365,15 +370,16 @@ void Optimack::range_watch_multi() //void* arg
         if (recved_seq.size() < 1 || recved_seq.getFirstEnd() == 1)
             continue;
 
+        fprintf(processed_seq_file, "%f,line 373, -1, -1\n", get_current_epoch_time_nanosecond());
         interval_set& recved_seq_intvl = recved_seq.getIntervalList();
-        pthread_mutex_lock(recved_seq.getMutex());
+        // pthread_mutex_lock(recved_seq.getMutex());
         int count = 0;
         uint min_next_seq_rem = get_min_next_seq_rem();
         for(auto prev = recved_seq_intvl.begin(), cur = next(prev); cur != recved_seq_intvl.end() && count < 8*GROUP_NUM; prev = cur, cur++, count++){ //
-            // if(cur->lower()-1 < min_next_seq_rem)
+            if(cur->lower()-1 < min_next_seq_rem)
                 insert_lost_range(prev->upper(), cur->lower()-1);
         }
-        pthread_mutex_unlock(recved_seq.getMutex());
+        // pthread_mutex_unlock(recved_seq.getMutex());
 
         int size = range_job_vector.size();
         if(!size)
@@ -403,6 +409,7 @@ void Optimack::range_watch_multi() //void* arg
                         }
                         ostr << get_byte_seq(it->start) << "-" << get_byte_seq(it->end);
                         pstr << it->start << "-" << it->end;
+                        fprintf(processed_seq_file, "%f,request,%d,%u,%u\n", get_current_epoch_time_nanosecond(), (i+1)*100, it->start,it->end+1);
                         // print_func("[Range]: found %u-%u, ostr %s", it->start, it->end, ostr.str().c_str());
                         it++;
                         found = true;
@@ -418,11 +425,11 @@ void Optimack::range_watch_multi() //void* arg
                 int group_start_i = i * RANGE_NUM, rv = 0;
                 for(int j = 0; j < RANGE_NUM; j++){
                     struct range_conn* cur_range_conn = &range_conns[group_start_i+j];
-                    if(cur_range_conn->std_mutex.try_lock()){
+                    // if(cur_range_conn->std_mutex.try_lock()){
                         rv = send_http_range_request(cur_range_conn, "");
                         cur_range_conn->range_request_count += j;
-                        cur_range_conn->std_mutex.unlock();
-                    }
+                        // cur_range_conn->std_mutex.unlock();
+                    // }
                 }
             }
         }
@@ -564,67 +571,67 @@ int Optimack::range_recv_block(int sockfd, Interval* it){
 
 
 int process_range_rv_old(char* response, int rv, Optimack* obj, subconn_info* subconn, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent){
-    if (rv > MAX_RANGE_SIZE)
-        print_func("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
+//     if (rv > MAX_RANGE_SIZE)
+//         print_func("[Range]: rv %d > MAX %d\n", rv, MAX_RANGE_SIZE);
 
-    // char data[MAX_RANGE_SIZE+1];
-    unread += rv;
-    consumed = 0;
-    while (unread > 0) {
-        if (!header->parsed) {
-            // parse header
-            parsed = parse_response(header, response+consumed, unread);
-            if (parsed <= 0) {
-                // incomplete http header
-                // keep receiving and parse in next response
-                memmove(response, response+consumed, unread);
-                recv_offset += unread;
-                log_error("[Range] incomplete http header, len %d\n", unread);
-                print_func("[Range] incomplete http header, len %d\n", unread);
-                break;
-            }
-            else {
-                recv_offset = 0;
-                consumed += parsed;
-                unread -= parsed;
-            }
-        }
-        else {
-            if(header->end > obj->cur_ack_rel){
-                if(debug_range){
-                    print_func("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
-                    // log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
-                }
-                // obj->ranges_sent.removeInterval_updateTimer(header->start+header->recved, header->start+header->recved+unread);
+//     // char data[MAX_RANGE_SIZE+1];
+//     unread += rv;
+//     consumed = 0;
+//     while (unread > 0) {
+//         if (!header->parsed) {
+//             // parse header
+//             parsed = parse_response(header, response+consumed, unread);
+//             if (parsed <= 0) {
+//                 // incomplete http header
+//                 // keep receiving and parse in next response
+//                 memmove(response, response+consumed, unread);
+//                 recv_offset += unread;
+//                 log_error("[Range] incomplete http header, len %d\n", unread);
+//                 print_func("[Range] incomplete http header, len %d\n", unread);
+//                 break;
+//             }
+//             else {
+//                 recv_offset = 0;
+//                 consumed += parsed;
+//                 unread -= parsed;
+//             }
+//         }
+//         else {
+//             if(header->end > obj->cur_ack_rel){
+//                 if(debug_range){
+//                     print_func("[Range] data retrieved %d - %d, remain %d, unread %d\n", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
+//                     // log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
+//                 }
+//                 // obj->ranges_sent.removeInterval_updateTimer(header->start+header->recved, header->start+header->recved+unread);
 
-                int seq_rel = header->start + header->recved;
-                unsigned char* send_data = (u_char*)(response + consumed);
-                obj->store_and_send_data(seq_rel, send_data, unread, NULL);
-            }
-            header->recved += unread;
-            header->remain -= unread;
-            consumed += unread;
-            unread -= unread;
+//                 int seq_rel = header->start + header->recved;
+//                 unsigned char* send_data = (u_char*)(response + consumed);
+//                 obj->store_and_send_data(seq_rel, send_data, unread, NULL, true, );
+//             }
+//             header->recved += unread;
+//             header->remain -= unread;
+//             consumed += unread;
+//             unread -= unread;
 
-            recv_offset = unread;
-            memcpy(response, response+consumed, unread);
-            // header->start += sent;
-            break;
-        }
-    }
+//             recv_offset = unread;
+//             memcpy(response, response+consumed, unread);
+//             // header->start += sent;
+//             break;
+//         }
+//     }
 
-    if(unread == 0 && header->remain == 0)
-        header->parsed = 0;
+//     if(unread == 0 && header->remain == 0)
+//         header->parsed = 0;
 
-    if (unread < 0){
-        log_debug("[Range] error: unread < 0");
-        return -1;
-    }
-    if(recv_offset >= MAX_RANGE_SIZE){
-        print_func("recv_offset %d > MAX_RANGE_SIZE %u\n", recv_offset, MAX_RANGE_SIZE);
-        return -1;
-    }
-    return 0;
+//     if (unread < 0){
+//         log_debug("[Range] error: unread < 0");
+//         return -1;
+//     }
+//     if(recv_offset >= MAX_RANGE_SIZE){
+//         print_func("recv_offset %d > MAX_RANGE_SIZE %u\n", recv_offset, MAX_RANGE_SIZE);
+//         return -1;
+//     }
+//     return 0;
 }
 
 
