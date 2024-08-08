@@ -27,8 +27,8 @@
 
 const bool debug_range = false;
 const bool split_range = false;
-#define GROUP_NUM 8
-#define RANGE_NUM 2
+#define GROUP_NUM 1
+#define RANGE_NUM 6
 #define MAX_RANGE_REQ_CNT 99
 #define REQ_STEP 5
 #define BASE_RANGE_REQ_CNT MAX_RANGE_REQ_CNT - GROUP_NUM * REQ_STEP
@@ -374,14 +374,14 @@ void Optimack::range_watch_multi() //void* arg
 
         fprintf(processed_seq_file, "%f,line 373, -1, -1\n", get_current_epoch_time_nanosecond());
         interval_set& recved_seq_intvl = recved_seq.getIntervalList();
-        // pthread_mutex_lock(recved_seq.getMutex());
+        pthread_mutex_lock(recved_seq.getMutex());
         int count = 0;
         uint min_next_seq_rem = get_min_next_seq_rem();
         for(auto prev = recved_seq_intvl.begin(), cur = next(prev); cur != recved_seq_intvl.end() && count < 8*GROUP_NUM; prev = cur, cur++, count++){ //
             if(cur->lower()-1 < min_next_seq_rem)
                 insert_lost_range(prev->upper(), cur->lower()-1);
         }
-        // pthread_mutex_unlock(recved_seq.getMutex());
+        pthread_mutex_unlock(recved_seq.getMutex());
 
         int size = range_job_vector.size();
         if(!size)

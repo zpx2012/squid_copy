@@ -43,7 +43,7 @@ const int print_per_sec_on = true;
 
 
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING

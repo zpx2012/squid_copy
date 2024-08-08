@@ -57,9 +57,9 @@ for keyword in ['speed','efficiency']:
     union_file = in_file.replace('.csv',"_"+keyword+"_union.csv")
     fig_file = union_file+'.png'
     df = load_csv(in_file)
-    # union_df = reform_df(df, keyword, union_file, False)
-    # plot(union_df, fig_file, ylims[keyword])
-    boxplot(df, keyword, union_file+'_boxplot.png', ylims[keyword])
+    union_df = reform_df(df, keyword, union_file, False)
+    plot(union_df, fig_file, ylims[keyword])
+    # boxplot(df, keyword, union_file+'_boxplot.png', ylims[keyword])
 
 #Confidence Interval figure
 #p value
