@@ -377,6 +377,7 @@ public:
     int range_worker(int& sockfd, Interval* it);
     int range_recv_block(int sockfd, Interval* it);
     int process_range_rv(struct range_conn* cur_range_conn, char* response, int rv, int& recv_offset);
+    int send_group_range_request(struct range_conn* cur_range_conn, const int group_start_i, char* ranges_str);
 
     std::thread range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;

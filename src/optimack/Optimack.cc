@@ -2979,7 +2979,7 @@ bool Optimack::store_and_send_data(uint seq_rel, unsigned char* payload, int pay
                 // ranges_sent.removeInterval_withLock(it->lower(), it->upper());
                 int inserted = insert_to_recv_buffer_withLock(it->lower(), payload+it->lower()-seq_rel, it->upper()-it->lower());
                 if(inserted){
-                      fprintf(processed_seq_file, "%f,%d,%d,%u,%u\n", get_current_epoch_time_nanosecond(), is_backup, id, it->lower(),it->upper());
+                    fprintf(processed_seq_file, "%f,%d,%d,%u,%u\n", get_current_epoch_time_nanosecond(), is_backup, id, it->lower(),it->upper());
                 }
                 if(order_flag != OUT_OF_ORDER){
                     if (subconn)

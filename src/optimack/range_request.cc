@@ -25,7 +25,7 @@
 
 
 
-const bool debug_range = true;
+const bool debug_range = false;
 const bool split_range = false;
 #define GROUP_NUM 8
 #define RANGE_NUM 2
@@ -298,19 +298,19 @@ int Optimack::process_range_rv(struct range_conn* cur_range_conn, char* response
 }
 
 
-int Optimack::send_http_range_request(struct range_conn* cur_range_conn, const char* ranges_str){
-    if(!ranges_str)
+int Optimack::send_http_range_request(struct range_conn* cur_range_conn, const char* range_request_str){
+    if(!range_request_str)
         return -1;
 
     int rv = -1;
     if(cur_range_conn->range_request_count <= cur_range_conn->erase_count){
         if(is_ssl){
     #ifdef USE_OPENSSL
-            rv = SSL_write(cur_range_conn->ssl, range_request_template, strlen(range_request_template));
+            rv = SSL_write(cur_range_conn->ssl, range_request_str, strlen(range_request_str));
     #endif
         }
         else{
-            rv = send(cur_range_conn->sockfd, range_request_template, strlen(range_request_template), 0);
+            rv = send(cur_range_conn->sockfd, range_request_str, strlen(range_request_str), 0);
             // for(int i = range->start; i+squid_MSS < range->end; i += squid_MSS){
             //     double ct = get_current_epoch_time_nanosecond();
             //     fprintf(forward_seq_file, "%f, %u\n", ct, i);
@@ -363,8 +363,10 @@ void Optimack::range_watch_multi() //void* arg
     const char range_hdr[] = "Keep-Alive: timeout=150, max=300\r\nRange: bytes=";
     int range_hdr_len = strlen(range_hdr);
     sprintf(range_request_template+request_len-2, "%s", range_hdr);
+    range_request_template[request_len - 2 + range_hdr_len] = 0;
     char* range_str_start = range_request_template + request_len - 2 + range_hdr_len;
 
+    int group_cnt = 0;
     while(!range_stop) {
 
         if (recved_seq.size() < 1 || recved_seq.getFirstEnd() == 1)
@@ -419,18 +421,15 @@ void Optimack::range_watch_multi() //void* arg
             }
 
             if(found){
-                // const char* ranges_str = ostr.str().c_str();
-                if(debug_range) print_func("[Range]: range_str %s", pstr.str().c_str());
-                sprintf(range_str_start, "%s\r\n\r\n", ostr.str().c_str());
-                int group_start_i = i * RANGE_NUM, rv = 0;
-                for(int j = 0; j < RANGE_NUM; j++){
-                    struct range_conn* cur_range_conn = &range_conns[group_start_i+j];
-                    // if(cur_range_conn->std_mutex.try_lock()){
-                        rv = send_http_range_request(cur_range_conn, "");
-                        cur_range_conn->range_request_count += j;
-                        // cur_range_conn->std_mutex.unlock();
-                    // }
-                }
+                int group_i = (group_cnt++) % GROUP_NUM;
+                // if(debug_range) print_func("[Range]: group %d, range_str %s, %s", group_i+1, pstr.str().c_str(), ostr.str().c_str());
+                // sprintf(range_str_start, "%s\r\n\r\n", ostr.str().c_str());
+                int ostr_cstr_len = ostr.str().size();
+                char* ostr_cstr = new char[ostr_cstr_len+1];
+                strncpy(ostr_cstr, ostr.str().c_str(), ostr_cstr_len);
+                ostr_cstr[ostr_cstr_len] = 0;
+                std::thread send_group_range_request_thread(&Optimack::send_group_range_request, getptr(), range_conns, group_i * RANGE_NUM, ostr_cstr);
+                send_group_range_request_thread.detach();
             }
         }
         usleep(10);
@@ -441,7 +440,25 @@ void Optimack::range_watch_multi() //void* arg
     return;
 }
 
+int Optimack::send_group_range_request(struct range_conn* range_conns, const int group_start_i, char* ranges_str){
+    if(debug_range) print_func("[Range]: group %d, range_str %s", group_start_i/RANGE_NUM+1, ranges_str);
+    fprintf(processed_seq_file, "%f,request,%d,%s\n", get_current_epoch_time_nanosecond(), (group_start_i/RANGE_NUM+1)*100, ranges_str);
 
+    int rv = 0;
+    char request_str[1000];
+    snprintf(request_str, 1000, "%s%s\r\n\r\n", range_request_template, ranges_str);
+    for(int j = 0; j < RANGE_NUM; j++){
+        struct range_conn* cur_range_conn = &range_conns[group_start_i+j];
+        cur_range_conn->std_mutex.lock();
+        rv = send_http_range_request(cur_range_conn, request_str);
+        cur_range_conn->range_request_count += j;
+        cur_range_conn->std_mutex.unlock();
+    }
+    free(ranges_str);
+    return rv;
+}
+
+ 
 int Optimack::send_http_range_request(struct range_conn* cur_range_conn){
     char ranges_str[1000] = {0};
     uint* ranges_tmp = cur_range_conn->ranges;
