@@ -154,6 +154,7 @@ struct range_conn{
     std::mutex std_mutex;
     // std::unique_lock<std::mutex> lock((std_mutex));//std::defer_lock
     http_header* header;
+    std::chrono::time_point<std::chrono::system_clock> last_send;
 #ifdef USE_OPENSSL
     SSL *ssl, *ssl_old;
 #endif

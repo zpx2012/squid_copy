@@ -43,7 +43,7 @@ const int print_per_sec_on = true;
 
 
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
@@ -1549,11 +1549,11 @@ Optimack::init()
     // recv_seq_file = fopen(tmp_str, "w");
     // fprintf(recv_seq_file, "time,port,recv_seq_num\n");
 
-
-    memset(tmp_str, 0, 600);
-    sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
-    processed_seq_file = fopen(tmp_str, "w");
-    fprintf(processed_seq_file, "time,is_range,conn,seq_start,seq_end\n");
+    processed_seq_file = NULL;
+    // memset(tmp_str, 0, 600);
+    // sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
+    // processed_seq_file = fopen(tmp_str, "w");
+    // fprintf(processed_seq_file, "time,is_range,conn,seq_start,seq_end\n");
    
     if(log_squid_ack){
         memset(tmp_str, 0, 600);
@@ -2979,7 +2979,7 @@ bool Optimack::store_and_send_data(uint seq_rel, unsigned char* payload, int pay
                 // ranges_sent.removeInterval_withLock(it->lower(), it->upper());
                 int inserted = insert_to_recv_buffer_withLock(it->lower(), payload+it->lower()-seq_rel, it->upper()-it->lower());
                 if(inserted){
-                    fprintf(processed_seq_file, "%f,%d,%d,%u,%u\n", get_current_epoch_time_nanosecond(), is_backup, id, it->lower(),it->upper());
+                    if(processed_seq_file)   fprintf(processed_seq_file, "%f,%d,%d,%u,%u\n", get_current_epoch_time_nanosecond(), is_backup, id, it->lower(),it->upper());
                 }
                 if(order_flag != OUT_OF_ORDER){
                     if (subconn)
@@ -3022,10 +3022,10 @@ bool Optimack::store_and_send_data(uint seq_rel, unsigned char* payload, int pay
             //         // snprintf(log, LOGSIZE, "%s - out of orders, don't sent,", log); 
             //     }
             // }
-            else{
-                print_func("Error! process incoming packet: is_new_segment is false!!! segment[%d, %d], recved_seq %s", it->lower(), it->upper(), recved_seq.Intervals2str().c_str());
+            // else{
+                // print_func("Error! process incoming packet: is_new_segment is false!!! segment[%d, %d], recved_seq %s", it->lower(), it->upper(), recved_seq.Intervals2str().c_str());
                 // recved_seq.printIntervals();
-            }
+            // }
         }
     }
     // pthread_mutex_unlock(recved_seq.getMutex());
