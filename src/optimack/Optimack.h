@@ -153,13 +153,12 @@ struct range_conn{
     pthread_mutex_t mutex_opa;
     std::mutex std_mutex;
     // std::unique_lock<std::mutex> lock((std_mutex));//std::defer_lock
-    http_header* header;
     std::chrono::time_point<std::chrono::system_clock> last_send;
 #ifdef USE_OPENSSL
     SSL *ssl, *ssl_old;
 #endif
 
-    range_conn(): id(0), sockfd(0), sockfd_old(0), range_request_count(0), requested_bytes(0), erase_count(0), port(0), in_use(0), header(NULL) {}
+    range_conn(): id(0), sockfd(0), sockfd_old(0), range_request_count(0), requested_bytes(0), erase_count(0), port(0), in_use(0) {}
 };
 
 // Thread wrapper
@@ -377,7 +376,7 @@ public:
     uint get_min_next_seq_rem();
     int range_worker(int& sockfd, Interval* it);
     int range_recv_block(int sockfd, Interval* it);
-    int process_range_rv(struct range_conn* cur_range_conn, char* response, int rv, int& recv_offset);
+    int process_range_rv(int id, int port, http_header* header, char* response, int rv, int& recv_offset);
     int send_group_range_request(struct range_conn* cur_range_conn, const int group_start_i, char* ranges_str);
 
     std::thread range_thread;

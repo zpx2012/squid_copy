@@ -65,8 +65,8 @@ function INT_handler()
 
 trap INT_handler SIGINT
 
-
-screen -dmS td tcpdump -w $tcpdump_out -s 400 host $site and tcp port 80
+#-s 400
+screen -dmS td tcpdump -w $tcpdump_out host $site and tcp port 80
 screen -dmS squid bash -c "sudo ~/squid/sbin/squid -N 2>&1 >$squid_log"
 sleep 2
 

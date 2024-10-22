@@ -43,7 +43,7 @@ const int print_per_sec_on = true;
 
 
 #ifndef CONN_NUM
-#define CONN_NUM 3
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -1535,9 +1535,9 @@ Optimack::init()
     // fprintf(rwnd_file, "time,rwnd\n");
 
     memset(tmp_str, 0, 600);
-    // sprintf(tmp_str, "%s/adjust_rwnd_%s.csv", output_dir, hostname);
-    // adjust_rwnd_file = fopen(tmp_str, "w");
-    // fprintf(adjust_rwnd_file, "time,adjust_rwnd\n");
+    sprintf(tmp_str, "%s/adjust_rwnd_%s_%s.csv", output_dir, hostname, start_time);
+    adjust_rwnd_file = fopen(tmp_str, "w");
+    fprintf(adjust_rwnd_file, "time,adjust_rwnd\n");
 
     memset(tmp_str, 0, 600);
     // sprintf(tmp_str, "%s/range_request_%s_%s.csv", output_dir, hostname, start_time);
@@ -1549,11 +1549,11 @@ Optimack::init()
     // recv_seq_file = fopen(tmp_str, "w");
     // fprintf(recv_seq_file, "time,port,recv_seq_num\n");
 
-    processed_seq_file = NULL;
+    // processed_seq_file = NULL;
     // memset(tmp_str, 0, 600);
-    // sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
-    // processed_seq_file = fopen(tmp_str, "w");
-    // fprintf(processed_seq_file, "time,is_range,conn,seq_start,seq_end\n");
+    sprintf(tmp_str, "%s/processed_seq_%s_%s.csv", output_dir, hostname, start_time);
+    processed_seq_file = fopen(tmp_str, "w");
+    fprintf(processed_seq_file, "time,is_range,conn,seq_start,seq_end\n");
    
     if(log_squid_ack){
         memset(tmp_str, 0, 600);
@@ -1938,6 +1938,9 @@ void Optimack::print_seq_table(){
     printf("Recv_seq: ");
     recved_seq.printIntervals();
 
+    if(adjust_rwnd_file)
+        log_seq(adjust_rwnd_file, adjusted_rwnd);
+
     if(BACKUP_MODE){
         printf("Backup: ");
         subconn_infos[backup_port]->recved_seq->printIntervals();
@@ -2015,7 +2018,7 @@ void* overrun_detector(void* arg){
         //     obj->try_for_gaps_and_request();
         // }
         struct timespec deadline;
-        for(int sec = 0; sec < 2 && !obj->overrun_stop; sec++){
+        for(int sec = 0; sec < 1 && !obj->overrun_stop; sec++){
             clock_gettime(CLOCK_MONOTONIC, &deadline);
             deadline.tv_sec++;
             clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
@@ -3869,21 +3872,21 @@ int Optimack::set_subconn_ssl_credentials(struct subconn_info *subconn, SSL *ssl
     // print_func("S%d-%d: set_subconn_ssl_credentials starts.\n", squid_port, subconn->local_port);
 
     unsigned char write_key_buffer[100],iv_salt[5];
-    unsigned char master_key[100];
-    unsigned char client_random[100];
-    unsigned char server_random[100];
-    size_t master_key_len = SSL_SESSION_get_master_key(SSL_get_session(ssl), master_key, sizeof(master_key));
+    // unsigned char master_key[100];
+    // unsigned char client_random[100];
+    // unsigned char server_random[100];
+    // size_t master_key_len = SSL_SESSION_get_master_key(SSL_get_session(ssl), master_key, sizeof(master_key));
     // print_func("master_key_len: %ld\n", master_key_len);
-    size_t client_random_len = SSL_get_client_random(ssl, client_random, SSL3_RANDOM_SIZE);
+    // size_t client_random_len = SSL_get_client_random(ssl, client_random, SSL3_RANDOM_SIZE);
     // print_func("client_random_len: %ld\n", client_random_len);
-    size_t server_random_len = SSL_get_server_random(ssl, server_random, SSL3_RANDOM_SIZE);
+    // size_t server_random_len = SSL_get_server_random(ssl, server_random, SSL3_RANDOM_SIZE);
     // print_func("server_random_len: %ld\n", server_random_len);
     const EVP_MD *digest_algorithm = SSL_CIPHER_get_handshake_digest(SSL_SESSION_get0_cipher(SSL_get_session(ssl)));
-    const SSL_CIPHER *cipher = SSL_SESSION_get0_cipher(SSL_get_session(ssl));
+    // const SSL_CIPHER *cipher = SSL_SESSION_get0_cipher(SSL_get_session(ssl));
     // print_func("current session cipher name: %s\n", SSL_CIPHER_standard_name(cipher));
     const EVP_CIPHER *evp_cipher = EVP_get_cipherbyname("AES-128-GCM"); // Temporary Ugly hack here for Baidu.
     // print_func("evp_cipher: %p\n", evp_cipher);
-    ssize_t key_length = EVP_CIPHER_key_length(evp_cipher);
+    // ssize_t key_length = EVP_CIPHER_key_length(evp_cipher);
     // print_func("key_length: %ld\n", key_length);
 
     get_write_key(ssl, digest_algorithm, evp_cipher, iv_salt, write_key_buffer);
