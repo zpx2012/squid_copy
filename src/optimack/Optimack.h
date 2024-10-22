@@ -16,7 +16,7 @@
 #include <mutex>
 #include <condition_variable>
 
-#define GPROF_CHECK 0
+//#define GPROF_CHECK 0
 #ifndef GPROF_CHECK
     #include "autoconf.h"
 #else

@@ -27,8 +27,8 @@
 
 const bool debug_range = false;
 const bool split_range = false;
-#define GROUP_NUM 2
-#define RANGE_NUM 1
+#define GROUP_NUM 1
+#define RANGE_NUM 2
 #define MAX_RANGE_REQ_CNT 99
 #define REQ_STEP 5
 #define BASE_RANGE_REQ_CNT MAX_RANGE_REQ_CNT - GROUP_NUM * REQ_STEP

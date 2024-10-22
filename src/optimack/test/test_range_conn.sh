@@ -31,9 +31,9 @@ sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/
 
 for ((cnt=0; cnt<50; cnt++)); do
     echo $cnt
-    for i in 1 2;do
-        for j in 1 2 3 4 5 6 7 8; do #
-            for k in 1 2; do
+    for i in 3 2 1;do
+        for j in 1 2 3 4 5 6; do #
+            for k in 1 2 3 4 5 6 7 8; do
                 iptables -F;
                 iptables -F -t mangle
                 sed -i "s/define CONN_NUM .*/define CONN_NUM ${i}/g" ~/squid_copy/src/optimack/Optimack.cc
@@ -43,10 +43,23 @@ for ((cnt=0; cnt<50; cnt++)); do
                 make install 2&>1 >  /dev/null
                 echo
                 echo ${i}optim+${j}*${k}range
+
+                while true ; do
+                    curl_singlerun=~/curl_proxy_singlerun_$(date +%s)
+                    curl -LJ4vk -o /dev/null -m 10 $url 2>&1 | tee $curl_singlerun
+                    if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True";
+                    then
+                        break
+                    else
+                        echo "Not in slowdown, sleep 120"
+                        sleep 120
+                    fi
+                done
+ 
                 bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn ${i}optim+${j}*${k}range_$1 $site $url
                 sudo sh -c 'echo 3 >  /proc/sys/vm/drop_caches'
                 sudo sync && echo 1 > /proc/sys/vm/drop_caches
-                sleep 60    
+                sleep 30    
             done
         done
     done
