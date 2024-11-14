@@ -44,7 +44,7 @@ def parse_range_file(dir_name, file_name):
 if __name__ == '__main__':
     in_dir = os.path.expanduser(sys.argv[1])
     keyword = sys.argv[2]
-    outfile_path = in_dir+'/range_output_'+os.path.basename(in_dir)+'_'+keyword+'.csv'
+    outfile_path = in_dir+'/range_output_'+os.path.basename(os.path.abspath(in_dir))+'_'+keyword+'.csv'
     with open(outfile_path, 'w') as out_file:
         if not os.path.getsize(outfile_path):
             out_file.writelines(','.join(['optim_num','range_group_num','range_duplica_num','speed','last_speed', 'duration', 'efficiency','recved_bytes','total_bytes', 'error_cnt'])+'\n')

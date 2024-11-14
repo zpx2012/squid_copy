@@ -405,6 +405,11 @@ int setup_nfqloop()
     }
     return 0;
 }
+
+void sigpipe_handler(int unused){
+
+}
+
 /* Our code */
 
 
@@ -1951,6 +1956,7 @@ SquidMain(int argc, char **argv)
     nfq_stop = 0;
     setup_nfqloop();
     init_log();
+    signal(SIGPIPE, sigpipe_handler);
     /* end */
 
     mainLoop.run();

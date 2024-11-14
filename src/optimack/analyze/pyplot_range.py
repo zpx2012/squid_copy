@@ -1,4 +1,5 @@
 import csv, os, matplotlib.pyplot as plt, pandas as pd, sys, numpy as np
+from datetime import datetime
 
 
 def load_csv(in_file):
@@ -14,8 +15,9 @@ def load_csv(in_file):
 def group_df(df):
     df_mean = df.groupby(by=['optim_num','range_group_num','range_duplica_num'], as_index=False).mean()
     df_mean['count'] = df.groupby(by=['optim_num','range_group_num','range_duplica_num'], as_index=False).size()[['size']]
+    df_mean['err_cnt'] = df.groupby(by=['optim_num','range_group_num','range_duplica_num'], as_index=False).agg({'error_cnt':sum})['error_cnt']
     print(df_mean)
-    # df_mean.to_csv(in_file.replace('.csv',"_union.csv"), encoding='utf-8',index=False)
+    df_mean.to_csv(in_file.replace('.csv',"_union.csv"), encoding='utf-8',index=False)
     return df_mean
 
 def reform_df(df, by_tag, legend_tag, legend_lim, keywords):
@@ -113,9 +115,9 @@ def single_plot(axe, df, xcol, xlabel, ylabel, ylim, with_title):
     for i, line in enumerate(axes1.get_lines()):
         line.set_marker(markers[i%(len(markers))])
     if with_title:
-        # axes1.set_ylabel(ylabel)
-        axes1.set_title(ylabel)
-    axes1.set_xlabel("")
+        axes1.set_ylabel(ylabel)
+        # axes1.set_title(ylabel)
+    axes1.set_xlabel(xlabel)
 
     if ylim:
         axes1.set_ylim(0, ylim)
@@ -146,42 +148,48 @@ def boxplot(df, keyword, out_file, lim):
 in_file = os.path.expanduser(sys.argv[1])
 title = sys.argv[2]
 markers = ['H', '^', 'v', 's', '3', '.', '1', '_', 'x', ',', '*', '+']
-ylims = {'speed':10, 'efficiency':100, 'count':10, 'request_delay_avg':0, 'resp_delay_avg':0, 'detect_delay_avg':0, 'timeout_delay_sum':0}
+ylims = {'speed':10, 'efficiency':100, 'count':10, 'request_delay_avg':1, 'resp_delay_avg':3, 'detect_delay_avg':15, 'timeout_delay_sum':300}
 labels = {'speed': 'Goodput (Mbps)', 'efficiency': 'Efficiency (%)', 'count':'Count', 'request_delay_avg':'Request Delay(s)', 'resp_delay_avg':'Response Delay(s)', 'detect_delay_avg':"Detect Delay(s)", 'timeout_delay_sum':'Timeout Delay'}
+
 
 df = load_csv(in_file)
 df_mean = group_df(df)
 
-keywords = ['speed','detect_delay_avg','request_delay_avg','timeout_delay_sum','resp_delay_avg'] #'request_delay_max', ,'resp_delay_max'  'efficiency'
+keywords = ['speed', 'efficiency']
+# keywords = ['speed','request_delay_avg','resp_delay_avg'] #'request_delay_max', ,'resp_delay_max'  'efficiency'
+# keywords = ['speed','detect_delay_avg','request_delay_avg',] #'request_delay_max', ,'resp_delay_max'  'efficiency'
+#keywords = ['speed','timeout_delay_sum','resp_delay_avg']
 ncol = len(keywords)
-nrow = 3
-fig, axes = plt.subplots(nrows=nrow, ncols=ncol, figsize=(14, 4))
+nrow = 1
+fig, axes = plt.subplots(nrows=1, ncols=ncol, figsize=(9, 4))
 for i in range(ncol):
     keyword = keywords[i]
     if nrow == 1:
-        df_reform = reform_df(df_mean, 'group', 'duplica', 7, [keyword]) #[ df_mean.optim_num == j]
-        single_plot(axes[i], df_reform, 'range_group_num', 'Number of Range Request Connection Group(s)', labels[keyword], ylims[keyword], True)
+        df_reform = reform_df(df_mean, 'duplica', 'group', 7, [keyword]) #[ df_mean.optim_num == j]
+        single_plot(axes[i], df_reform, 'range_duplica_num', '', labels[keyword], ylims[keyword], True)
     else:
         for j in range(1,nrow+1):
             df_reform = reform_df_per_optim(df_mean, j, 'group', 'duplica', 7, [keyword]) #[ df_mean.optim_num == j]
             # print(type(df_reform))
             if j == 1:
-                single_plot(axes[j-1][i], df_reform, 'range_group_num', 'Number of Range Request Connection Group(s)', labels[keyword], ylims[keyword], True)
+                single_plot(axes[i][j-1], df_reform, 'range_group_num', '', labels[keyword], ylims[keyword], True)
             else:
-                single_plot(axes[j-1][i], df_reform, 'range_group_num', 'Number of Range Request Connection Group(s)', labels[keyword], ylims[keyword], False)
+                single_plot(axes[i][j-1], df_reform, 'range_group_num', '', labels[keyword], ylims[keyword], False)
         # df_reform = reform_df(df_mean, 'duplica', 'group', 7, [keyword])
         # single_plot(axes[i], df_reform, 'range_duplica_num', 'Number of Duplicate Range Request Connection(s)', labels[keyword], ylims[keyword])
 
-# plt.legend(loc='center left', bbox_to_anchor=(1, 0.5)) #
+plt.legend(loc='center left', bbox_to_anchor=(1,0.5))
 
 fig.add_subplot(111, frameon=False)
 # hide tick and tick label of the big axes
 plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
 plt.grid(False)
-plt.xlabel('Number of Duplicate Range Request Connection(s)')
-plt.legend(loc='upper center')
+plt.xlabel('Number of Standard TCP Connection(s)')
+
+#handles, labels = axes[0][0].get_legend_handles_labels()
+#fig.legend(handles, ['1 TCP', '2 TCPs', '3 TCPs', '4 TCPs', '5 TCPs', '6 TCPs'], ncol=6, loc='upper center', bbox_to_anchor=(0.5, 0.95))
 fig.suptitle(title)
-fig_file = in_file.replace('.csv',"_group.png")
+fig_file = in_file.replace('.csv',"_group_%s.png" % datetime.now().strftime("%Y%m%dT%H%M%S"))
 plt.savefig(fig_file, bbox_inches="tight") #transparent=True
 
 # plot(df_speed, df_effi, fig_file)
