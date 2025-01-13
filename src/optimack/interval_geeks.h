@@ -24,6 +24,9 @@ public:
     void clear();
     void clear_withLock();
 
+    void lock()   { pthread_mutex_lock(&mutex_intervals); };
+    void unlock() { pthread_mutex_unlock(&mutex_intervals); };
+    
     unsigned int getFirstEnd();
     unsigned int getFirstEnd_withLock();
     unsigned int getLastEnd();
@@ -62,6 +65,14 @@ private:
     std::vector<Interval> Intervals;
     pthread_mutex_t mutex_intervals;
 };
+
+
+typedef enum
+{
+    OUT_OF_ORDER = 0,
+    IN_ORDER_NEWEST = 1,
+    IN_ORDER_FILL = 2,
+} ORDER_TYPE;
 
 // struct Interval
 // {

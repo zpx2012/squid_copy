@@ -35,14 +35,15 @@ k=1
 
 for ((cnt=0; cnt<5; cnt++)); do
     echo $cnt
-    for i in 1 ;do
-       for j in 1 2 3 4 5 6 ; do #1 2 7 8
-           for k in 1 2 3 4 5 6; do #3 4 5 6
+    for i in 2;do # 1 3
+       for j in 1 3 6 ; do #1 2 7 8
+           for k in 1 3 6; do #3 4 5 6
                 iptables -F;
                 iptables -F -t mangle
                 sed -i "s/define CONN_NUM .*/define CONN_NUM ${i}/g" ~/squid_copy/src/optimack/Optimack.cc
                 sed -i "s/define GROUP_NUM .*/define GROUP_NUM ${j}/g" ~/squid_copy/src/optimack/range_request.cc
                 sed -i "s/define RANGE_NUM .*/define RANGE_NUM ${k}/g" ~/squid_copy/src/optimack/range_request.cc
+                # sed -i "s/define RANGE_NUM .*/define RANGE_NUM $((k*4))/g" ~/squid_copy/src/optimack/range_request.cc
                 cd ~/squid_copy/
                 make install 2&>1 >  /dev/null
                 echo
@@ -50,7 +51,7 @@ for ((cnt=0; cnt<5; cnt++)); do
                 bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn ${i}optim+${j}*${k}range_${cnt}_$1 $site $url
                 sudo sh -c 'echo 3 >  /proc/sys/vm/drop_caches'
                 sudo sync && echo 1 > /proc/sys/vm/drop_caches
-                sleep 120
+                sleep 60
            done
         done    
     done

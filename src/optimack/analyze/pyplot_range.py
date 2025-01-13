@@ -155,7 +155,7 @@ labels = {'speed': 'Goodput (Mbps)', 'efficiency': 'Efficiency (%)', 'count':'Co
 df = load_csv(in_file)
 df_mean = group_df(df)
 
-keywords = ['speed', 'efficiency']
+keywords = ['speed'] #, 'efficiency'
 # keywords = ['speed','request_delay_avg','resp_delay_avg'] #'request_delay_max', ,'resp_delay_max'  'efficiency'
 # keywords = ['speed','detect_delay_avg','request_delay_avg',] #'request_delay_max', ,'resp_delay_max'  'efficiency'
 #keywords = ['speed','timeout_delay_sum','resp_delay_avg']
@@ -166,7 +166,10 @@ for i in range(ncol):
     keyword = keywords[i]
     if nrow == 1:
         df_reform = reform_df(df_mean, 'duplica', 'group', 7, [keyword]) #[ df_mean.optim_num == j]
-        single_plot(axes[i], df_reform, 'range_duplica_num', '', labels[keyword], ylims[keyword], True)
+        if ncol == 1:
+            single_plot(axes, df_reform, 'range_duplica_num', '', labels[keyword], ylims[keyword], True)
+        else:
+            single_plot(axes[i], df_reform, 'range_duplica_num', '', labels[keyword], ylims[keyword], True)
     else:
         for j in range(1,nrow+1):
             df_reform = reform_df_per_optim(df_mean, j, 'group', 'duplica', 7, [keyword]) #[ df_mean.optim_num == j]

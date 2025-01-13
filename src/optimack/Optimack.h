@@ -10,11 +10,12 @@
 #include <ctime>
 #include <sys/time.h>
 #include "interval_boost.h"
-#include "interval_geeks.h"
+#include "interval.h"
 #include <netinet/in.h>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <semaphore>
 
 #define GPROF_CHECK 0
 #ifndef GPROF_CHECK
@@ -53,6 +54,34 @@ const int forward_packet = 0;
 const int log_squid_ack = 0;
 const int log_result = 0;
 const int use_boost_pool = 1;
+extern const int GROUP_NUM;
+extern const int RANGE_NUM;
+const int MARK = 666;
+const int MARK_RANGE = 999;
+
+class NFQ;
+
+class NFQ{
+    public:
+        NFQ(unsigned short nfq_queue_num, int (*func)(struct nfq_q_handle *, struct nfgenmsg *, struct nfq_data *, void *));
+        void stop() { nfq_stop = 1; }
+        ~NFQ();
+
+    private:
+        struct nfq_q_handle *g_nfq_qh;
+        struct nfq_handle *g_nfq_h;
+        int g_nfq_fd;
+        int nfq_stop, cb_stop;
+        pthread_t nfq_thread;
+        unsigned short nfq_queue_num;
+        int (*func)(struct nfq_q_handle *, struct nfgenmsg *, struct nfq_data *, void *);
+
+        int setup_nfq();
+        void nfq_loop();
+        int setup_nfqloop();
+        int teardown_nfq();
+};
+
 
 
 class Optimack;
@@ -122,6 +151,7 @@ extern std::map<uint, struct subconn_info*> allconns;
 
 // Multithread
 struct thread_data {
+    struct nfq_q_handle *qh;
     unsigned int  pkt_id;
     unsigned int  len;
     unsigned char *buf;
@@ -148,10 +178,17 @@ struct http_header {
 
 struct range_conn{
     int id, sockfd, sockfd_old, range_request_count, requested_bytes, erase_count, port;
+    unsigned int ini_seq_rem;  //remote sequence number
+    unsigned int ini_seq_loc;  //local sequence number
+    unsigned int next_seq_rem;  //rel
+    unsigned int next_seq_loc;  //TODO: rel
+    unsigned int last_next_seq_rem;
+
     int in_use;
     uint ranges[10];
     pthread_mutex_t mutex_opa;
     std::mutex std_mutex;
+    std::counting_semaphore<10> *smph;
     // std::unique_lock<std::mutex> lock((std_mutex));//std::defer_lock
     std::chrono::time_point<std::chrono::system_clock> last_send;
 #ifdef USE_OPENSSL
@@ -163,6 +200,7 @@ struct range_conn{
 
 // Thread wrapper
 // void* nfq_loop(void *arg);
+int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
 void* pool_handler(void* arg);
 void* optimistic_ack(void* arg);
 void* overrun_detector(void* arg);
@@ -310,7 +348,6 @@ public:
     
     // locals
     bool request_recved = false;
-    const int MARK = 666;
     int nfq_queue_num;
     
     boost::asio::thread_pool* boost_pool;
@@ -378,11 +415,14 @@ public:
     int range_recv_block(int sockfd, Interval* it);
     int process_range_rv(int id, int port, http_header* header, char* response, int rv, int& recv_offset);
     int send_group_range_request(struct range_conn* cur_range_conn, const int group_start_i, char* ranges_str);
+    int send_group_one_range_request(struct range_conn* range_conns, const int group_start_i, uint start_seq, uint end_seq);
+    int send_group_range_request_worker(int group_i);
+
 
     std::thread range_thread;
     pthread_mutex_t mutex_range = PTHREAD_MUTEX_INITIALIZER;
     int range_stop, range_sockfd, range_request_count = 0;
-    IntervalListWithTime ranges_sent;
+    IntervalList ranges_sent;
     uint response_header_len = 0, requested_bytes = 0, file_size = 0, ack_end = 1;
     char range_request_template[1000];
 
@@ -437,23 +477,23 @@ public:
 #endif
 };
 
-int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short remote_port);
+int establish_tcp_connection(int old_sockfd, char* remote_ip, unsigned short remote_port, int mark);
 int get_localport(int fd);
 
 double get_current_epoch_time_second();
 double get_current_epoch_time_nanosecond();
 double elapsed(std::chrono::time_point<std::chrono::system_clock> start);
 
-auto funcTime = 
-    [](auto&& func, auto&&... params) {
-        // get time before function invocation
-        const auto& start = std::chrono::high_resolution_clock::now();
-        // function invocation using perfect forwarding
-        std::forward<decltype(func)>(func)(std::forward<decltype(params)>(params)...);
-        // get time after function invocation
-        const auto& stop = std::chrono::high_resolution_clock::now();
-        return stop - start;
-     };
+// auto funcTime = 
+//     [](auto&& func, auto&&... params) {
+//         // get time before function invocation
+//         const auto& start = std::chrono::high_resolution_clock::now();
+//         // function invocation using perfect forwarding
+//         std::forward<decltype(func)>(func)(std::forward<decltype(params)>(params)...);
+//         // get time after function invocation
+//         const auto& stop = std::chrono::high_resolution_clock::now();
+//         return stop - start;
+//      };
 
 std::vector<std::string> split(const std::string &s, char delim);
 bool is_static_object(std::string request);
