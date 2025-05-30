@@ -26,6 +26,8 @@ def reform_df(df, by_tag, legend_tag, legend_lim, keywords):
     by_col = 'range_%s_num' % by_tag
     y_col = 'range_%s_num' % legend_tag
     for i in range(1,4):#3, 4
+    # for i in [1]:
+        # for j in [1, 3, 6]:
         for j in range(1,legend_lim):
             # df_sub = df[ df.optim_num == i ]
             df_sub = df[ df[y_col] == j ]
@@ -161,13 +163,14 @@ keywords = ['speed'] #, 'efficiency'
 #keywords = ['speed','timeout_delay_sum','resp_delay_avg']
 ncol = len(keywords)
 nrow = 1
-fig, axes = plt.subplots(nrows=1, ncols=ncol, figsize=(9, 4))
+fig, axes = plt.subplots(nrows=1, ncols=ncol) #figsize=(6, 4)
 for i in range(ncol):
     keyword = keywords[i]
     if nrow == 1:
-        df_reform = reform_df(df_mean, 'duplica', 'group', 7, [keyword]) #[ df_mean.optim_num == j]
+        # df_reform = reform_df(df_mean, 'duplica', 'group', 7, [keyword]) #[ df_mean.optim_num == j]
+        df_reform = reform_df(df_mean, 'group', 'duplica', 7, [keyword]) #[ df_mean.optim_num == j]
         if ncol == 1:
-            single_plot(axes, df_reform, 'range_duplica_num', '', labels[keyword], ylims[keyword], True)
+            single_plot(axes, df_reform, 'range_group_num', '', labels[keyword], ylims[keyword], True)
         else:
             single_plot(axes[i], df_reform, 'range_duplica_num', '', labels[keyword], ylims[keyword], True)
     else:

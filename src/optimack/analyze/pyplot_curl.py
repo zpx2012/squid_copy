@@ -20,7 +20,7 @@ def plot_speed(infile, X, Ys, legendlabels):
     plt.title("")
     plt.tight_layout()
     if legendlabels is not None:
-        plt.legend(prop={'size': 14})	
+        plt.legend(prop={'size': 14})
     plt.savefig(infile+".png",transparent=True)
 
 in_dir = os.path.expanduser(sys.argv[1])

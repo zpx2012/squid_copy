@@ -1724,13 +1724,13 @@ SquidMain(int argc, char **argv)
     const char cmd[] = "sudo iptables -F; \
                   sudo iptables -F -t mangle; \
                   sudo iptables -A PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT; \
-                  sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT; \
-                  sudo iptables -A OUTPUT -p tcp -m mark --mark 9 -j NFQUEUE --queue-num 9; \
-                  sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333; \
-                  sudo iptables -A OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; ";
-
+                  sudo iptables -A OUTPUT -p tcp -m mark --mark 666 -j ACCEPT;";
+                //   
+                //   sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333; \
+                //   sudo iptables -A OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; "
                 //   sudo iptables -A PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333; \
                   sudo iptables -A OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 333; ";
+                //   sudo iptables -A OUTPUT -p tcp -m mark --mark 9 -j NFQUEUE --queue-num 9; \
 
     // sprintf(cmd, "sudo iptables -A PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333");
 
@@ -1741,7 +1741,7 @@ SquidMain(int argc, char **argv)
     // system(cmd);
     // sprintf(cmd, "sudo iptables -A OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 333"); 
     system(cmd);
-    NFQ nfq_opt(333, &cb);
+    NFQ nfq_opt(333, NULL, &cb);
     init_log();
     signal(SIGPIPE, sigpipe_handler);
     /* end */
@@ -1758,7 +1758,7 @@ SquidMain(int argc, char **argv)
     /* Our code */
     const char del_cmd[] = "sudo iptables -D PREROUTING -t mangle -p tcp -m mark --mark 666 -j ACCEPT; \
                             sudo iptables -D OUTPUT -p tcp -m mark --mark 666 -j ACCEPT; \
-                            sudo iptables -D PREROUTING -t mangle -p tcp -m mark --mark 999 -j NFQUEUE -queue-num 999; \
+                            sudo iptables -D PREROUTING -t mangle -p tcp -m mark --mark 999 -j NFQUEUE --queue-num 999; \
                             sudo iptables -D PREROUTING -t mangle -p tcp --sport 80 -j NFQUEUE --queue-num 333; \
                             sudo iptables -D PREROUTING -t mangle -p tcp --sport 443 -j NFQUEUE --queue-num 333; \
                             sudo iptables -D OUTPUT -p tcp --dport 80 -j NFQUEUE --queue-num 333; \

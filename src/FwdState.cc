@@ -907,8 +907,8 @@ FwdState::connectStart()
         temp = pconnPop(serverDestinations[0], host);
 
     /** Our code: don't reuse connections **/   
-    // const bool openedPconn = false;
-    if((strcmp(host, "161.35.100.102") != 0) && (strcmp(host, "mirrors.mit.edu") != 0) && (strcmp(host, "mirror.math.princeton.edu") != 0)){
+    // const bool openedPconn = false;147.182.214.179
+    if((strcmp(host, "161.35.100.102") != 0) && (strcmp(host, "147.182.214.179") != 0) && (strcmp(host, "mirrors.mit.edu") != 0) && (strcmp(host, "mirror.math.princeton.edu") != 0)){
         printf("%s skipped\n", host);
         return;
     }

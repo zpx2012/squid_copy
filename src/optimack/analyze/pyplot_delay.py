@@ -25,7 +25,7 @@ def get_df_gap(df_primary):
     df_primary.columns = ['time', 'is_range','conn','seq_start','seq_end']
     return df_primary
 
-def get_df_union(df_gap, df_detect, df_request, df_timeout, df_resp):
+def get_df_union(df_gap, df_request, df_timeout, df_resp):
     # df_request = df_request[['time', 'conn', 'seq_start', 'seq_end']]
     # df_timeout = pd.merge(df_request, df_request, on=['seq_start','seq_end'], how='inner')
     # df_timeout = df_timeout[ df_timeout.conn_x != df_timeout.conn_y ]
@@ -38,15 +38,15 @@ def get_df_union(df_gap, df_detect, df_request, df_timeout, df_resp):
     print("df_gap:")
     print(df_gap)
 
-    df_detect = df_detect[['time', 'seq_start', 'seq_end']]
-    df_detect['seq_end'] = df_detect['seq_end'] + 1
-    df_detect.columns = ['time_detect','seq_start', 'seq_end']
-    print("df_detect:")
-    print(df_detect)
+    # df_detect = df_detect[['time', 'seq_start', 'seq_end']]
+    # df_detect['seq_end'] = df_detect['seq_end'] + 1
+    # df_detect.columns = ['time_detect','seq_start', 'seq_end']
+    # print("df_detect:")
+    # print(df_detect)
 
     df_request = df_request[['time', 'conn', 'seq_start', 'seq_end']]
     df_request.columns = ['time_request','conn', 'seq_start', 'seq_end']
-    df_request['seq_end'] = df_request['seq_end'] + 1
+    df_request['seq_end'] = df_request['seq_end'] - 1
     print("df_request:")
     print(df_request)
 
@@ -60,17 +60,17 @@ def get_df_union(df_gap, df_detect, df_request, df_timeout, df_resp):
     print("df_resp:")
     print(df_resp)
 
-    df_detect_delay = pd.merge(df_gap, df_detect, on=['seq_start', 'seq_end'], how='inner')
+    # df_detect_delay = pd.merge(df_gap, df_detect, on=['seq_start', 'seq_end'], how='inner')
 
     df_resp_delay = pd.merge(df_request, df_resp, on=['conn', 'seq_start', 'seq_end'], how='inner')
-    df_union = pd.merge(df_detect_delay, df_resp_delay, on=['seq_start', 'seq_end'], how='inner')
+    df_union = pd.merge(df_gap, df_resp_delay, on=['seq_start', 'seq_end'], how='inner')
     if df_union.empty:
         print("df_union is empty")
         return df_union
 
 
-    df_union['detect_delay'] = df_union['time_detect'] - df_union['time_primary']
-    df_union['request_delay'] = df_union['time_request'] - df_union['time_detect']
+    # df_union['detect_delay'] = df_union['time_detect'] - df_union['time_primary']
+    df_union['request_delay'] = df_union['time_request'] - df_union['time_primary']
     df_union['resp_delay'] = df_union['time_resp'] - df_union['time_request']
     df_union.to_csv('union_'+in_file, encoding='utf-8',index=False)
 
@@ -106,7 +106,7 @@ def plot_single_hist(ax, Y, xlabel, cmap):
 def plot_hist(df_union):
     cmap1 = chop_cmap_frac(plt.get_cmap('GnBu'), 0.3)
     fig, axs = plt.subplots(1, 3, sharey=True, tight_layout=True)
-    plot_single_hist(axs[0], df_union['detect_delay'], "Detect Delay(s)", cmap1)
+    # plot_single_hist(axs[0], df_union['detect_delay'], "Detect Delay(s)", cmap1)
     plot_single_hist(axs[1], df_union['request_delay'], "Request Delay(s)", cmap1)
     # plot_single_hist(axs[2], df_union['timeout_delay'], "Timeout Delay(s)", cmap1)
     plot_single_hist(axs[2], df_union['resp_delay'], "Respond Delay(s)", cmap1)
@@ -133,26 +133,27 @@ def gen_delay_list(df, keywords):
 in_file = os.path.expanduser(sys.argv[1])
 if(in_file.startswith('processed_seq') and in_file.endswith('.csv')):
     print("Process: " + in_file)
-    df = pd.read_csv(in_file, sep=',',error_bad_lines=False).dropna(how='any')
+
+    # df = pd.read_csv(in_file, sep=',',error_bad_lines=False).dropna(how='any')
     
-    worker_delays = gen_delay_list(df, ['before acquire', 'after acquire', 'after lock', 'unlock'])
-    detect_delays = gen_delay_list(df, ['before recved_seq', 'after recved_seq', 'detect'])
+    # worker_delays = gen_delay_list(df, ['before acquire', 'after acquire', 'after lock', 'unlock'])
+    # detect_delays = gen_delay_list(df, ['before recved_seq', 'after recved_seq', 'detect'])
 
-    cmap1 = chop_cmap_frac(plt.get_cmap('GnBu'), 0.3)
-    fig, axs = plt.subplots(1, 5, sharey=True, tight_layout=True)
-    plot_single_hist(axs[0], worker_delays[0], "Acquire", cmap1)
-    plot_single_hist(axs[1], worker_delays[1], "Locking", cmap1)
-    plot_single_hist(axs[2], worker_delays[2], "Finding", cmap1)
-    plot_single_hist(axs[3], detect_delays[0], "Recved_seq", cmap1)
-    plot_single_hist(axs[4], detect_delays[1], "Insert", cmap1)
-    plt.savefig(in_file.replace('.csv','_lock_delay_hist.png'), transparent=False)
+    # cmap1 = chop_cmap_frac(plt.get_cmap('GnBu'), 0.3)
+    # fig, axs = plt.subplots(1, 5, sharey=True, tight_layout=True)
+    # plot_single_hist(axs[0], worker_delays[0], "Acquire", cmap1)
+    # plot_single_hist(axs[1], worker_delays[1], "Locking", cmap1)
+    # plot_single_hist(axs[2], worker_delays[2], "Finding", cmap1)
+    # plot_single_hist(axs[3], detect_delays[0], "Recved_seq", cmap1)
+    # plot_single_hist(axs[4], detect_delays[1], "Insert", cmap1)
+    # plt.savefig(in_file.replace('.csv','_lock_delay_hist.png'), transparent=False)
 
 
-    exit()
+    # exit()
 
     df = load_dataframe(in_file)
     df_primary = df[ df.is_range == '0' ].sort_values(by=['seq_start'])
-    df_detect = df[ df.is_range == 'detect'].sort_values(by=['seq_start'])
+    # df_detect = df[ df.is_range == 'detect'].sort_values(by=['seq_start'])
     df_request = df[ df.is_range == 'request'].sort_values(by=['seq_start'])
     df_timeout = df[ df.is_range == 'request timeout'].sort_values(by=['seq_start'])
     df_resp = df[ df.is_range == '1']
@@ -163,7 +164,7 @@ if(in_file.startswith('processed_seq') and in_file.endswith('.csv')):
     compress_range(df_primary)
     compress_range(df_resp)
     df_gap = get_df_gap(df_primary)
-    df_union = get_df_union(df_gap, df_detect, df_request, df_timeout, df_resp)
+    df_union = get_df_union(df_gap, df_request, df_timeout, df_resp)
     if not df_union.empty:
         plot_hist(df_union)
 

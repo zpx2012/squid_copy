@@ -63,7 +63,7 @@ class NFQ;
 
 class NFQ{
     public:
-        NFQ(unsigned short nfq_queue_num, int (*func)(struct nfq_q_handle *, struct nfgenmsg *, struct nfq_data *, void *));
+        NFQ(unsigned short nfq_queue_num, void* data, int (*func)(struct nfq_q_handle *, struct nfgenmsg *, struct nfq_data *, void *));
         void stop() { nfq_stop = 1; }
         ~NFQ();
 
@@ -74,9 +74,8 @@ class NFQ{
         int nfq_stop, cb_stop;
         pthread_t nfq_thread;
         unsigned short nfq_queue_num;
-        int (*func)(struct nfq_q_handle *, struct nfgenmsg *, struct nfq_data *, void *);
 
-        int setup_nfq();
+        int setup_nfq(void* data, int (*func)(struct nfq_q_handle *, struct nfgenmsg *, struct nfq_data *, void *));
         void nfq_loop();
         int setup_nfqloop();
         int teardown_nfq();
@@ -176,6 +175,8 @@ struct http_header {
     int recved;
 };
 
+#define MAX_RANGE_SIZE 10000
+
 struct range_conn{
     int id, sockfd, sockfd_old, range_request_count, requested_bytes, erase_count, port;
     unsigned int ini_seq_rem;  //remote sequence number
@@ -183,6 +184,11 @@ struct range_conn{
     unsigned int next_seq_rem;  //rel
     unsigned int next_seq_loc;  //TODO: rel
     unsigned int last_next_seq_rem;
+    IntervalList *group_recved_seq;
+
+    http_header* header;
+    char response[MAX_RANGE_SIZE+1];
+    int recv_offset;
 
     int in_use;
     uint ranges[10];
@@ -414,9 +420,11 @@ public:
     int range_worker(int& sockfd, Interval* it);
     int range_recv_block(int sockfd, Interval* it);
     int process_range_rv(int id, int port, http_header* header, char* response, int rv, int& recv_offset);
-    int send_group_range_request(struct range_conn* cur_range_conn, const int group_start_i, char* ranges_str);
-    int send_group_one_range_request(struct range_conn* range_conns, const int group_start_i, uint start_seq, uint end_seq);
-    int send_group_range_request_worker(int group_i);
+    // int send_group_range_request(struct range_conn* cur_range_conn, const int group_start_i, char* ranges_str);
+    int send_group_one_range_request(struct range_conn* group_conns, uint start_seq, uint end_seq);
+    int send_group_range_request_worker(struct range_conn** range_conns, int group_i);
+    int cb_range(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
+    
 
 
     std::thread range_thread;
@@ -425,6 +433,7 @@ public:
     IntervalList ranges_sent;
     uint response_header_len = 0, requested_bytes = 0, file_size = 0, ack_end = 1;
     char range_request_template[1000];
+    uint range_request_template_len;
 
     //receive buffer
     struct data_segment{

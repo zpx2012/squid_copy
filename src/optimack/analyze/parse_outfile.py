@@ -177,10 +177,14 @@ def parse_curl_outfile_avg(input_path,output_path):
     with open(output_path,'w') as outf:
         outf.write('time,speed\n')
         for line_num,line in enumerate(lines[:len(lines)-1]):
+            # print(line)
             try:
-                if re.match('^< Date: .* GMT$',line):
+                time_match = re.match('Start: (.*)$',line)
+                if time_match:
+                    start_time = parser.parse(time_match.group(1))
+                elif re.match('^< Date: .* GMT$',line):
                     start_time = datetime.strptime(line,'< Date: %a, %d %b %Y %H:%M:%S %Z').replace(tzinfo=tz.tzutc()).astimezone(tz.gettz('Asia/Shanghai'))
-                if len(line) != 78 or line[55:63] == '--:--:--' or '  0     0    0     0    0     0      0      0' in line or '* Closing connection' not in lines[line_num+1]:
+                if len(line) != 78 or line[55:63] == '--:--:--' or '  0     0    0     0    0     0      0      0' in line or '* Closing connection' in lines[line_num+1]:
                     continue                                          
                 intvl = time.strptime(line[55:63].strip(), '%H:%M:%S')
                 
@@ -200,6 +204,7 @@ def parse_curl_outfile_avg(input_path,output_path):
                 if speed == 0:
                     print(fields)
                     print(fields[-6],speed)
+                # print(speed)
                 outf.write((start_time + timedelta(hours=intvl.tm_hour,minutes=intvl.tm_min,seconds=intvl.tm_sec)).strftime('%Y-%m-%d %H:%M:%S,') + str(speed) + '\n')
             except ValueError as e:
                 print(e)
@@ -908,7 +913,8 @@ if __name__ == '__main__':
         elif filename.startswith('curl'):
             postfix = '.csv'
             # os.system('dos2unix -c mac %s' % filepath_abs)
-            func = parse_curl_outfile
+            func = parse_curl_outfile_avg
+            # func = parse_curl_outfile
             if '__https' in filename or 'twich' in filename:
                 func = parse_curl_outfile_no_time
         elif filename.startswith('opthrput'):

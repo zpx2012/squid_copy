@@ -27,8 +27,8 @@ m4_include([acinclude/lib-checks.m4])
 m4_include([acinclude/ax_cxx_compile_stdcxx_11.m4])
 m4_include([acinclude/ax_cxx_0x_types.m4])
 
-CFLAGS+=" -std=c++20"
-CXXFLAGS+=" -std=c++20"
+CFLAGS+=" -std=c++20 -g"
+CXXFLAGS+=" -std=c++20 -g"
 PRESET_CFLAGS="$CFLAGS"
 PRESET_CXXFLAGS="$CXXFLAGS"
 PRESET_LDFLAGS="$LDFLAGS"

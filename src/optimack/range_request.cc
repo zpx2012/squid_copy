@@ -10,6 +10,10 @@
 #include <libnfnetlink/libnfnetlink.h>
 #include "logging.h"
 #include "Optimack.h"
+#include "socket.h"
+#include <condition_variable>
+#include <mutex>
+#include "checksum.h"
 // #include "thr_pool_range.h"
 
 #ifndef GPROF_CHECK
@@ -23,22 +27,26 @@
 // range
 #define MAX_REQUEST_LEN 1024
 #define MAX_RANGE_REQ_LEN 1536
-#define MAX_RANGE_SIZE 10000
 #define PACKET_SIZE 1460
 
+// #define GROUP_NUM 6
+// #define RANGE_NUM 6
+const int GROUP_NUM = 2;
+const int RANGE_NUM = 6;
 
-
-const bool debug_range = true;
-const bool split_range = false;
-#define GROUP_NUM 6
-#define RANGE_NUM 3
-
-#define MAX_RANGE_REQ_CNT 99
+#define MAX_RANGE_REQ_CNT 98
 #define REQ_STEP 5
 #define BASE_RANGE_REQ_CNT MAX_RANGE_REQ_CNT - GROUP_NUM * REQ_STEP
 
-int range_num = RANGE_NUM*GROUP_NUM;
-struct range_conn* range_conns = new struct range_conn[range_num];
+const bool debug_range = false;
+const bool split_range = false;
+const bool single_sender = false;
+// const bool use_nfq = true;
+#define USE_NFQ 1
+const int MAX_REQUEST_CNT = 1;
+std::condition_variable range_send_cv;
+std::mutex range_send_cv_m;
+
 
 // int process_range_rv(char* response, int rv, std::shared_ptr<Optimack> obj, subconn_info* subconn, std::vector<Interval> range_job_vector, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
 int process_range_rv_old(char* response, int rv, Optimack* obj, subconn_info* subconn, http_header* header, int& consumed, int& unread, int& parsed, int& recv_offset, int& unsent);
@@ -70,8 +78,8 @@ opensocket:
     // tv.tv_sec = 10;
     // tv.tv_usec = 0;
     // setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    if(mark)
-        setsockopt(sockfd, SOL_SOCKET, SO_MARK, &mark, sizeof(mark));
+    // if(mark)
+    //     setsockopt(sockfd, SOL_SOCKET, SO_MARK, &mark, sizeof(mark));
 
     // Connect to server
     int count = 0;
@@ -157,60 +165,144 @@ opensocket:
 }
 
 
-int open_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned short remote_port, std::shared_ptr<Optimack> obj){
-#ifdef USE_OPENSSL
-        if(obj->is_ssl)
-            cur_range_conn->ssl_old = cur_range_conn->ssl;
-#endif
+int open_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned short remote_port){
+// #ifdef USE_OPENSSL
+//         if(obj->is_ssl)
+//             cur_range_conn->ssl_old = cur_range_conn->ssl;
+// #endif
     cur_range_conn->sockfd_old = cur_range_conn->sockfd;
     int rv = 0;
     int mark_range = MARK_RANGE;
     while( (rv = establish_tcp_connection(cur_range_conn->sockfd_old, remote_ip, remote_port, cur_range_conn->port, mark_range)) <= 0 ) sleep(1);
     // setsockopt(rv, SOL_SOCKET, SO_MARK, &MARK_RANGE, sizeof(MARK_RANGE));
     // setsockopt(rv, SOL_SOCKET, SO_MARK, &MARK, sizeof(MARK));
-
+    cur_range_conn->in_use = 0;
     cur_range_conn->sockfd = rv;
     cur_range_conn->range_request_count = 0;
     // cur_range_conn->in_use++;
-    print_func("[Range]R%d-%d: conn created, erase count %d", cur_range_conn->id, cur_range_conn->port, cur_range_conn->erase_count);
-    std::thread range_recv_thread(&Optimack::range_recv, obj, cur_range_conn);
-    range_recv_thread.detach();
+    print_func("[Range]R%d-%d: sockfd %d, conn created, erase count %d", cur_range_conn->id, cur_range_conn->port, rv, cur_range_conn->erase_count);
+
+    char cmd[100] = {0};
+    snprintf(cmd, 100, "sudo iptables -A PREROUTING -t mangle -p tcp --dport %d -j NFQUEUE --queue-num 999;", cur_range_conn->port);
+    system(cmd);
+
+    memset(cmd, 0, 100);
+    snprintf(cmd, 100, "sudo iptables -A OUTPUT -p tcp --sport %d -j NFQUEUE --queue-num 999;", cur_range_conn->port);
+    system(cmd);
+
     return 0;
 }
 
-int init_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned short remote_port, int id, std::shared_ptr<Optimack> obj){
-    // memset(cur_range_conn, 0 , sizeof(struct range_conn));
+// int init_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned short remote_port, int id, std::shared_ptr<Optimack> obj){
+//     // memset(cur_range_conn, 0 , sizeof(struct range_conn));
 
-    // pthread_mutex_init(&cur_range_conn->mutex_opa, NULL);
-    // pthread_mutex_lock(&cur_range_conn->mutex_opa);
-    // std::lock_guard<std::mutex> lock(cur_range_conn->std_mutex);
-    cur_range_conn->std_mutex.lock();
-    cur_range_conn->id = id;
-    cur_range_conn->in_use = 0;
-    open_range_conn(cur_range_conn, remote_ip, remote_port, obj);
-    cur_range_conn->last_send = std::chrono::system_clock::now();
-    cur_range_conn->std_mutex.unlock();
-    // pthread_mutex_unlock(&cur_range_conn->mutex_opa);
+//     // pthread_mutex_init(&cur_range_conn->mutex_opa, NULL);
+//     // pthread_mutex_lock(&cur_range_conn->mutex_opa);
+//     // std::lock_guard<std::mutex> lock(cur_range_conn->std_mutex);
+//     cur_range_conn->std_mutex.lock();
+//     cur_range_conn->id = id;
+//     open_range_conn(cur_range_conn, remote_ip, remote_port, obj);
+//     cur_range_conn->last_send = std::chrono::system_clock::now();
+//     cur_range_conn->std_mutex.unlock();
+    
+//     // if(use_nfq){
+// // #ifdef USE_NFQ
+//     // }
+// // #endif
+//     return 0;
+// }
+
+int close_range_conn(struct range_conn* cur_range_conn){
+    char cmd[100] = {0};
+    snprintf(cmd, 100, "sudo iptables -D PREROUTING -t mangle -p tcp --dport %d -j NFQUEUE --queue-num 999;", cur_range_conn->port);
+    system(cmd);
+
+    memset(cmd, 0, 100);
+    snprintf(cmd, 100, "sudo iptables -D OUTPUT -p tcp --sport %d -j NFQUEUE --queue-num 999;", cur_range_conn->port);
+    system(cmd);
+
+    // close(cur_range_conn->sockfd);
+    // delete (cur_range_conn->header);
     return 0;
 }
 
-int reopen_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned short remote_port, std::shared_ptr<Optimack> obj){
-    // print_func("[Range]R%d-%d: start reopen conn, count %d, erase count %d", cur_range_conn->id, cur_range_conn->port, cur_range_conn->range_request_count, cur_range_conn->erase_count);
-    // pthread_mutex_lock(&cur_range_conn->mutex_opa);
-    // std::lock_guard<std::mutex> lock(cur_range_conn->std_mutex);
-    int old_sockfd = cur_range_conn->sockfd;
-    cur_range_conn->std_mutex.lock();
-    if(cur_range_conn->sockfd == old_sockfd){
-        close(cur_range_conn->sockfd);
-        cur_range_conn->erase_count += REQ_STEP;
-        if(cur_range_conn->erase_count > MAX_RANGE_REQ_CNT)
-            cur_range_conn->erase_count = (cur_range_conn->erase_count % MAX_RANGE_REQ_CNT) + BASE_RANGE_REQ_CNT ;
-        open_range_conn(cur_range_conn, remote_ip, remote_port, obj);
+// int reopen_range_conn(struct range_conn* cur_range_conn, char* remote_ip, unsigned short remote_port, std::shared_ptr<Optimack> obj){
+//     // print_func("[Range]R%d-%d: start reopen conn, count %d, erase count %d", cur_range_conn->id, cur_range_conn->port, cur_range_conn->range_request_count, cur_range_conn->erase_count);
+//     // pthread_mutex_lock(&cur_range_conn->mutex_opa);
+//     // std::lock_guard<std::mutex> lock(cur_range_conn->std_mutex);
+
+//     char cmd[100] = {0};
+//     snprintf(cmd, 100, "sudo iptables -D PREROUTING -t mangle -p tcp --dport %d -j NFQUEUE --queue-num 999;", cur_range_conn->port);
+//     system(cmd);
+
+//     memset(cmd, 0, 100);
+//     snprintf(cmd, 100, "sudo iptables -D OUTPUT -p tcp --sport %d -j NFQUEUE --queue-num 999;", cur_range_conn->port);
+//     system(cmd);
+
+//     int old_sockfd = cur_range_conn->sockfd;
+//     cur_range_conn->std_mutex.lock();
+//     if(cur_range_conn->sockfd == old_sockfd){
+//         close(cur_range_conn->sockfd);
+//         cur_range_conn->erase_count += REQ_STEP;
+//         if(cur_range_conn->erase_count > MAX_RANGE_REQ_CNT)
+//             cur_range_conn->erase_count = (cur_range_conn->erase_count % MAX_RANGE_REQ_CNT) + BASE_RANGE_REQ_CNT ;
+//         open_range_conn(cur_range_conn, remote_ip, remote_port, obj);
+//     }
+//     cur_range_conn->std_mutex.unlock();
+//     // pthread_mutex_unlock(&cur_range_conn->mutex_opa);
+//     return 0;
+// }
+
+
+int open_group_range_conn(struct range_conn** range_conns, int i, char* remote_ip, unsigned short remote_port, std::shared_ptr<Optimack> obj){
+
+    struct range_conn* group_conns = range_conns[i];
+    std::counting_semaphore<10> *smph = new std::counting_semaphore<10>(MAX_REQUEST_CNT);
+    IntervalList* group_seq = new IntervalList();
+    group_seq->insertNewInterval(1, UINT_MAX);
+
+    // print_func("open_group_range_conn: opening group %d, %p, %p", (i+1), range_conns, group_conns);
+    // for(int m = 0; m < GROUP_NUM*2; m++)
+    //     print_func("open_group_range_conn: line267 group %d, %p", (m+1), range_conns[m]);
+
+
+    for(int j = 0; j < RANGE_NUM; j++){
+        struct range_conn* cur_range_conn = &(group_conns[j]);
+        // print_func("open_group_range_conn: line 272 opening %d", (i+1)*100+j);
+        memset(cur_range_conn, 0, sizeof(struct range_conn));
+        // print_func("open_group_range_conn: done memset");
+        cur_range_conn->id = (i+1)*100+j;
+        cur_range_conn->smph = smph;
+        cur_range_conn->group_recved_seq = group_seq;
+        cur_range_conn->last_send = std::chrono::system_clock::now();
+        cur_range_conn->erase_count = MAX_RANGE_REQ_CNT;
+        open_range_conn(cur_range_conn, remote_ip, remote_port);
+        // for(int m = 0; m < GROUP_NUM*2; m++)
+            // print_func("open_group_range_conn: after open group %d, %p", (m+1), range_conns[m]);
+        if(obj->info_file){
+            if(obj->processed_seq_file) {
+                fprintf(obj->processed_seq_file, "%f,creation,%d,%u,-1,-1\n", get_current_epoch_time_nanosecond(), cur_range_conn->id, cur_range_conn->port);
+                // fflush(obj->processed_seq_file);
+            }
+            if(obj->info_file) {
+                fprintf(obj->info_file, "Range_conn,%d,%d\n", cur_range_conn->port, cur_range_conn->id);
+                fflush(obj->info_file);
+            }
+        }
+
     }
-    cur_range_conn->std_mutex.unlock();
-    // pthread_mutex_unlock(&cur_range_conn->mutex_opa);
+
+    print_func("open_group_range_conn: Group %d, for loop done", i+1);
+    
+    if(!single_sender){
+        std::thread send_worker(&Optimack::send_group_range_request_worker, obj, range_conns, i);
+        send_worker.detach();
+    }
+
     return 0;
 }
+
+
 
 
 int Optimack::range_recv(struct range_conn* cur_range_conn){
@@ -240,12 +332,25 @@ int Optimack::range_recv(struct range_conn* cur_range_conn){
         if (rv > 0) {//&& rv < MAX_RANGE_SIZE
             // log_error("[Range] recved %d bytes, hand over to process_range_rv", rv);
             // print_func("[Range]R%d-%d: recved %d bytes", cur_range_conn->id, cur_range_conn->port, rv);
-            response[recv_offset+rv] = 0;
-            if(processed_seq_file)  fprintf(processed_seq_file, "%f,start recv,%d,-1,-1\n", get_current_epoch_time_nanosecond(), id);
-            process_range_rv(id, port, header, response, rv + recv_offset, recv_offset);
-            if(processed_seq_file)  fprintf(processed_seq_file, "%f,after recv,%d,-1,-1\n", get_current_epoch_time_nanosecond(), id);
-            if(header->remain == 0 && header->start != 1400)
-                cur_range_conn->smph->release();
+            if(cur_range_conn->id % 100 == 0){
+                response[recv_offset+rv] = 0;
+                // if(processed_seq_file)  fprintf(processed_seq_file, "%f,start recv,%d,-1,-1\n", get_current_epoch_time_nanosecond(), id);
+                bool is_new = process_range_rv(id, port, header, response, rv + recv_offset, recv_offset);
+                // if(processed_seq_file)  fprintf(processed_seq_file, "%f,after recv,%d,-1,-1\n", get_current_epoch_time_nanosecond(), id);
+                if(header->remain == 0 && (is_new || header->start != 1400)){
+                    if(!single_sender){
+                        if(debug_range) print_func("[Range]R%d-%d: range received, release one", id, port);
+                        cur_range_conn->smph->release();
+                    }
+                    else{
+                        cur_range_conn->range_request_count--;
+                        range_send_cv.notify_one();
+                    }
+                }
+            }
+            else{
+                recv_offset = 0;
+            }
         }
         else{
             if(rv == 0){
@@ -254,16 +359,24 @@ int Optimack::range_recv(struct range_conn* cur_range_conn){
             }
             else{
                 // log_debug("[Range] error: ret %d errno %d", rv, errno);
-                print_func("[Range]R%d-%d: error: ret %d", id, port, rv); // errno %d, errno
+                print_func("[Range]R%d-%d: error: ret %d, sockfd %d closed", id, port, rv, sockfd); // errno %d, errno
             }
             recv_offset = 0;
-            close(sockfd);
-            free(header);
+            // close(sockfd);
+            // if(!single_sender){
+            //     print_func("[Range]R%d-%d: range received, release one", id, port);
+            //     cur_range_conn->smph->release();
+            // }
+            // else{
+            //     cur_range_conn->range_request_count--;
+            //     range_send_cv.notify_one();
+            // }
+            delete header;
             return -1;
         }
         usleep(10);
     }
-    free(header);
+    delete header;
     return 0;
 }
 
@@ -271,6 +384,7 @@ int parse_response(http_header *head, char *response, int unread);
 
 int Optimack::process_range_rv(int id, int port, http_header* header, char* response, int unread, int& recv_offset){
 
+    bool is_new_segment = false;
     int consumed = 0;
     while (unread > 0) {
         if (!header->parsed) {
@@ -297,15 +411,15 @@ int Optimack::process_range_rv(int id, int port, http_header* header, char* resp
         else {
             int consuming = header->remain >= unread? unread : header->remain;
             int seq_rel = (header->start + header->recved);
-            int seq_rel_end = seq_rel + consuming;
+            int seq_rel_end = seq_rel + consuming -1;
             if(debug_range){
                 print_func("[Range]R%d-%d: [%d, %d] data retrieved, remain %d, unread %d", id, port, seq_rel, seq_rel_end, header->remain, unread);
                     // log_debug("[Range] data retrieved %d - %d, remain %d, unread %d", header->start+header->recved, header->start+header->recved+unread, header->remain, unread);
             }
             if (seq_rel + consuming > cur_ack_rel){
                 // if(debug_range) print_func("[Range]R%d-%d: [%d, %d] data to send to squid", id, port, seq_rel, seq_rel_end);
-                store_and_send_data(seq_rel, (u_char*)(response), consuming, NULL, true, id);
-                // if(debug_range) print_func("[Range]R%d-%d: [%d, %d] data sent to squid", id, port, seq_rel, seq_rel_end);
+                is_new_segment |= store_and_send_data(seq_rel, (u_char*)(response), consuming, (subconn_info*)port, true, id);
+                if(debug_range) print_func("[Range]R%d-%d: [%d, %d] data sent to squid", id, port, seq_rel, seq_rel_end);
             }
             header->recved += consuming;
             header->remain -= consuming;
@@ -326,7 +440,7 @@ int Optimack::process_range_rv(int id, int port, http_header* header, char* resp
         }
     }
 
-    return 0;
+    return is_new_segment;
 }
 
 
@@ -381,19 +495,34 @@ int parse_response(http_header *head, char *response, int unread)
     return 0;
 }
 
-int Optimack::send_group_range_request_worker(int group_i){
-    std::counting_semaphore<10> *smph = range_conns[group_i * RANGE_NUM].smph;
+int Optimack::send_group_range_request_worker(struct range_conn** range_conns, int group_i){
+    struct range_conn* group_conns = range_conns[group_i];
+    uint group_conns_size = sizeof(struct range_conn)*RANGE_NUM;
+    std::counting_semaphore<10> *smph = group_conns[0].smph;
+    IntervalList* group_recved_seq = group_conns[0].group_recved_seq;
+    int backup_i = (group_i + GROUP_NUM) % (GROUP_NUM * 2);
+    // struct range_conn* backup_conns;
+    // struct range_conn backup_conns[RANGE_NUM];
+    // memset(backup_conns, 0, group_conns_size);
+    // std::chrono::time_point<std::chrono::system_clock> backup_create_time = std::chrono::system_clock::now();
+    
+    std::thread recv_threads[RANGE_NUM];
+    for(int j=0; j < RANGE_NUM; j++){
+        recv_threads[j] = std::thread(&Optimack::range_recv, getptr(), &group_conns[j]);
+        // recv_threads[j].detach();
+    }
+
 
     while(!range_stop){
 
-        if (recved_seq.size() < 1 || recved_seq.getFirstStart() == 1){
-            usleep(10);
+        if (recved_seq.size() < 2 || recved_seq.getFirstStart() == 1 || !range_request_template_len){
+            usleep(100);
             continue;
         }
-        
-        if(processed_seq_file)  fprintf(processed_seq_file, "%f,before acquire,%d,-1,-1\n", get_current_epoch_time_nanosecond(), (group_i+1)*100);
-        smph->acquire();
-        if(processed_seq_file)  fprintf(processed_seq_file, "%f,after acquire,%d,-1,-1\n", get_current_epoch_time_nanosecond(), (group_i+1)*100);
+
+        // if(processed_seq_file)  fprintf(processed_seq_file, "%f,before acquire,%d,-1,-1\n", get_current_epoch_time_nanosecond(), (group_i+1)*100);
+        group_conns[0].smph->acquire();
+        // if(processed_seq_file)  fprintf(processed_seq_file, "%f,after acquire,%d,-1,-1\n", get_current_epoch_time_nanosecond(), (group_i+1)*100);
         interval_map gaps = recved_seq.getGapsAndUpdateTimer(get_min_next_seq_rem(), 1, 4);
         // auto it = range_job_vector.begin(); 
         // while(range_job_vector.size() != 0 && it != range_job_vector.end()){
@@ -406,7 +535,6 @@ int Optimack::send_group_range_request_worker(int group_i){
         //     if(!it->sent_epoch_time || (current_time - it->sent_epoch_time >= 4)){
         //         if(it->sent_epoch_time){
         //             print_func("[Range]: [%u, %u] timeout", it->start, it->end);
-        //             if(processed_seq_file)  fprintf(processed_seq_file, "%f,request timeout,%d,%u,%u\n", current_time, (group_i+1)*100, it->start,it->end+1);
         //             smph->release();
         //         }
         //         it->sent_epoch_time = current_time;
@@ -421,32 +549,96 @@ int Optimack::send_group_range_request_worker(int group_i){
 
 
         if(gaps.size()){
-            range_conns[group_i * RANGE_NUM].last_send = std::chrono::system_clock::now();
-            std::thread send_group_range_request_thread(&Optimack::send_group_one_range_request, getptr(), range_conns, group_i * RANGE_NUM, gaps.begin()->first.lower(), gaps.begin()->first.upper());
-            send_group_range_request_thread.detach();
+            uint start = gaps.begin()->first.lower(), end = gaps.begin()->first.upper()-1;
+            if(gaps.begin()->second == REQUEST_TIMEOUT)
+                if(processed_seq_file)  fprintf(processed_seq_file, "%f,request timeout,%d,%u, %u,%u\n", get_current_epoch_time_nanosecond(), group_conns[0].id, group_conns[0].port, start, end+1);
+            group_conns[0].last_send = std::chrono::system_clock::now();
+            // if(group_conns[0].range_request_count < 95){
+                std::thread send_group_range_request_thread(&Optimack::send_group_one_range_request, getptr(), group_conns, start, end);
+                send_group_range_request_thread.detach();
+            // }
+            // else{
+            //     send_group_one_range_request(group_conns, start, end);
+            // }
+
+            // int ret = send_group_one_range_request(group_conns, start, end);
+            // if(ret < 0){
+            //     print_func("send_group_range_request_worker: restart group_conns");
+            //     if(!backup_conns){
+            //         backup_conns = new struct range_conn[RANGE_NUM];
+            //         open_group_range_conn(backup_conns, group_i, g_remote_ip, g_remote_port, getptr());
+            //     }
+
+            //     for(int j=0; j < RANGE_NUM; j++)
+            //         close_range_conn(&group_conns[j]);
+            //     //free(range_conns[i]);
+            //     range_conns[group_i] = backup_conns;
+            //     group_conns = backup_conns;
+            //     backup_conns = NULL;
+            // }
+            if(++group_conns[0].range_request_count == 80){
+                // backup_conns = new struct range_conn[RANGE_NUM];
+                std::thread open_worker(open_group_range_conn, range_conns, backup_i, g_remote_ip, g_remote_port, getptr());
+                open_worker.detach();
+                print_func("[Group]G%d: start switching to %d", group_i+1, backup_i+1);
+                // backup_create_time = std::chrono::system_clock::now();
+
+            }
+            else if(group_conns[0].range_request_count == group_conns[0].erase_count){ // || (backup_conns && elapsed(backup_create_time) > 3.8) || (range_conns[backup_i][RANGE_NUM-1].sockfd)
+                break;
+                // for(int j=0; j < RANGE_NUM; j++)
+                //     close_range_conn(&group_conns[j]);
+                //free(range_conns[i]);
+                // range_conns[group_i] = backup_conns;
+                // group_conns = backup_conns;
+                // backup_conns = NULL;
+                // memcpy(group_conns, backup_conns, group_conns_size);
+                // memset(backup_conns, 0, group_conns_size);
+            }
         }
         else{
-            smph->release();
+            group_conns[0].smph->release();
             usleep(10);
         }
-    }
-    return 0;
 
+    }
+    sleep(4);
+    print_func("[Group]G%d: close conns", group_i+1);
+    for(int j=0; j < RANGE_NUM; j++){
+        print_func("[Group]R%d: close sockfd %d", group_conns[j].id, group_conns[j].sockfd);
+        close(group_conns[j].sockfd);
+    }
+
+    for(int j=0; j < RANGE_NUM; j++){
+        recv_threads[j].join();
+        close_range_conn(&group_conns[j]);
+        memset(&group_conns[j], 0, sizeof(struct range_conn));
+    }
+    delete smph;
+    delete group_recved_seq;
+
+    print_func("[Group]G%d: send_group_one_range_request, existting...\n", group_i+1);
+    return 0;
 }
 
 
-int Optimack::send_group_one_range_request(struct range_conn* range_conns, const int group_start_i, uint start_seq, uint end_seq){
-    if(debug_range) print_func("[Range]: group %d, [%u, %u] request to send", group_start_i/RANGE_NUM+1, start_seq, end_seq);
+int Optimack::send_group_one_range_request(struct range_conn* group_conns, uint start_seq, uint end_seq){
+    if(debug_range) print_func("[Range]: group %d, [%u, %u] request to send, No.%d", group_conns[0].id/100, start_seq, end_seq, group_conns[0].range_request_count);
+    
 
-    int rv = 0;
+    int rv = 1;
     char request_str[1000];
     snprintf(request_str, 1000, "%s%u-%u\r\n\r\n", range_request_template, get_byte_seq(start_seq), get_byte_seq(end_seq));
     for(int j = 0; j < RANGE_NUM; j++){
-        struct range_conn* cur_range_conn = &range_conns[group_start_i+j];
+        struct range_conn* cur_range_conn = &group_conns[j];
         // cur_range_conn->std_mutex.lock();
-        rv = send_http_range_request(cur_range_conn, request_str);
+        // if(cur_range_conn->range_request_count == cur_range_conn->erase_count)
+        //     reopen_range_conn(cur_range_conn, g_remote_ip, g_remote_port, getptr());
+
+        rv *= send_http_range_request(cur_range_conn, request_str);
+        // print_func("send_group_one_range_request: R%d, rv %d", j, rv);
         if(start_seq != 1001 && rv > 0)
-            if(processed_seq_file)   fprintf(processed_seq_file, "%f,request,%d,%u,%u\n", get_current_epoch_time_nanosecond(), cur_range_conn->id, start_seq, end_seq+1);
+            if(processed_seq_file)   fprintf(processed_seq_file, "%f,request,%d,%u,%u,%u\n", get_current_epoch_time_nanosecond(), cur_range_conn->id, cur_range_conn->port, start_seq, end_seq);
 
         // cur_range_conn->std_mutex.unlock();
     }
@@ -456,57 +648,57 @@ int Optimack::send_group_one_range_request(struct range_conn* range_conns, const
 
 
 
-int send_group_range_request_handler(std::shared_ptr<Optimack> obj, struct range_conn* range_conns, int group_i, std::ostringstream & ostr_i, std::ostringstream& pstr_i, int & quotas_i){
-    // print_func("[Range]: group %d, range_str pstr %s, ostr %s", group_i+1, pstr_i.str().c_str(), ostr_i.str().c_str());
-    // sprintf(range_str_start, "%s\r\n\r\n", ostr.str().c_str());
-    int ostr_cstr_len = ostr_i.str().size();
-    char* ostr_cstr = new char[ostr_cstr_len+1];
-    strncpy(ostr_cstr, ostr_i.str().c_str(), ostr_cstr_len);
-    ostr_cstr[ostr_cstr_len] = 0;
-    range_conns[group_i * RANGE_NUM].last_send = std::chrono::system_clock::now();
-    std::thread send_group_range_request_thread(&Optimack::send_group_range_request, obj, range_conns, group_i * RANGE_NUM, ostr_cstr);
-    send_group_range_request_thread.detach();
+// int send_group_range_request_handler(std::shared_ptr<Optimack> obj, struct range_conn* range_conns, int group_i, std::ostringstream & ostr_i, std::ostringstream& pstr_i, int & quotas_i){
+//     // print_func("[Range]: group %d, range_str pstr %s, ostr %s", group_i+1, pstr_i.str().c_str(), ostr_i.str().c_str());
+//     // sprintf(range_str_start, "%s\r\n\r\n", ostr.str().c_str());
+//     int ostr_cstr_len = ostr_i.str().size();
+//     char* ostr_cstr = new char[ostr_cstr_len+1];
+//     strncpy(ostr_cstr, ostr_i.str().c_str(), ostr_cstr_len);
+//     ostr_cstr[ostr_cstr_len] = 0;
+//     range_conns[group_i * RANGE_NUM].last_send = std::chrono::system_clock::now();
+//     std::thread send_group_range_request_thread(&Optimack::send_group_range_request, obj, range_conns, group_i * RANGE_NUM, ostr_cstr);
+//     send_group_range_request_thread.detach();
 
-    ostr_i.str(std::string());
-    pstr_i.str(std::string());
-    // quotas_i = 0;
-    return 0;
-}
-
-void signal_callback_handler(int signum){
-}
+//     ostr_i.str(std::string());
+//     pstr_i.str(std::string());
+//     // quotas_i = 0;
+//     return 0;
+// }
 
 
 
-int Optimack::send_group_range_request(struct range_conn* range_conns, const int group_start_i, char* ranges_str){
-    if(debug_range) print_func("[Range]: group %d, range_str %s", group_start_i/RANGE_NUM+1, ranges_str);
-    // if(strcmp(ranges_str, "1001-1001") != 0)
-    //     if(processed_seq_file)   fprintf(processed_seq_file, "%f,request,%d,%s\n", get_current_epoch_time_nanosecond(), (group_start_i/RANGE_NUM+1)*100, ranges_str);
-    // signal(SIGPIPE, signal_callback_handler);
+// int Optimack::send_group_range_request(struct range_conn* range_conns, const int group_start_i, char* ranges_str){
+//     if(debug_range) print_func("[Range]: group %d, range_str %s", group_start_i/RANGE_NUM+1, ranges_str);
+//     // if(strcmp(ranges_str, "1001-1001") != 0)
+//     //     if(processed_seq_file)   fprintf(processed_seq_file, "%f,request,%d,%s\n", get_current_epoch_time_nanosecond(), (group_start_i/RANGE_NUM+1)*100, ranges_str);
+//     // signal(SIGPIPE, signal_callback_handler);
 
-    int rv = 0;
-    char request_str[1000];
-    snprintf(request_str, 1000, "%s%s\r\n\r\n", range_request_template, ranges_str);
-    for(int j = 0; j < RANGE_NUM; j++){
-        struct range_conn* cur_range_conn = &range_conns[group_start_i+j];
-        // cur_range_conn->std_mutex.lock();
-        rv = send_http_range_request(cur_range_conn, request_str);
-        // cur_range_conn->std_mutex.unlock();
-    }
-    delete[] ranges_str;
-    return rv;
-}
+//     int rv = 0;
+//     char request_str[1000];
+//     snprintf(request_str, 1000, "%s%s\r\n\r\n", range_request_template, ranges_str);
+//     for(int j = 0; j < RANGE_NUM; j++){
+//         struct range_conn* cur_range_conn = &range_conns[group_start_i+j];
+//         // cur_range_conn->std_mutex.lock();
+//         rv = send_http_range_request(cur_range_conn, request_str);
+//         // cur_range_conn->std_mutex.unlock();
+//     }
+//     delete[] ranges_str;
+//     return rv;
+// }
 
 
 int Optimack::send_http_range_request(struct range_conn* cur_range_conn, const char* range_request_str){
-    if(!range_request_str)
-        return -1;
-    
+    if(!range_request_str){
+        print_func("send_http_range_request: range_request str is null");
+        return 0;
+    }
+
     cur_range_conn->std_mutex.lock();
 
     if(!cur_range_conn->sockfd) {
+        print_func("R%d-%d: send_http_range_request: sockfd is 0", cur_range_conn->id, cur_range_conn->port);
         cur_range_conn->std_mutex.unlock();
-        return -1;
+        return 0;
     }
 
 resend:
@@ -533,26 +725,40 @@ resend:
         // if(debug_range) print_func("[Range]R%d-%d: request sent", cur_range_conn->id, cur_range_conn->port);
         cur_range_conn->last_send = std::chrono::system_clock::now();
         cur_range_conn->requested_bytes += request_len;
-        cur_range_conn->range_request_count++;
+        // cur_range_conn->range_request_count++;
+        rv = 1;
     }
     cur_range_conn->std_mutex.unlock();
 
-    if(rv <= 0 || cur_range_conn->range_request_count == cur_range_conn->erase_count){
-        reopen_range_conn(cur_range_conn, g_remote_ip, g_remote_port, getptr());
+    // if(rv <= 0 || cur_range_conn->range_request_count == cur_range_conn->erase_count){
+    //     reopen_range_conn(cur_range_conn, g_remote_ip, g_remote_port, getptr());
+    //     goto resend;
         if(rv <= 0){
-            if(debug_range) print_func("[Range]R%d-%d: send request failed, errno %d", cur_range_conn->id, cur_range_conn->port, errno);
-            goto resend;
+            print_func("[Range]R%d-%d: send request failed, errno %d", cur_range_conn->id, cur_range_conn->port, errno);
+            // goto resend;
         }
-    }
+    // }
 
     return rv;
 }
 
+struct cb_range_data{
+    std::shared_ptr<Optimack> obj;
+    struct range_conn** range_conns;
+    cb_range_data(std::shared_ptr<Optimack> obj_, struct range_conn** range_conns) : obj(obj_), range_conns(range_conns) {}
+};
+
+int cb_range_wrapper(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data){
+    // print_func("cb_range: pkt %d", nfq_get_msg_packet_hdr(nfa)->packet_id);
+    struct cb_range_data* cb_data = (struct cb_range_data*)data;
+    return cb_data->obj->cb_range(qh, nfmsg, nfa, (void*)(cb_data->range_conns));
+}
 
 
-int cb_range(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data){
+int Optimack::cb_range(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data){
     unsigned char* packet;
     int packet_len = nfq_get_payload(nfa, &packet);
+    struct range_conn** range_conns = (struct range_conn**)data;
 
     struct nfqnl_msg_packet_hdr *ph;
     ph = nfq_get_msg_packet_hdr(nfa);
@@ -561,12 +767,18 @@ int cb_range(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *n
         return -1;
     }
     // int pkt_id = htonl(ph->packet_id);
+    // print_func("cb_range: pkt %d", ph->packet_id);
+
 
     struct myiphdr *iphdr = ip_hdr(packet);
     struct mytcphdr *tcphdr = tcp_hdr(packet);
+    unsigned char *payload = tcp_payload(packet);
     int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
     unsigned short sport = ntohs(tcphdr->th_sport);
     unsigned short dport = ntohs(tcphdr->th_dport);
+    unsigned int seq = htonl(tcphdr->th_seq);
+    unsigned int ack = htonl(tcphdr->th_ack);
+
     unsigned short local_port = dport;
     bool incoming = true;
     if(dport == 80 || dport == 443){
@@ -574,41 +786,101 @@ int cb_range(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *n
         incoming = false;
     }
     
-    int i = 0;
-    for(; i < range_num; i++)
-        if(range_conns[i].port == local_port)
-            break;
-    if(i == range_num){
+
+    struct range_conn* subconn = NULL;
+    for(int i = 0; i < GROUP_NUM*2; i++)
+        for(int j = 0; j < RANGE_NUM;j++){
+            if(range_conns[i][j].port && range_conns[i][j].port == local_port){
+                subconn = &range_conns[i][j];
+                break;
+            }
+        }
+    if(!subconn){
         print_func("cb_range: conn not found");
         nfq_set_verdict(qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
         return -1;
     }
-    struct range_conn* subconn = &range_conns[i];
 
     short protocol = iphdr->protocol;
     if(protocol == 6){
         if(!incoming){
             switch (tcphdr->th_flags) {
                 case TH_ACK:
+                case TH_ACK | TH_PUSH:
                 {
-                    unsigned int seq = htonl(tcphdr->th_seq);
-                    unsigned int ack = htonl(tcphdr->th_ack);
                     subconn->std_mutex.lock();
                     if(!subconn->in_use){
                         subconn->ini_seq_rem = ack - 1;
-                        subconn->next_seq_rem = 1;
+                        subconn->next_seq_rem = ack;
                         subconn->ini_seq_loc = seq - 1;
-                        subconn->next_seq_loc = 1 + payload_len;
+                        subconn->next_seq_loc = seq + payload_len;
                         subconn->in_use++;
                         print_func("R%d-%d: seq_init done - ini_seq_rem 0x%x(%u), ini_seq_loc 0x%x(%u)\n", subconn->id, local_port, subconn->ini_seq_rem, subconn->ini_seq_rem, subconn->ini_seq_loc, subconn->ini_seq_loc);
                         // setsockopt(subconn->sockfd, SOL_SOCKET, SO_MARK, &MARK, sizeof(MARK));
+                        
                     }
                     subconn->std_mutex.unlock();
+
+                    if(subconn->in_use){
+                        if(payload_len && ack > subconn->next_seq_rem){
+                            tcphdr->th_ack = htonl(subconn->next_seq_rem);
+                            compute_checksums(packet, 20, packet_len);
+                            if(debug_range) print_func("[Range]R%d-%d: change ack %x to %x", subconn->id, local_port, ack, subconn->next_seq_rem);
+                        }
+
+                    }
                     break;
                 }
                 default:
-                    print_func("cb_range: Unknown packet type - %d!", tcphdr->th_flags);
+                    print_func("[cb_range]R%d-%d: Unknown outgoing packet flag - %d!", subconn->id, local_port, tcphdr->th_flags);
                     break;
+            }
+        }
+        else{
+            if(subconn->in_use && seq > subconn->ini_seq_rem){
+
+
+                if(subconn->next_seq_loc < ack)
+                    subconn->next_seq_loc = ack;
+                if(subconn->next_seq_rem < seq + payload_len)
+                    subconn->next_seq_rem = seq + payload_len;
+
+                unsigned int seq_rel = seq - subconn->ini_seq_rem;
+                // if(subconn->id % 100 == 0){
+                //     print_func("[Range]R%d: %d -> %d <%d> seq %d(%x) ack %d(%x) ttl %u plen %d", subconn->id,  sport, dport, (tcphdr->th_flags), seq_rel, seq, ack, ack, iphdr->ttl, payload_len);
+                //     nfq_set_verdict(qh, htonl(ph->packet_id), NF_DROP, packet_len, packet);
+                //     return -1;
+                // }
+
+                switch (tcphdr->th_flags) {
+                    case TH_ACK:
+                    case TH_ACK | TH_PUSH:
+                    case TH_ACK | TH_URG:
+                    {
+                        if(payload_len){
+                            interval_map temp_range = subconn->group_recved_seq->removeInterval(seq_rel, seq_rel + payload_len);
+                            // if(temp_range.size()){
+                                
+                            // }
+
+                            if(temp_range.size()){
+                                int group_start_i = (subconn->id/100-1);
+                                for(int j = 0; j < RANGE_NUM; j++){
+                                    struct range_conn* conn = &range_conns[group_start_i][j];
+                                    if(conn != subconn){
+                                        send_ACK_payload(g_local_ip, g_remote_ip, conn->port, 80, payload, payload_len, conn->next_seq_loc, conn->ini_seq_rem+seq_rel);
+                                        // print_func("[Range]R%d-%d: [%d, %d] data sent to R%d-%d, ack %x, seq %x, %d, %s, %s", subconn->id, subconn->port, seq_rel, seq_rel + payload_len, conn->id, conn->port, conn->next_seq_loc, conn->ini_seq_rem+seq_rel, g_remote_port, g_local_ip, g_remote_ip);
+                                    }
+                                }
+                            }
+                        }
+                        
+                    }
+                    break;
+                    default:
+                        print_func("[cb_range]R%d-%d: Unknown incoming packet flag - %d!",subconn->id, subconn->port, tcphdr->th_flags);
+                        break;
+                }
             }
 
         }
@@ -623,57 +895,90 @@ int cb_range(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *n
 void Optimack::range_watch_multi() //void* arg
 {
 
-    //NFQ nfq_range(MARK_RANGE, &cb_range);
+    memset(range_request_template, 0 , 1000);
+    range_request_template_len = 0;
 
+    struct range_conn range_conns[GROUP_NUM*2][RANGE_NUM];
+    struct range_conn* range_conns_ptrs[GROUP_NUM*2];
+    for(int i = 0; i < GROUP_NUM*2;i++)
+        range_conns_ptrs[i] = range_conns[i];
+    // struct range_conn** temp = &range_conns;
+    // struct range_conn** range_conns = new struct range_conn*[GROUP_NUM];
+    // for(int i = 0; i < GROUP_NUM*2; i++){
+    //     // range_conns[i] = struct range_conn[RANGE_NUM];
+    //     range_conns[i] = new struct range_conn[RANGE_NUM];
+    //     memset(range_conns[i], 0, sizeof(struct range_conn)*RANGE_NUM);
+    //     for(int j = 0; j < RANGE_NUM; j++)
+    //         print_func("range_watch_multi: %d, %p", (i+1)*100+j, &range_conns[i][j]);
+    // }
+
+// #ifdef USE_NFQ
+    // if(use_nfq){
+    // }
+// #endif
 
     // std::counting_semaphore<10> smphs[GROUP_NUM];
 
-    //create array of range_conns
-    for(int i = 1, cnt=0; i <= GROUP_NUM; i++){
-        std::counting_semaphore<10> *smph = new std::counting_semaphore<10>(4);
-        for(int j = 1; j <= RANGE_NUM; j++){
-            struct range_conn *cur_range_conn = &range_conns[cnt++];
-            memset(cur_range_conn, 0, sizeof(struct range_conn));
-            cur_range_conn->smph = smph;
-            cur_range_conn->last_send = std::chrono::system_clock::now();
-            // init_range_conn(&range_conns[cnt++], g_remote_ip, g_remote_port, i*100+j, getptr());
-            cur_range_conn->erase_count = 99;
-            // cur_range_conn->erase_count = BASE_RANGE_REQ_CNT + cnt / RANGE_NUM * REQ_STEP + (cnt % RANGE_NUM) * REQ_STEP;
-            std::thread init_range_conn_thread(init_range_conn, cur_range_conn, g_remote_ip, g_remote_port, i*100+j, getptr());
-            init_range_conn_thread.detach();
-        }
-        std::thread send_worker(&Optimack::send_group_range_request_worker, getptr(), i-1);
-        send_worker.detach();
+    // create array of range_conns
+    std::thread open_conn_threads[GROUP_NUM];
+    for(int i = 0; i < GROUP_NUM; i++){
+        // open_group_range_conn(range_conns_ptrs, i, g_remote_ip, g_remote_port, getptr());
+        open_conn_threads[i] = std::thread(open_group_range_conn, range_conns_ptrs, i, g_remote_ip, g_remote_port, getptr());
+        open_conn_threads[i].detach();
     }
+
+    // print_func("multi_range: sip %s, dip %s, rport %d", g_local_ip, g_remote_ip, g_remote_port);
+    struct cb_range_data cb_data(getptr(), range_conns_ptrs);
+    NFQ nfq_range(MARK_RANGE, (void*)&cb_data, &cb_range_wrapper);
 
     while(!request_len) usleep(10);
 
-    memset(range_request_template, 0 , 1000);
     memcpy(range_request_template, request, request_len);
     const char range_hdr[] = "Keep-Alive: timeout=150, max=300\r\nRange: bytes=";
     int range_hdr_len = strlen(range_hdr);
     sprintf(range_request_template+request_len-2, "%s", range_hdr);
-    range_request_template[request_len - 2 + range_hdr_len] = 0;
+    range_request_template_len = request_len - 2 + range_hdr_len;
+    range_request_template[range_request_template_len] = 0;
+
+    // for(int i = 0; i < GROUP_NUM; i++){
+    //     open_conn_threads[i].join();
+    //     if(!single_sender){
+    //         std::thread send_worker(&Optimack::send_group_range_request_worker, getptr(), range_conns, i);
+    //         send_worker.detach();
+    //     }
+    // }
+
     // char* range_str_start = range_request_template + request_len - 2 + range_hdr_len;
 
     // int group_cnt = 0;
-    int quotas[GROUP_NUM] = {0};
-    std::ostringstream ostr[GROUP_NUM], pstr[GROUP_NUM];
+    // int quotas[GROUP_NUM] = {0};
+    // std::ostringstream ostr[GROUP_NUM], pstr[GROUP_NUM];
     while(!range_stop) {
         
-        for(int i = 0; i < GROUP_NUM;i++){
+        // for(int m = 0; m < GROUP_NUM*2; m++)
+        //     print_func("open_group_range_conn: group %d, %p", (m+1), range_conns[m]);
+
+
+
+        for(int i = 0; i < GROUP_NUM*2;i++){
                 // if(quotas[i] % quota > 0)
                 //     send_group_range_request_handler(getptr(), range_conns, i, ostr[i], pstr[i], quotas[i]);
                 
                 // if((!quotas[i] && elapsed(range_conns[i*RANGE_NUM].last_send) >= 4) || (quotas[i] && (quotas[i]/quota <= 1) && (range_job_vector.size() == 1)) ){ //send dummy requests
-                if((elapsed(range_conns[i*RANGE_NUM].last_send) >= 4)){ //send dummy requests
-                    ostr[i].str("1001-1001");
-                    pstr[i].str("1001-1001");
-                    send_group_range_request_handler(getptr(), range_conns, i, ostr[i], pstr[i], quotas[i]);
+                double time_passed = elapsed(range_conns[i][RANGE_NUM-1].last_send);
+                if(range_conns[i][RANGE_NUM-1].port && range_conns[i][0].port && (time_passed >= 4) && (time_passed < 10) && (range_conns[i][0].range_request_count <= 90)){ //send dummy requests
+                    // send_group_one_range_request(range_conns[i], 1001, 1001);
+                    range_conns[i][RANGE_NUM-1].last_send = std::chrono::system_clock::now();
+                    std::thread send_thread(&Optimack::send_group_one_range_request, getptr(), range_conns[i], 1001, 1001);
+                    send_thread.detach();
+                    // ostr[i].str("1001-1001");
+                    // pstr[i].str("1001-1001");
+                    // send_group_range_request_handler(getptr(), range_conns, i, ostr[i], pstr[i], quotas[i]);
                 }
-                quotas[i] = 0;
             }
         
+
+
 
         // print_func("line A");
 
@@ -765,10 +1070,11 @@ void Optimack::range_watch_multi() //void* arg
         //send unfinished quotas
         
 
-        usleep(300);
+        usleep(500);
     }
 
-    delete[] range_conns;
+    // delete[] range_conns;
+    // for(int i = 0; i )
     print_func("[Range]: range_watch_multi thread exits...\n");
     // pthread_exit(NULL);
     return;

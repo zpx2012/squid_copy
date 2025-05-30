@@ -10,7 +10,7 @@
 #include "util.h"
 #include "logging.h"
 
-void send_ACK_payload(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port,unsigned char* payload, int payload_len, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 111)
+void send_ACK_payload(char* dip, char* sip, unsigned short dport, unsigned short sport,unsigned char* payload, int payload_len, unsigned int ack, unsigned int seq = 1, unsigned int win_size = 29200, unsigned char ttl = 111)
 {
     struct tcphdr_opts opts;
     opts.size = 0;
@@ -21,7 +21,7 @@ void send_ACK_payload(char* remote_ip, char* local_ip, unsigned short remote_por
     header.th_ack = ack;
     header.th_win = win_size;
 
-    send_tcp(local_port, remote_port, &header, &opts, local_ip, remote_ip, ttl, NULL, payload, payload_len, 1);
+    send_tcp(sport, dport, &header, &opts, sip, dip, ttl, NULL, payload, payload_len, 1);
 }
 
 void send_SYN(char* remote_ip, char* local_ip, unsigned short remote_port, unsigned short local_port, char* payload, unsigned int ack, unsigned int seq = 1, unsigned char ttl = 111)
