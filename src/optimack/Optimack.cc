@@ -42,7 +42,7 @@ const int print_per_sec_on = true;
 
 
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -2114,6 +2114,8 @@ void* overrun_detector(void* arg){
 
     // auto last_print_seqs = std::chrono::system_clock::now();
     uint count = 0;
+    uint last_cur_ack_rel = 0, last_cur_ack_rel_change_sec = 0;
+
     while(!obj->overrun_stop){
         // if(is_timeout_and_update(last_print_seqs, 1)){
             obj->print_seq_table();
@@ -2134,8 +2136,22 @@ void* overrun_detector(void* arg){
         }
         if(++count == 10){
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
-                if(it->second->next_seq_rem < 2)
+                if(it->second->next_seq_rem < 2){
+                    print_func("ERROR: Optimistic ACK lost first packet!!!");
                     exit(-1);
+                }
+            }
+        }
+        else if(count > 10){
+            clock_gettime(CLOCK_REALTIME, &deadline);
+            print_func("last_cur_ack_rel %u, deadline.tv_sec %u, last_change_sec %u", last_cur_ack_rel, deadline.tv_sec, last_cur_ack_rel_change_sec);
+            if(last_cur_ack_rel < obj->cur_ack_rel){
+                last_cur_ack_rel = obj->cur_ack_rel;
+                last_cur_ack_rel_change_sec = deadline.tv_sec;
+            }
+            else if(deadline.tv_sec - last_cur_ack_rel_change_sec >= 8){
+                print_func("ERROR: Local packet loss!!!");
+                exit(-1);
             }
         }
     }
@@ -3384,6 +3400,7 @@ int Optimack::send_data_to_squid_thread(){
     while(!send_squid_stop){
         std::unique_lock<std::mutex> lk(stdmutex_rb);
         cv_rb.wait(lk);
+
         memset(buf, 0, MAX_BUF_LEN);
         buf_len = 0;
         if(debug_rb) print_func("send_data_to_squid_thread: wake up\n"); //if(debug_rb) 

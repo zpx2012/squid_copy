@@ -33,11 +33,11 @@ sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/
 j=1
 k=1
 
-for ((cnt=0; cnt<2; cnt++)); do
+for ((cnt=0; cnt<5; cnt++)); do
     echo $cnt
-    for i in 2;do # 1 3
-       for j in 6; do #1 2 7 8
-           for k in 1 2 3 4 5 6; do #3 4 5 6
+    for i in 1;do # 1 3
+       for j in 1 4 8 12 16; do #1 2 7 8
+           for k in 3; do #3 4 5 6
                 iptables -F;
                 iptables -F -t mangle
                 sed -i "s/define CONN_NUM .*/define CONN_NUM ${i}/g" ~/squid_copy/src/optimack/Optimack.cc

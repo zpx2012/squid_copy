@@ -66,7 +66,7 @@ function INT_handler()
 trap INT_handler SIGINT
 
 #-s 400
-screen -dmS td tcpdump -w $tcpdump_out host $site and tcp port 80
+screen -dmS td tcpdump -w $tcpdump_out host $site and tcp port 80 -s 400
 screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 >$squid_log"
 sleep 2
 
@@ -76,8 +76,8 @@ echo Start: $(date -Iseconds) >> $squid_out
 curl -LJ4k $url -o /dev/null -x http://127.0.0.1:3128 --limit-rate 1300K -m 90 --speed-time 30 2>&1 | tee -a ${squid_out}
 cleanup
 
-tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80' > ${tcpdump_out}.tshark; #rm $tcpdump_out
-awk -F ',' '{Total=Total+$5} END{print "Total is: " Total }' ${tcpdump_out}.tshark | tee -a ${squid_out}
+tshark -r $tcpdump_out -o tcp.calculate_timestamps:TRUE -T fields -e frame.time_epoch -e ip.id -e ip.src -e tcp.srcport -e tcp.dstport -e tcp.len -e tcp.seq -e tcp.ack -e tcp.window_size  -e tcp.analysis.out_of_order -E separator=, -Y 'tcp.srcport eq 80 or tcp.dstport eq 80' > ${tcpdump_out}.tshark; #rm $tcpdump_out
+#awk -F ',' '{Total=Total+$5} END{print "Total is: " Total }' ${tcpdump_out}.tshark | tee -a ${squid_out}
 
 # if grep -q "left intact" $squid_out;
 # then
