@@ -97,6 +97,7 @@ HttpStateData::HttpStateData(FwdState *theFwdState) :
     ignoreCacheControl = false;
     surrogateNoStore = false;
     serverConnection = fwd->serverConnection();
+    serverConnection->optimack_server->client_fd = fwd->clientConnection()->fd;
     
     // Our code
     httpServerConnStateData = fwd->httpServerConnStateData;
@@ -1548,6 +1549,7 @@ HttpStateData::maybeReadVirginBody()
     Comm::Read(serverConnection, call);
 }
 
+
 bool
 HttpStateData::maybeMakeSpaceAvailable(bool doGrow)
 {
@@ -2276,6 +2278,7 @@ HttpStateData::sendRequest()
     /* Our code */
 #ifdef USE_OPTIMACK
     if(USE_OPTIMACK){
+        serverConnection->optimack_server->fp_to_client_write = [this](const char* data, ssize_t len) { this->optimackReadReply(data, len); };
         if(serverConnection->optimack_server){
             // bool use_whitelist = false;
             // if(use_whitelist){
@@ -2536,3 +2539,52 @@ std::ostream &operator <<(std::ostream &os, const HttpStateData::ReuseDecision &
            "; HTTP status " << d.statusCode << " " << *(d.entry);
 }
 
+
+void 
+HttpStateData::optimackReadReply(const char* buf, ssize_t size)
+{
+    printf("optimackReadReply: inbuf size %d\n", inBuf.spaceSize());
+
+    // if(size > inBuf.spaceSize()){
+
+    // }
+
+    Must(!flags.do_next_read); // XXX: should have been set false by mayReadVirginBody()
+    flags.do_next_read = false;
+
+
+    Must(Comm::IsConnOpen(serverConnection));
+
+    /*
+     * Don't reset the timeout value here. The value should be
+     * counting Config.Timeout.request and applies to the request
+     * as a whole, not individual read() calls.
+     * Plus, it breaks our lame *HalfClosed() detection
+     */
+
+    Must(maybeMakeSpaceAvailable(true));
+
+    inBuf.append(buf, size);
+    payloadSeen += size;
+#if USE_DELAY_POOLS
+    DelayId delayId = entry->mem_obj->mostBytesAllowed();
+    delayId.bytesIn(size);
+#endif
+
+    statCounter.server.all.kbytes_in += size;
+    statCounter.server.http.kbytes_in += size;
+    ++ IOStats.Http.reads;
+
+    int bin = 0;
+    for (int clen = size - 1; clen; ++bin)
+        clen >>= 1;
+
+    ++ IOStats.Http.read_hist[bin];
+
+    request->hier.notePeerRead();
+
+
+    /* Process next response from buffer */
+    processReply();
+
+}

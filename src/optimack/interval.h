@@ -53,11 +53,6 @@ struct Interval
     }
 };
 
-typedef enum
-{
-    OUT_OF_ORDER = 0,
-    IN_ORDER_NEWEST = 1,
-    IN_ORDER_FILL = 2
-} ORDER_TYPE;
+
 
 #endif

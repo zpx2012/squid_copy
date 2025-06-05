@@ -54,6 +54,7 @@ Comm::Read(const Comm::ConnectionPointer &conn, AsyncCall::Pointer &callback)
 void
 comm_read_base(const Comm::ConnectionPointer &conn, char *buf, int size, AsyncCall::Pointer &callback)
 {
+    
     debugs(5, 5, "comm_read, queueing read for " << conn << "; asynCall " << callback);
 
     /* Make sure we are open and not closing */

@@ -107,6 +107,7 @@ public:
 
     /** return a ConnectionPointer to the current server connection (may or may not be open) */
     Comm::ConnectionPointer const & serverConnection() const { return serverConn; };
+    Comm::ConnectionPointer const & clientConnection() const { return clientConn; };
 
     // Our code
     ConnStateData* httpServerConnStateData;

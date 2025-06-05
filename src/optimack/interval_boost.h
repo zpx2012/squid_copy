@@ -5,71 +5,73 @@
 #include <string>
 #include <pthread.h>
 #include <chrono>
-#include <boost/icl/interval_set.hpp>
-#include "interval.h"
+#include <shared_mutex>
+#include <mutex>
+#include <boost/icl/interval.hpp>
+#include <boost/icl/interval_map.hpp>
+// #include "interval.h"
 
-typedef boost::icl::interval_set<unsigned int> interval_set;
-typedef interval_set::interval_type interval_type;
+typedef enum
+{
+    OUT_OF_ORDER = 0,
+    IN_ORDER_NEWEST = 1,
+    IN_ORDER_FILL = 2,
+    REQUEST_NEW = 3,
+    REQUEST_TIMEOUT = 4
+} ORDER_TYPE;
+
+typedef boost::icl::interval_set<uint> interval_set;
+typedef boost::icl::interval_map<uint, double> interval_map;
+typedef boost::icl::interval<uint> interval_type;
 
 
 class IntervalList {
 public:
     IntervalList() {
-        // Intervals.clear();
-        pthread_mutex_init(&mutex_intervals, NULL);
     }
 
     ~IntervalList() {
-        Intervals.clear();
-        pthread_mutex_destroy(&mutex_intervals);
+        clear();
     }
-    unsigned int size() { return boost::icl::interval_count(Intervals); }
+
+    void read_lock() { smtx.lock_shared(); }
+    void read_unlock() { smtx.unlock_shared(); }
+
+    void write_lock() { smtx.lock(); }
+    void write_unlock() { smtx.unlock(); }
+
+
+    unsigned int size();
     unsigned int total_bytes();
 
     void clear();
-    void clear_withLock();
 
-    interval_set::iterator begin() { return Intervals.begin(); }
-    interval_set::iterator end() { return Intervals.end(); }
+    interval_map::iterator begin();
+    interval_map::iterator end(); 
 
+    unsigned int getFirstStart();
     unsigned int getFirstEnd();
-    // unsigned int getFirstEnd_withLock();
     unsigned int getLastEnd();
-    // unsigned int getLastEnd_withLock();
-    unsigned int getElem_withLock(unsigned int index, bool is_start);
-    interval_set& getIntervalList() { return Intervals; }
-    pthread_mutex_t* getMutex() { return &mutex_intervals; }
-
-    // Function to insert new interval and merge overlapping intervals
-    void insert(Interval newInterval);
-    void insert_withLock(Interval newInterval);
+    // unsigned int getElem(unsigned int index, bool is_start);
+    interval_map& getIntervalList() { return Intervals; } //?
+    
     void insertNewInterval(unsigned int start, unsigned int end);
-    void insertNewInterval(Interval newInterval);
-    void insertNewInterval_withLock(Interval newInterval);
-    void insertNewInterval_withLock(unsigned int start, unsigned int end);
-    // unsigned int insertNewInterval_getLastEnd_withLock(unsigned int start, unsigned int end);
-    bool checkAndinsertNewInterval(unsigned int start, unsigned int end, int &order_flag);
-    bool checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end, int &order_flag);
-    bool checkAndinsertNewInterval_withLock(unsigned int start, unsigned int end);
+    // bool checkAndinsertNewInterval(unsigned int start, unsigned int end, int &order_flag);
 
-    // Function to insert new interval and merge overlapping intervals
-    void removeInterval(unsigned int start, unsigned int end);
-    void removeInterval_withLock(unsigned int start, unsigned int end);
+    interval_map removeInterval(unsigned int start, unsigned int end);
+    interval_map getGapsAndUpdateTimer(uint min_seq, int num, int timeout);
     // void removeInterval_updateTimer(unsigned int start, unsigned int end);
 
     void substract(IntervalList* other);
     bool contains(unsigned int start, unsigned int end);
     
     void printIntervals();
-    void printIntervals_withLock();
-
     std::string Intervals2str();
-    std::string Intervals2str_withLock();
 
 private:
-    interval_set Intervals;
-    // std::vector<Interval> Intervals;
-    pthread_mutex_t mutex_intervals;
+    interval_map Intervals;
+    std::shared_mutex smtx;
+
 };
 
 // struct Interval

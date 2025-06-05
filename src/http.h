@@ -26,6 +26,10 @@ public:
 
     // Our code
     ConnStateData* httpServerConnStateData;
+    void optimackReadReply(const char* buf, ssize_t size);
+    // int send_data_to_squid_thread();
+    // std::condition_variable cv_rb;
+
 
     /// assists in making and relaying entry caching/sharing decision
     class ReuseDecision
