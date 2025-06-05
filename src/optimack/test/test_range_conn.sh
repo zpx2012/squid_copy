@@ -36,7 +36,7 @@ k=1
 for ((cnt=0; cnt<5; cnt++)); do
     echo $cnt
     for i in 1;do # 1 3
-       for j in 1 4 8 12 16; do #1 2 7 8
+       for j in 2 6 10; do #1 2 7 8
            for k in 3; do #3 4 5 6
                 iptables -F;
                 iptables -F -t mangle
