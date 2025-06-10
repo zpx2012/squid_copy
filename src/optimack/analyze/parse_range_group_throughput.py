@@ -1,5 +1,6 @@
 import pandas as pd, os, sys, matplotlib.pyplot as plt, numpy as np, re
 from datetime import datetime, timedelta
+from matplotlib.offsetbox import AnchoredText
 
 pd.options.mode.chained_assignment = None
 
@@ -51,11 +52,12 @@ def get_total_recvbytes(dirc, in_file, goodbytes):
 
 
 in_dir = os.path.expanduser(sys.argv[1])
-out_file = sys.argv[2] + "_" + os.path.basename(os.path.abspath(in_dir)) + "_group_throughput.csv"
+date_string = os.path.basename(os.path.abspath(in_dir))
+out_file = in_dir + '/' + sys.argv[2] + "_" + date_string + "_group_throughput.csv"
 lossrate = sys.argv[2].split("loss")[0]
 tag_fields = sys.argv[2].split('_')
-optim_num, fix_num = 0,0
-fix_kw = ''
+optim_num, fix_num, rtt = 0,0,0
+fix_kw, test_kw = '',''
 kw_dict = {'group':1, 'thread':2}
 for field in tag_fields:
     if 'optim' in field:
@@ -63,12 +65,19 @@ for field in tag_fields:
         optim_num = int(subfields[0])
         if 'thread' in subfields[1]:
             fix_kw = 'thread'
+            test_kw = 'group'
         elif 'group' in subfields[1]:
             fix_kw = 'group'
-        fix_num = int(subfields[1].split(fix_kw)[0])
+            test_kw = 'thread'
+        if fix_kw:
+            fix_num = int(subfields[1].split(fix_kw)[0])
+    elif 'ms' in field:
+        rtt = int(field.strip('ms'))
+    elif 'wholeset' in field or 'pareto' in field:
+        fix_kw = 'wholeset'
 print(optim_num, fix_kw, fix_num)
 
-cols = ['thread_num', 'range','range_sum','optim','curl','goodbytes','recvedbytes', 'effi', 'filename']
+cols = ['optim_num', 'group_num', 'thread_num', 'range','range_sum','optim','curl','goodbytes','recvedbytes', 'effi', 'filename']
 df_output = pd.DataFrame(columns = cols)
 with open(out_file, 'w') as outf:
     for root, dirs, files in os.walk(in_dir):
@@ -77,26 +86,35 @@ with open(out_file, 'w') as outf:
             if(in_file.startswith('curl_squid') and in_file.endswith('.txt')) and sys.argv[2] in in_file:
                 configs = get_configs_filename(in_file)
                 # print(configs, optim_num, configs[kw_dict[fix_kw]], fix_num, configs[0] == optim_num, configs[kw_dict[fix_kw]] == fix_num)
-                if configs[0] == optim_num and configs[kw_dict[fix_kw]] == fix_num and (configs[1] < 12):
+                if fix_kw == 'wholeset' or (configs[0] == optim_num and configs[kw_dict[fix_kw]] == fix_num): #and (configs[1] < 12)
                     print("Process: " + in_file)
                     process_file = find_process_file(in_dir, in_file)
                     total_goodbytes = 87548090
                     if process_file:
                         with open(os.path.join(root, in_file), 'r') as inf:
                             lines = list(filter(None, inf.read().splitlines()))
-                            for line in lines[::-1]:
-                                if 'curl: (18)' in line:
-                                    continue
+                            for line in lines[::-1]:                                    
+                                if 'curl: (18)' in line or 'curl: (52)' in line or 'curl: (28) Operation too slow' in line:
+                                    if 'curl: (18)' in line and '83.4M' in lines[::-2]:
+                                        fields = list(filter(None,line.replace('d ','d').split(' ')))
+                                        if int(fields[0]) >= 98:
+                                            lr = re.findall(r'\d+', line)
+                                            total_bytes -= int(lr[1])
+                                            break
+                                    total_goodbytes = 0
+                                    print("\033[31m%s\n\033[0m" % line)
+                                    break
                                 elif 'curl: (28)' in line:
                                     lr = re.findall(r'\d+', line)
                                     total_goodbytes = int(lr[2])
+                                    break
 
                         if not total_goodbytes:
                             continue
 
                         total_recvbytes = get_total_recvbytes(root, in_file, total_goodbytes)
                         # print(total_recvbytes)
-                        df = load_dataframe(process_file)
+                        df = load_dataframe(os.path.join(root, process_file))
                         df = df[ df['seq_start'] <= total_goodbytes ]
                         # 1. check if duration is larger than 59
                         duration = df['time'].iloc[-1] - df['time'].iloc[0]
@@ -114,7 +132,10 @@ with open(out_file, 'w') as outf:
                         range_thrpt = df_range_sum['bytes'].sum()/1024.0/duration
 
                         df_range_sum['range'] = df_range_sum['bytes']/1024.0/duration
-                        df_range_sum['thread_num'] = configs[(kw_dict[fix_kw]+2)%2+1]
+                        df_range_sum['optim_num'] = configs[0]
+                        df_range_sum['group_num'] = configs[1]
+                        df_range_sum['thread_num'] = configs[2]
+
                         df_range_sum['optim'] = optim_thrpt
                         df_range_sum['range_sum'] = range_thrpt
                         df_range_sum['curl'] = (optim_thrpt+range_thrpt)/1000.0
@@ -127,40 +148,44 @@ with open(out_file, 'w') as outf:
                         print(optim_thrpt, range_thrpt, optim_thrpt+range_thrpt, duration)
                             
         break
-                            
+
+
 print(df_output)
 df_output = df_output[ df_output.range > 0 ]
 #df_output = df_output[ df_output.thread_num % 2 == 0]
 df_output.to_csv(out_file, encoding='utf-8',index=False)
 
-fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(14,5))
-#for cl in ['range_sum''curl']:
-axes1 = df_output.boxplot(ax=axes[0], column='curl', by='thread_num', showmeans=True)
-#.title("Optim = 2, Group = 6, Loss Rate = 20%," + cl)
-#plt.suptitle('')
-axes1.set_ylim(0, 11)
-axes1.set_xlabel('')
-axes1.set_ylabel('Goodput(Mpbs)')
-axes1.set_title("Overall Goodput")
+if fix_kw != 'wholeset':
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(9.5,5.5))
+    #for cl in ['range_sum''curl']:
+    axes1 = df_output.boxplot(ax=axes[0], column='curl', by='%s_num' % test_kw, showmeans=True)
+    #.title("Optim = 2, Group = 6, Loss Rate = 20%," + cl)
+    #plt.suptitle('')
+    axes1.set_ylim(0, 11)
+    axes1.set_xlabel('')
+    axes1.set_ylabel('Goodput(Mpbs)')
+    axes1.set_title("Overall Bandwidth")
 
-axes2 = df_output.boxplot(ax=axes[1], column='range_sum', by='thread_num', showmeans=True)
-axes2.set_ylim(0, 1500)
-axes2.set_xlabel('')
-axes2.set_ylabel('Goodput(Kpbs)')
-axes2.set_title("Sum of Range Goodput")
+    axes2 = df_output.boxplot(ax=axes[1], column='range_sum', by='%s_num' % test_kw, showmeans=True)
+    axes2.set_ylim(0, 1100)
+    axes2.set_xlabel('')
+    axes2.set_ylabel('Goodput(Kpbs)')
+    axes2.set_title("Overall Recovery Bandwidth of All Groups")
 
-axes3 = df_output.boxplot(ax=axes[2], column='effi', by='thread_num', showmeans=True)
-axes3.set_ylim(0, 100)
-axes3.set_xlabel('')
-axes3.set_ylabel('Efficiency(%)')
-axes3.set_title("Efficiency")
+    # axes3 = df_output.boxplot(ax=axes[2], column='effi', by='thread_num', showmeans=True)
+    # axes3.set_ylim(0, 1000)
+    # axes3.set_xlabel('')
+    # axes3.set_ylabel('Efficiency(%)')
+    # axes3.set_title("Efficiency")
+    # axes2.text(0.98, 0.98, date_string, ha='right', va='bottom', transform=axes2.transAxes)
 
-xlabels = {'group':'Number of Threads Inside Each Group', 'thread': 'Number of Group'}
+    xlabels = {'group':'Number of Threads Inside Each Group', 'thread': 'Number of Group'}
 
-fig.add_subplot(111, frameon=False)
-plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
-plt.grid(False)
-plt.xlabel(xlabels[fix_kw]) #Groups, 
-fig.suptitle("Optim = %d, %s = %d, Loss Rate = %s" % (optim_num, fix_kw.capitalize(), fix_num, lossrate) + '%')
-plt.savefig(out_file.replace('.csv', 'curl_range_sum.png'), bbox_inches="tight")
+    fig.add_subplot(111, frameon=False)
+    plt.figtext(0.98, 0.08, date_string, ha='right', va='bottom', transform=fig.transFigure)
+    plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+    plt.grid(False)
+    plt.xlabel(xlabels[fix_kw]) #Groups, 
+    fig.suptitle("Optim = %d, %s = %d, Loss Rate = %s%%, RTT = %dms" % (optim_num, fix_kw.capitalize(), fix_num, lossrate, rtt))
+    plt.savefig(out_file.replace('.csv', 'curl_range_sum.png'), bbox_inches="tight")
 

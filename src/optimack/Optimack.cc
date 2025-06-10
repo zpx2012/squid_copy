@@ -42,7 +42,7 @@ const int print_per_sec_on = true;
 
 
 #ifndef CONN_NUM
-#define CONN_NUM 3
+#define CONN_NUM 2
 #endif
 
 #ifndef ACKPACING
@@ -1798,8 +1798,143 @@ void free_thr_data(struct thread_data* thr_data, char* str){
     }
 }
 
+
+int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data){
+    unsigned char* packet;
+    int packet_len = nfq_get_payload(nfa, &packet);
+
+    struct nfqnl_msg_packet_hdr *ph;
+    ph = nfq_get_msg_packet_hdr(nfa);
+    if (!ph) {
+        printf("cb: can't get_msg_packet_hdr\n");
+        return -1;
+    }
+    // int pkt_id = htonl(ph->packet_id);
+    // print_func("cb_range: pkt %d", ph->packet_id);
+
+
+    struct myiphdr *iphdr = ip_hdr(packet);
+    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    unsigned char *payload = tcp_payload(packet);
+    int payload_len = htons(iphdr->tot_len) - iphdr->ihl*4 - tcphdr->th_off*4;
+    unsigned short sport = ntohs(tcphdr->th_sport);
+    unsigned short dport = ntohs(tcphdr->th_dport);
+    unsigned int seq = htonl(tcphdr->th_seq);
+    unsigned int ack = htonl(tcphdr->th_ack);
+
+    unsigned short local_port = dport;
+    bool incoming = true;
+    if(dport == 80 || dport == 443){
+        local_port = sport;
+        incoming = false;
+    }
+    
+
+    auto find_ret = allconns.find(local_port);
+    if (find_ret == allconns.end()) {
+        nfq_set_verdict(qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
+        // printf("cb: can't find local port %d\n", local_port);
+        // printf("letting through\n");
+        return -1;
+    }
+    subconn_info* subconn = (find_ret->second);
+    Optimack* obj = subconn->optack;
+    if(!obj){
+        printf("cb: subconn's optmack is null!\n");
+        return -1;
+    }
+
+    short protocol = iphdr->protocol;
+    if(protocol == 6){
+        if(!incoming){
+            switch (tcphdr->th_flags) {
+                case TH_ACK:
+                case TH_ACK | TH_PUSH:
+                {
+                    pthread_mutex_lock(&subconn->mutex_opa);
+                    if(!subconn->seq_init){
+                        subconn->ini_seq_rem = ack - 1;
+                        subconn->next_seq_rem = ack;
+                        subconn->ini_seq_loc = seq - 1;
+                        subconn->next_seq_loc = seq + payload_len;
+                        subconn->seq_init = true;
+                        print_func("R%d-%d: seq_init done - ini_seq_rem 0x%x(%u), ini_seq_loc 0x%x(%u)\n", subconn->id, local_port, subconn->ini_seq_rem, subconn->ini_seq_rem, subconn->ini_seq_loc, subconn->ini_seq_loc);
+                        // setsockopt(subconn->sockfd, SOL_SOCKET, SO_MARK, &MARK, sizeof(MARK));
+                        
+                    }
+                    pthread_mutex_unlock(&subconn->mutex_opa);
+
+                    if(subconn->seq_init){
+                        if(payload_len && ack > subconn->next_seq_rem){
+                            tcphdr->th_ack = htonl(subconn->next_seq_rem);
+                            compute_checksums(packet, 20, packet_len);
+                            // print_func("[Range]R%d-%d: change ack %x to %x", subconn->id, local_port, ack, subconn->next_seq_rem);
+                        }
+
+                    }
+                    break;
+                }
+                default:
+                    print_func("[cb_range]R%d-%d: Unknown outgoing packet flag - %d!", subconn->id, local_port, tcphdr->th_flags);
+                    break;
+            }
+        }
+        else{
+            if(subconn->seq_init && seq > subconn->ini_seq_rem){
+
+
+                if(subconn->next_seq_loc < ack)
+                    subconn->next_seq_loc = ack;
+                if(subconn->next_seq_rem < seq + payload_len)
+                    subconn->next_seq_rem = seq + payload_len;
+
+                unsigned int seq_rel = seq - subconn->ini_seq_rem;
+                // if(subconn->id % 100 == 0){
+                //     print_func("[Range]R%d: %d -> %d <%d> seq %d(%x) ack %d(%x) ttl %u plen %d", subconn->id,  sport, dport, (tcphdr->th_flags), seq_rel, seq, ack, ack, iphdr->ttl, payload_len);
+                //     nfq_set_verdict(qh, htonl(ph->packet_id), NF_DROP, packet_len, packet);
+                //     return -1;
+                // }
+
+                switch (tcphdr->th_flags) {
+                    case TH_ACK:
+                    case TH_ACK | TH_PUSH:
+                    case TH_ACK | TH_URG:
+                    {
+                        if(payload_len){
+                            interval_map temp_range = obj->recved_seq.removeInterval(seq_rel, seq_rel + payload_len);
+                            // if(temp_range.size()){
+                                
+                            // }
+
+                            if(temp_range.size()){
+                                for (auto it = allconns.begin(); it != allconns.end(); it++)
+                                    if(!it->second->is_backup && it->second != subconn){
+
+                                        send_ACK_payload(obj->g_local_ip, obj->g_remote_ip, it->second->local_port, 80, payload, payload_len, it->second->next_seq_loc, it->second->ini_seq_rem+seq_rel);
+                                        // print_func("[Range]R%d-%d: [%d, %d] data sent to R%d-%d, ack %x, seq %x, %d, %s, %s", subconn->id, subconn->port, seq_rel, seq_rel + payload_len, conn->id, conn->port, conn->next_seq_loc, conn->ini_seq_rem+seq_rel, g_remote_port, g_local_ip, g_remote_ip);
+                                    }
+                            }
+                        }
+                        
+                    }
+                    break;
+                    default:
+                        print_func("[cb_range]R%d-%d: Unknown incoming packet flag - %d!",subconn->id, subconn->local_port, tcphdr->th_flags);
+                        break;
+                }
+            }
+
+        }
+    }
+    nfq_set_verdict(qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
+    return 0;
+
+}
+
+
+
 int 
-cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
+cb_original(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
     double cb_start = get_current_epoch_time_nanosecond();
     unsigned char* packet;
@@ -3816,8 +3951,8 @@ int Optimack::open_duplicate_conns(){
 
     if (RANGE_MODE) {
         range_stop = 0;
-        range_thread = std::thread(&Optimack::range_watch_multi, getptr());
-        range_thread.detach();
+        // range_thread = std::thread(&Optimack::range_watch_multi, getptr());
+        // range_thread.detach();
     }
 
     if (BACKUP_MODE){

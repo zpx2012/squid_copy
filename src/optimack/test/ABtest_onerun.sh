@@ -42,12 +42,12 @@ rm /var/optack.log
 function cleanup()
 {
     sleep 2
-    sudo ~/squid/sbin/squid -k interrupt
+    sudo  /usr/local/squid/sbin/squid -k interrupt
     sleep 5
     if screen -ls | grep 'squid'; 
     then
         # exit
-        sudo ~/squid/sbin/squid -k kill
+        sudo  /usr/local/squid/sbin/squid -k kill
     fi
     sudo killall squid
     # bash ~/squid_copy/src/optimack/test/ks.sh normal
@@ -67,7 +67,7 @@ trap INT_handler SIGINT
 
 #-s 400
 screen -dmS td tcpdump -w $tcpdump_out host $site and tcp port 80 -s 400
-screen -dmS squid bash -c "sudo ~/squid/sbin/squid -N 2>&1 >$squid_log"
+screen -dmS squid bash -c "sudo /usr/local/squid/sbin/squid -N 2>&1 >$squid_log"
 sleep 2
 
 # echo Start: $(date -Iseconds) >> $normal_out
