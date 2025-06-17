@@ -40,9 +40,10 @@ const int debug_rb = false;
 const int debug_recvseq = false;
 const int print_per_sec_on = true;
 
+#define COLLETIVE_MODE 1
 
 #ifndef CONN_NUM
-#define CONN_NUM 2
+#define CONN_NUM 1
 #endif
 
 #ifndef ACKPACING
@@ -1709,82 +1710,7 @@ void log_seq(FILE* file, int port, uint seq){
 //     return 0;
 // }
 
-// static int 
-// cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
-// {
-//     Optimack* obj = (Optimack*)data;
-//     unsigned char* packet;
-//     int packet_len = nfq_get_payload(nfa, &packet);
 
-//     if(obj->cb_stop)
-//         return -1;
-
-//     // sanity check, could be abbr later
-//     struct nfqnl_msg_packet_hdr *ph;
-//     ph = nfq_get_msg_packet_hdr(nfa);
-//     // print_func("P%d: hook %d\n", ph->packet_id, ph->hook);
-//     if (!ph) {
-//         // debugs(0, DBG_CRITICAL,"nfq_get_msg_packet_hdr failed");
-//         return -1;
-//     }
-
-//     struct myiphdr *iphdr = ip_hdr(packet);
-//     // struct mytcphdr *tcphdr = tcp_hdr(packet);
-//     //unsigned char *payload = tcp_payload(thr_data->buf);
-//     // unsigned int payload_len = packet_len - iphdr->ihl*4 - tcphdr->th_off*4;
-//     char sip[16], dip[16];
-//     ip2str(iphdr->saddr, sip);
-//     ip2str(iphdr->daddr, dip);
-
-//     //char log[LOGSIZE];
-//     //sprintf(log, "%s:%d -> %s:%d <%s> seq %x ack %x ttl %u plen %d", sip, ntohs(tcphdr->th_sport), dip, ntohs(tcphdr->th_dport), tcp_flags_str(tcphdr->th_flags), tcphdr->th_seq, tcphdr->th_ack, iphdr->ttl, payload_len);
-//     //debugs(0, DBG_CRITICAL, log);
-
-//     struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
-//     if (!thr_data)
-//     {
-//         // debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
-//         return -1;
-//     }
-//     // print_func("malloc thr_data %p\n", thr_data);
-//     memset(thr_data, 0, sizeof(struct thread_data));
-//     thr_data->pkt_id = htonl(ph->packet_id);
-//     thr_data->len = packet_len;
-//     thr_data->buf = (unsigned char *)malloc(packet_len+1);
-//     thr_data->obj = obj;
-//     thr_data->ttl = 10;
-//     if (!thr_data->buf){
-//             // debugs(0, DBG_CRITICAL, "cb: error during malloc");
-//         print_func("free thr_data %p\n", thr_data);
-//         free(thr_data);
-//         return -1;
-//     }
-//     memcpy(thr_data->buf, packet, packet_len);
-//     thr_data->buf[packet_len] = 0;
-//     // print_func("in cb: packet_len %d\nthr_data->buf", packet_len);
-//     // hex_dump(thr_data->buf, packet_len);
-//     // print_func("packet:\n");
-//     // hex_dump(packet, packet_len);
-//     if(forward_packet)
-//         nfq_set_verdict(obj->g_nfq_qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
-
-
-//     if(multithread == 0)
-//         pool_handler((void *)thr_data);
-//     else{
-//         if(use_boost_pool){
-//             if(obj->boost_pool)
-//                 boost::asio::post(*obj->boost_pool, [thr_data]{ pool_handler((void *)thr_data); });
-//         }
-//         else{
-//             if(obj->oracle_pool && thr_pool_queue(obj->oracle_pool, pool_handler, (void *)thr_data) < 0) {
-//                 print_func("cb: error during thr_pool_queue");
-//                 return -1;
-//             }
-//         }
-//     }
-//     return 0;
-// }
 
 void free_thr_data(struct thread_data* thr_data, char* str){
     if(thr_data){
@@ -1798,7 +1724,102 @@ void free_thr_data(struct thread_data* thr_data, char* str){
     }
 }
 
+#ifndef COLLETIVE_MODE
+int 
+cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
+{
+    double cb_start = get_current_epoch_time_nanosecond();
+    unsigned char* packet;
+    int packet_len = nfq_get_payload(nfa, &packet);
 
+    // sanity check, could be abbr later
+    struct nfqnl_msg_packet_hdr *ph;
+    ph = nfq_get_msg_packet_hdr(nfa);
+    if (!ph) {
+        printf("cb: can't get_msg_packet_hdr\n");
+        return -1;
+    }
+    int pkt_id = htonl(ph->packet_id);
+
+    struct myiphdr *iphdr = ip_hdr(packet);
+    struct mytcphdr *tcphdr = tcp_hdr(packet);
+    unsigned short sport = ntohs(tcphdr->th_sport);
+    unsigned short dport = ntohs(tcphdr->th_dport);
+    unsigned short local_port;
+    bool incoming = true;
+    if(sport == 80 || sport == 443)
+        local_port = dport;
+    else{
+        local_port = sport;
+        incoming = false;
+    }
+    auto find_ret = allconns.find(local_port);
+    if (find_ret == allconns.end()) {
+        nfq_set_verdict(qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
+        // printf("cb: can't find local port %d\n", local_port);
+        // printf("letting through\n");
+        return -1;
+    }
+    subconn_info* subconn = (find_ret->second);
+    Optimack* obj = subconn->optack;
+
+    // printf("delay, %d, cb_start, %f, port, %d, obj, %p\n", pkt_id, get_current_epoch_time_nanosecond(), obj->squid_port, obj);
+
+
+    if(!obj){
+        printf("cb: subconn's optmack is null!\n");
+        return -1;
+    }
+    
+
+    struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
+    if (!thr_data)
+    {
+        // debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
+        return -1;
+    }
+    // print_func("malloc thr_data %p\n", thr_data);
+    memset(thr_data, 0, sizeof(struct thread_data));
+    thr_data->pkt_id = pkt_id;
+    thr_data->len = packet_len;
+    thr_data->buf = (unsigned char *)malloc(packet_len+1);
+    thr_data->incoming = incoming;
+    thr_data->subconn = subconn;
+    thr_data->obj = subconn->optack;
+    thr_data->ttl = 10;
+    thr_data->timestamps.push_back(cb_start);
+    thr_data->qh = qh;
+    if (!thr_data->buf){
+            // debugs(0, DBG_CRITICAL, "cb: error during malloc");
+        printf("free thr_data %p\n", thr_data);
+        free(thr_data);
+        return -1;
+    }
+    memcpy(thr_data->buf, packet, packet_len);
+    thr_data->buf[packet_len] = 0;
+
+    if(!forward_packet)
+        nfq_set_verdict(qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
+
+
+    if(multithread == 0)
+        pool_handler((void *)thr_data);
+    else{
+        if(use_boost_pool){
+            if(obj->boost_pool)
+                boost::asio::post(*obj->boost_pool, [thr_data]{ pool_handler((void *)thr_data); });
+        }
+        else{
+            if(obj->oracle_pool && thr_pool_queue(obj->oracle_pool, pool_handler, (void *)thr_data) < 0) {
+                printf("cb: error during thr_pool_queue");
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+#else
 int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data){
     unsigned char* packet;
     int packet_len = nfq_get_payload(nfa, &packet);
@@ -1930,102 +1951,10 @@ int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, vo
     return 0;
 
 }
+#endif
 
 
 
-int 
-cb_original(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
-{
-    double cb_start = get_current_epoch_time_nanosecond();
-    unsigned char* packet;
-    int packet_len = nfq_get_payload(nfa, &packet);
-
-    // sanity check, could be abbr later
-    struct nfqnl_msg_packet_hdr *ph;
-    ph = nfq_get_msg_packet_hdr(nfa);
-    if (!ph) {
-        printf("cb: can't get_msg_packet_hdr\n");
-        return -1;
-    }
-    int pkt_id = htonl(ph->packet_id);
-
-    struct myiphdr *iphdr = ip_hdr(packet);
-    struct mytcphdr *tcphdr = tcp_hdr(packet);
-    unsigned short sport = ntohs(tcphdr->th_sport);
-    unsigned short dport = ntohs(tcphdr->th_dport);
-    unsigned short local_port;
-    bool incoming = true;
-    if(sport == 80 || sport == 443)
-        local_port = dport;
-    else{
-        local_port = sport;
-        incoming = false;
-    }
-    auto find_ret = allconns.find(local_port);
-    if (find_ret == allconns.end()) {
-        nfq_set_verdict(qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
-        // printf("cb: can't find local port %d\n", local_port);
-        // printf("letting through\n");
-        return -1;
-    }
-    subconn_info* subconn = (find_ret->second);
-    Optimack* obj = subconn->optack;
-
-    // printf("delay, %d, cb_start, %f, port, %d, obj, %p\n", pkt_id, get_current_epoch_time_nanosecond(), obj->squid_port, obj);
-
-
-    if(!obj){
-        printf("cb: subconn's optmack is null!\n");
-        return -1;
-    }
-    
-
-    struct thread_data* thr_data = (struct thread_data*)malloc(sizeof(struct thread_data));
-    if (!thr_data)
-    {
-        // debugs(0, DBG_CRITICAL, "cb: error during thr_data malloc");
-        return -1;
-    }
-    // print_func("malloc thr_data %p\n", thr_data);
-    memset(thr_data, 0, sizeof(struct thread_data));
-    thr_data->pkt_id = pkt_id;
-    thr_data->len = packet_len;
-    thr_data->buf = (unsigned char *)malloc(packet_len+1);
-    thr_data->incoming = incoming;
-    thr_data->subconn = subconn;
-    thr_data->obj = subconn->optack;
-    thr_data->ttl = 10;
-    thr_data->timestamps.push_back(cb_start);
-    thr_data->qh = qh;
-    if (!thr_data->buf){
-            // debugs(0, DBG_CRITICAL, "cb: error during malloc");
-        printf("free thr_data %p\n", thr_data);
-        free(thr_data);
-        return -1;
-    }
-    memcpy(thr_data->buf, packet, packet_len);
-    thr_data->buf[packet_len] = 0;
-
-    if(!forward_packet)
-        nfq_set_verdict(qh, thr_data->pkt_id, NF_ACCEPT, packet_len, packet);
-
-
-    if(multithread == 0)
-        pool_handler((void *)thr_data);
-    else{
-        if(use_boost_pool){
-            if(obj->boost_pool)
-                boost::asio::post(*obj->boost_pool, [thr_data]{ pool_handler((void *)thr_data); });
-        }
-        else{
-            if(obj->oracle_pool && thr_pool_queue(obj->oracle_pool, pool_handler, (void *)thr_data) < 0) {
-                printf("cb: error during thr_pool_queue");
-                return -1;
-            }
-        }
-    }
-    return 0;
-}
 
 
 void* 
@@ -3951,8 +3880,10 @@ int Optimack::open_duplicate_conns(){
 
     if (RANGE_MODE) {
         range_stop = 0;
-        // range_thread = std::thread(&Optimack::range_watch_multi, getptr());
-        // range_thread.detach();
+#ifndef COLLETIVE_MODE
+        range_thread = std::thread(&Optimack::range_watch_multi, getptr());
+        range_thread.detach();
+#endif
     }
 
     if (BACKUP_MODE){

@@ -5,7 +5,7 @@ from matplotlib.offsetbox import AnchoredText
 pd.options.mode.chained_assignment = None
 
 def load_dataframe(in_file):
-    df = pd.read_csv(in_file, sep=',',error_bad_lines=False).dropna(how='any')#.drop_duplicates(subset=['is_range','conn','seq_start','seq_end'], keep='first')
+    df = pd.read_csv(in_file, sep=',').dropna(how='any')#.drop_duplicates(subset=['is_range','conn','seq_start','seq_end'], keep='first'),error_bad_lines=False
     df['time'] = pd.to_numeric(df['time'],errors='ignore')
     df['seq_start'] = pd.to_numeric(df['seq_start'],errors='ignore')
     df['seq_end'] = pd.to_numeric(df['seq_end'],errors='ignore')
@@ -93,7 +93,8 @@ with open(out_file, 'w') as outf:
                     if process_file:
                         with open(os.path.join(root, in_file), 'r') as inf:
                             lines = list(filter(None, inf.read().splitlines()))
-                            for line in lines[::-1]:                                    
+                            for line in lines[::-1]: 
+                                print(line)                                   
                                 if 'curl: (18)' in line or 'curl: (52)' in line or 'curl: (28) Operation too slow' in line:
                                     if 'curl: (18)' in line and '83.4M' in lines[::-2]:
                                         fields = list(filter(None,line.replace('d ','d').split(' ')))
@@ -186,6 +187,6 @@ if fix_kw != 'wholeset':
     plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
     plt.grid(False)
     plt.xlabel(xlabels[fix_kw]) #Groups, 
-    fig.suptitle("Optim = %d, %s = %d, Loss Rate = %s%%, RTT = %dms" % (optim_num, fix_kw.capitalize(), fix_num, lossrate, rtt))
+    fig.suptitle("Optim = %d, %s = %d, China-Shenzhen" % (optim_num, fix_kw.capitalize(), fix_num)) # lossrate, rtt)
     plt.savefig(out_file.replace('.csv', 'curl_range_sum.png'), bbox_inches="tight")
 
