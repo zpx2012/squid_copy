@@ -33,7 +33,8 @@ sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/
 j=1
 k=1
 
-lossrate_log = ~/rs/ABtest_onerun/$(date +%Y-%m-%d)/lossrate_$(date +%Y%m%d%H%M%S).csv
+mkdir -p ~/rs/ABtest_onerun/$(date +%Y-%m-%d)/
+lossrate_log=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/lossrate_$(date +%Y%m%d%H%M%S).csv
 
 cd ~/squid_copy/src/optimack/test
 g++ -std=c++17 -o http_oack_client http_oack_client.cpp -lnetfilter_queue -lmnl -lpthread -lboost_system
@@ -58,7 +59,7 @@ for ((cnt=0; cnt<5; cnt++)); do
 
                 while true ; do
                      curl_singlerun=~/curl_proxy_singlerun_$(date +%s)
-                     |~/squid_copy/src/optimack/test/http_oack_client 161.35.100.102 80 /ubuntu-16.04.6-server-i386.template 15 | tee $curl_singlerun
+                     ~/squid_copy/src/optimack/test/http_oack_client 161.35.100.102 80 /ubuntu-16.04.6-server-i386.template 15 | tee $curl_singlerun
                      cat ${curl_singlerun} >> ${lossrate_log}
                      if grep -q "True" ${curl_singlerun};
                      then
