@@ -86,7 +86,7 @@ with open(out_file, 'w') as outf:
             if(in_file.startswith('curl_squid') and in_file.endswith('.txt')) and sys.argv[2] in in_file:
                 configs = get_configs_filename(in_file)
                 # print(configs, optim_num, configs[kw_dict[fix_kw]], fix_num, configs[0] == optim_num, configs[kw_dict[fix_kw]] == fix_num)
-                if fix_kw == 'wholeset' or (configs[0] == optim_num and configs[kw_dict[fix_kw]] == fix_num): #and (configs[1] < 12)
+                if fix_kw == '' or fix_kw == 'wholeset' or (configs[0] == optim_num and configs[kw_dict[fix_kw]] == fix_num): #and (configs[1] < 12)
                     print("Process: " + in_file)
                     process_file = find_process_file(in_dir, in_file)
                     total_goodbytes = 87548090
@@ -156,7 +156,7 @@ df_output = df_output[ df_output.range > 0 ]
 #df_output = df_output[ df_output.thread_num % 2 == 0]
 df_output.to_csv(out_file, encoding='utf-8',index=False)
 
-if fix_kw != 'wholeset':
+if  fix_kw == '' or fix_kw != 'wholeset':
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(9.5,5.5))
     #for cl in ['range_sum''curl']:
     axes1 = df_output.boxplot(ax=axes[0], column='curl', by='%s_num' % test_kw, showmeans=True)

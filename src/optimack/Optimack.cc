@@ -40,10 +40,10 @@ const int debug_rb = false;
 const int debug_recvseq = false;
 const int print_per_sec_on = true;
 
-#define COLLETIVE_MODE 1
+// #define COLLETIVE_MODE 1
 
 #ifndef CONN_NUM
-#define CONN_NUM 1
+#define CONN_NUM 3
 #endif
 
 #ifndef ACKPACING
@@ -1724,6 +1724,16 @@ void free_thr_data(struct thread_data* thr_data, char* str){
     }
 }
 
+
+void send_partial_optack(char* sip, char* dip, unsigned short srcport, unsigned short dstport, subconn_info* subconn, uint seq, uint ack_start, uint ack_end, uint step){
+    for(uint ack_i = ack_start; ack_i < ack_end; ack_i += step){
+        send_ACK(dip, sip, 80, subconn->local_port, empty_payload, ack_i, seq, subconn->rwnd);
+        usleep(500);
+    }
+}
+
+
+
 #ifndef COLLETIVE_MODE
 int 
 cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
@@ -1854,8 +1864,8 @@ int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, vo
     auto find_ret = allconns.find(local_port);
     if (find_ret == allconns.end()) {
         nfq_set_verdict(qh, htonl(ph->packet_id), NF_ACCEPT, packet_len, packet);
-        // printf("cb: can't find local port %d\n", local_port);
-        // printf("letting through\n");
+        printf("cb: can't find local port %d\n", local_port);
+        printf("letting through\n");
         return -1;
     }
     subconn_info* subconn = (find_ret->second);
@@ -1886,11 +1896,28 @@ int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, vo
                     pthread_mutex_unlock(&subconn->mutex_opa);
 
                     if(subconn->seq_init){
-                        if(payload_len && ack > subconn->next_seq_rem){
-                            tcphdr->th_ack = htonl(subconn->next_seq_rem);
-                            compute_checksums(packet, 20, packet_len);
+                        subconn->rwnd = htons(tcphdr->th_win);
+                        if(subconn->id == 0){
+                            obj->cur_ack_rel = ack - subconn->ini_seq_rem;
+                        }
+
+                        if(ack > subconn->next_seq_rem){
+
+                            if(ack != subconn->last_next_seq_rem || elapsed(subconn->last_restart_time) > 1){
+                                std::thread send_ack_worker = std::thread(send_partial_optack, obj->g_local_ip, obj->g_remote_ip, subconn->local_port, 80, subconn, seq, subconn->next_seq_rem, ack, obj->squid_MSS);
+                                send_ack_worker.detach();
+                                subconn->last_restart_time = std::chrono::system_clock::now();
+                                subconn->last_next_seq_rem = ack;
+                            }
+                            //  nfq_set_verdict(qh, htonl(ph->packet_id), NF_DROP, packet_len, packet);
+                            //  return -1;
+
+                            // tcphdr->th_ack = htonl(subconn->next_seq_rem);
+                            // compute_checksums(packet, 20, packet_len);
                             // print_func("[Range]R%d-%d: change ack %x to %x", subconn->id, local_port, ack, subconn->next_seq_rem);
                         }
+
+
 
                     }
                     break;
@@ -1932,9 +1959,15 @@ int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, vo
                                     if(!it->second->is_backup && it->second != subconn){
 
                                         send_ACK_payload(obj->g_local_ip, obj->g_remote_ip, it->second->local_port, 80, payload, payload_len, it->second->next_seq_loc, it->second->ini_seq_rem+seq_rel);
-                                        // print_func("[Range]R%d-%d: [%d, %d] data sent to R%d-%d, ack %x, seq %x, %d, %s, %s", subconn->id, subconn->port, seq_rel, seq_rel + payload_len, conn->id, conn->port, conn->next_seq_loc, conn->ini_seq_rem+seq_rel, g_remote_port, g_local_ip, g_remote_ip);
                                     }
+                                print_func("[Range]R%d-%d: [%d, %d] data sent to others", subconn->id, subconn->local_port, seq_rel, seq_rel + payload_len);
+                                
                             }
+                            //  else if(seq_rel + payload_len < obj->cur_ack_rel) {
+                            //     for(uint seq_i = seq_rel+payload_len; seq_i < obj->cur_ack_rel; seq_i += obj->squid_MSS){
+				            //     send_ACK(obj->g_remote_ip, obj->g_local_ip, 80, subconn->local_port, empty_payload,subconn->ini_seq_rem+seq_i+payload_len, ack, subconn->rwnd);
+                            //     print_func("send_ACK: %s:%d->%s:%d SEQ %x, ACK %x", obj->g_local_ip, subconn->local_port, obj->g_remote_ip, 80, subconn->ini_seq_rem+seq_i+payload_len, ack);
+            			    //  }
                         }
                         
                     }
@@ -1952,7 +1985,6 @@ int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, vo
 
 }
 #endif
-
 
 
 
@@ -2070,7 +2102,11 @@ void Optimack::print_seq_table(){
     printf("%12s%12u", "Next_seq_rem", recved_seq.getFirstStart());
     // for (auto const& [port, subconn] : subconn_infos){
     for (auto it = subconn_infos.begin(); it != subconn_infos.end(); it++){
+#ifndef COLLETIVE_MODE
         printf("%12u", it->second->next_seq_rem);
+#else
+        printf("%12u", it->second->next_seq_rem - it->second->ini_seq_rem);
+#endif
     }
     printf("\n");
 
@@ -2198,6 +2234,7 @@ void* overrun_detector(void* arg){
             deadline.tv_sec++;
             clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
         }
+#ifndef COLLETIVE_MODE        
         if(++count == 10){
             for (auto it = obj->subconn_infos.begin(); it != obj->subconn_infos.end(); it++){
                 if(it->second->next_seq_rem < 2){
@@ -2218,7 +2255,9 @@ void* overrun_detector(void* arg){
                 exit(-1);
             }
         }
+#endif    
     }
+
     // free(timers);
     log_info("overrun_detector thread ends");
     print_func("overrun_detector thread ends\n");
@@ -2354,8 +2393,9 @@ void Optimack::send_request(char* rq, int rq_len){
     print_func("S%d-%d: send_request(%p): send request len %d, request:\n%s\n", 0, squid_port, this, rq_len, rq);
 
     if(CONN_NUM > 1){
-        request_thread = std::thread(&Optimack::send_all_requests, getptr());
-        request_thread.detach();
+        send_all_requests();
+        // request_thread = std::thread(&Optimack::send_all_requests, getptr());
+        // request_thread.detach();
         // pthread_t request_thread;
         // if (pthread_create(&request_thread, NULL, send_all_requests, (void*)this) != 0) {
         //     log_error("Fail to create send_all_requests thread.");
@@ -3878,12 +3918,11 @@ int Optimack::open_duplicate_conns(){
         // open_one_duplicate_conn(subconn_infos, false);
     }
 
+#ifndef COLLETIVE_MODE
     if (RANGE_MODE) {
         range_stop = 0;
-#ifndef COLLETIVE_MODE
         range_thread = std::thread(&Optimack::range_watch_multi, getptr());
         range_thread.detach();
-#endif
     }
 
     if (BACKUP_MODE){
@@ -3894,7 +3933,7 @@ int Optimack::open_duplicate_conns(){
             // open_one_duplicate_conn(subconn_infos, true);
         }
     }
-
+#endif
     if(print_per_sec_on && overrun_stop == -1){
         overrun_stop++;
         if (pthread_create(&overrun_thread, NULL, overrun_detector, (void*)this) != 0) {
@@ -3902,6 +3941,7 @@ int Optimack::open_duplicate_conns(){
         }
         print_func("S%d: overrun thread created\n", squid_port);
     }
+
     print_func("open_duplicate_conns: exiting...\n");
     return 0;
 }

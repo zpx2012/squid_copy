@@ -33,6 +33,11 @@ sed -i "s/define RANGE_MODE .*/define RANGE_MODE 1/g" ~/squid_copy/src/optimack/
 j=1
 k=1
 
+lossrate_log = ~/rs/ABtest_onerun/$(date +%Y-%m-%d)/lossrate_$(date +%Y%m%d%H%M%S).csv
+
+cd ~/squid_copy/src/optimack/test
+g++ -std=c++17 -o http_oack_client http_oack_client.cpp -lnetfilter_queue -lmnl -lpthread -lboost_system
+
 for ((cnt=0; cnt<5; cnt++)); do
     echo $cnt
     for i in 1;do # 1 3
@@ -53,14 +58,16 @@ for ((cnt=0; cnt<5; cnt++)); do
 
                 while true ; do
                      curl_singlerun=~/curl_proxy_singlerun_$(date +%s)
-                     curl -LJ4vk -o /dev/null -m 10 $url 2>&1 | tee $curl_singlerun
-                     if python ~/squid_copy/src/optimack/test/is_slowdown.py $curl_singlerun | grep -q "True";
+                     |~/squid_copy/src/optimack/test/http_oack_client 161.35.100.102 80 /ubuntu-16.04.6-server-i386.template 15 | tee $curl_singlerun
+                     cat ${curl_singlerun} >> ${lossrate_log}
+                     if grep -q "True" ${curl_singlerun};
                      then
                          break
                      else
                          echo "Not in slowdown, sleep 120"
                          sleep 120
                      fi
+                     rm ${curl_singlerun}
                  done
  
                 bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn ${i}optim+${j}*${k}range_${cnt}_$1 $site $url
