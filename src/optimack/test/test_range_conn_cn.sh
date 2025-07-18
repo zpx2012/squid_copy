@@ -35,15 +35,15 @@ k=1
 
 mkdir -p ~/rs/ABtest_onerun/$(date +%Y-%m-%d)/
 lossrate_log=~/rs/ABtest_onerun/$(date +%Y-%m-%d)/lossrate_$(date +%Y%m%d%H%M%S).csv
-
+last_curl_singlerun=~/curl_singlerun
 cd ~/squid_copy/src/optimack/test
 g++ -std=c++17 -o http_oack_client http_oack_client.cpp -lnetfilter_queue -lmnl -lpthread -lboost_system
 
-for ((cnt=0; cnt<5; cnt++)); do
+for ((cnt=0; cnt<15; cnt++)); do
     echo $cnt
-    for i in 1;do # 1 3
-        for j in 4 6 8 10; do #1 2 7 8
-            for k in 3; do #3 4 5 6
+    for i in 2 1;do # 1 3
+        for k in 5 4 3; do #3 4 5 6
+           for j in 4 6 8 10 12; do #1 2 7 8
                 iptables -F;
                 iptables -F -t mangle
                 sed -i "s/define CONN_NUM .*/define CONN_NUM ${i}/g" ~/squid_copy/src/optimack/Optimack.cc
@@ -59,19 +59,25 @@ for ((cnt=0; cnt<5; cnt++)); do
 
                 while true ; do
                      curl_singlerun=~/curl_proxy_singlerun_$(date +%s)
-                     ~/squid_copy/src/optimack/test/http_oack_client 161.35.100.102 80 /ubuntu-16.04.6-server-i386.template 15 | tee $curl_singlerun
+                     ~/squid_copy/src/optimack/test/http_oack_client 161.35.100.102 80 /ubuntu-16.04.6-server-i386.template 60 | tee $curl_singlerun
                      cat ${curl_singlerun} >> ${lossrate_log}
                      if grep -q "True" ${curl_singlerun};
                      then
-                         break
+			 #if grep -q "True" ${last_curl_singlerun};
+			 #then
+                              break
+			 #else
+	                 #     sleep 60
+			 #fi
                      else
                          echo "Not in slowdown, sleep 120"
                          sleep 120
                      fi
-                     rm ${curl_singlerun}
+                     rm ${last_curl_singlerun}
+		     last_curl_singlerun=${curl_singlerun}
                  done
  
-                bash ~/squid_copy/src/optimack/test/ABtest_onerun.sh conn ${i}optim+${j}*${k}range_${cnt}_$1 $site $url
+                bash ~/squid_copy/src/optimack/test/ABtest_onerun_cn.sh conn ${i}optim+${j}*${k}range_${cnt}_$1 $site $url
                 sudo sh -c 'echo 3 >  /proc/sys/vm/drop_caches'
                 sudo sync && echo 1 > /proc/sys/vm/drop_caches
                 sleep 60    

@@ -36,19 +36,117 @@ def get_configs_filename(in_file):
     return output
 
 
-def get_total_recvbytes(dirc, in_file, goodbytes):
+import pandas as pd
+
+def calculate_loss_rate_from_file(df):
+    """
+    Calculates the packet loss rate from a tshark capture file in CSV format.
+
+    Args:
+        file_path (str): The path to the CSV file.
+
+    Returns:
+        float: The estimated loss rate, or None if calculation is not possible.
+    """
+    try:
+
+        # Data cleaning: convert columns to numeric, coercing errors
+        for col in ['data_len', 'tcp_seq_rel']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Drop rows where essential data is missing
+        df.dropna(subset=['data_len', 'tcp_seq_rel', 'src_ip'], inplace=True)
+
+        # Cast to integer types
+        df['data_len'] = df['data_len'].astype(int)
+        df['tcp_seq_rel'] = df['tcp_seq_rel'].astype(int)
+
+
+        # Let's determine the server's IP.
+        server_ip = df.groupby('src_ip')['data_len'].sum().idxmax()
+        print(f"Identified server IP: {server_ip}")
+
+        # Filter for packets sent by the server and with data
+        server_df = df[(df['src_ip'] == server_ip) & (df['data_len'] > 0)].copy()
+
+        if server_df.empty:
+            print("No data packets from the server found.")
+            return None
+
+        # Create a list of (sequence_number, type) points
+        points = []
+        for index, row in server_df.iterrows():
+            start_seq = row['tcp_seq_rel']
+            end_seq = start_seq + row['data_len']
+            points.append((start_seq, 1))
+            points.append((end_seq, -1))
+
+        # Sort points
+        points.sort()
+
+        # Sweep-line algorithm
+        received_bytes = 0
+        count = 0
+        
+        if not points:
+            return 0.0
+
+        last_seq = points[0][0]
+
+        for seq, type in points:
+            if count > 0:
+                received_bytes += seq - last_seq
+            
+            count += type
+            last_seq = seq
+            
+        # Calculate total expected bytes
+        min_seq = server_df['tcp_seq_rel'].min()
+        max_seq = (server_df['tcp_seq_rel'] + server_df['data_len']).max()
+        total_expected_bytes = max_seq - min_seq
+
+        if total_expected_bytes == 0:
+            return 0.0
+            
+        lost_bytes = total_expected_bytes - received_bytes
+        
+        loss_rate = lost_bytes / total_expected_bytes
+        
+        print(f"Total Bytes Received: {received_bytes}")
+        print(f"Total Bytes Expected: {total_expected_bytes}")
+        print(f"Total Bytes Lost: {lost_bytes}")
+
+        return received_bytes, lost_bytes
+
+    except FileNotFoundError:
+        print(f"Error: The file at {file_path} was not found.")
+        return 0.1,0
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return 0.1,0
+
+
+
+def get_total_recvbytes(dirc, in_file, goodbytes, ports):
     tshark_file = in_file.replace('curl_squid', 'tcpdump').replace('.txt', '.pcap.tshark')
     with open(os.path.join(dirc, tshark_file), 'r') as inf:
         lines = inf.read().splitlines()
         fields = lines[0].split(',')
         if len(fields) == 8:
-            df_tshark = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', names = ['time','ipid','src_ip','srcport','tcplen','seq','ack','ooo']) #'dstport','rwnd'
+            df_tshark = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', header =  None, names = ['time','ipid','src_ip','srcport','tcplen','seq','ack','ooo']) #'dstport','rwnd'
     #df_tshark = df_tshark[df_tshark.srcport == 80]
-            return df_tshark[df_tshark.seq <= goodbytes]['tcplen'].sum()
+            return df_tshark[df_tshark.seq <= goodbytes]['tcplen'].sum(), 0
         elif len(fields) == 10:
-            df_tshark = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', names = ['time','ipid','src_ip','srcport','dstport','tcplen','seq','ack','rwnd','ooo']) #'dstport','rwnd'
+            df_tshark = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', header = None, names = ['time','ipid','src_ip','srcport','dstport','data_len','tcp_seq_rel','ack_sel','rwnd','ooo']) #'dstport','rwnd'
             df_tshark = df_tshark[df_tshark.srcport == 80]
-            return df_tshark[df_tshark.seq <= goodbytes]['tcplen'].sum()
+            df_tshark = df_tshark[df_tshark.tcp_seq_rel <= goodbytes]
+            received_bytes_sum, lost_bytes_sum = 0,0
+            for port in ports:
+                #print(df_tshark[df_tshark.dstport == port])
+                received_bytes, lost_bytes = calculate_loss_rate_from_file(df_tshark[df_tshark.dstport == port])
+                received_bytes_sum += received_bytes
+                lost_bytes_sum += lost_bytes
+            return received_bytes_sum, lost_bytes_sum/(lost_bytes_sum+received_bytes_sum)
 
 
 in_dir = os.path.expanduser(sys.argv[1])
@@ -76,9 +174,12 @@ for field in tag_fields:
     elif 'wholeset' in field or 'pareto' in field:
         fix_kw = 'wholeset'
 print(optim_num, fix_kw, fix_num)
+optim_num, fix_num = 1,3
 
-cols = ['optim_num', 'group_num', 'thread_num', 'range','range_sum','optim','curl','goodbytes','recvedbytes', 'effi', 'filename']
+cols = ['optim_num', 'group_num', 'thread_num', 'range','range_sum','optim','curl','goodbytes','recvedbytes', 'effi', 'lossrate',  'filename']
 df_output = pd.DataFrame(columns = cols)
+
+count = 0
 with open(out_file, 'w') as outf:
     for root, dirs, files in os.walk(in_dir):
         for in_file in files:
@@ -86,7 +187,7 @@ with open(out_file, 'w') as outf:
             if(in_file.startswith('curl_squid') and in_file.endswith('.txt')) and sys.argv[2] in in_file:
                 configs = get_configs_filename(in_file)
                 # print(configs, optim_num, configs[kw_dict[fix_kw]], fix_num, configs[0] == optim_num, configs[kw_dict[fix_kw]] == fix_num)
-                if fix_kw == '' or fix_kw == 'wholeset' or (configs[0] == optim_num and configs[kw_dict[fix_kw]] == fix_num): #and (configs[1] < 12)
+                if True: #configs[0] == optim_num and configs[kw_dict[fix_kw]] == fix_num: #fix_kw == '' or fix_kw == 'wholeset' or (configs[0] == optim_num configs[kw_dict[fix_kw]] == fix_num): #and (configs[1] < 12)
                     print("Process: " + in_file)
                     process_file = find_process_file(in_dir, in_file)
                     total_goodbytes = 87548090
@@ -94,7 +195,7 @@ with open(out_file, 'w') as outf:
                         with open(os.path.join(root, in_file), 'r') as inf:
                             lines = list(filter(None, inf.read().splitlines()))
                             for line in lines[::-1]: 
-                                print(line)                                   
+                                #print(line)                                   
                                 if 'curl: (18)' in line or 'curl: (52)' in line or 'curl: (28) Operation too slow' in line:
                                     if 'curl: (18)' in line and '83.4M' in lines[::-2]:
                                         fields = list(filter(None,line.replace('d ','d').split(' ')))
@@ -113,9 +214,11 @@ with open(out_file, 'w') as outf:
                         if not total_goodbytes:
                             continue
 
-                        total_recvbytes = get_total_recvbytes(root, in_file, total_goodbytes)
                         # print(total_recvbytes)
                         df = load_dataframe(os.path.join(root, process_file))
+                        #print(df[df.is_range=='optim_recv']['port'].unique())
+                        total_recvbytes,lossrate = get_total_recvbytes(root, in_file, total_goodbytes, df[df.is_range=='optim_recv']['port'].unique())
+                        
                         df = df[ df['seq_start'] <= total_goodbytes ]
                         # 1. check if duration is larger than 59
                         duration = df['time'].iloc[-1] - df['time'].iloc[0]
@@ -143,11 +246,15 @@ with open(out_file, 'w') as outf:
                         df_range_sum['goodbytes'] = total_goodbytes
                         df_range_sum['recvedbytes'] = total_recvbytes
                         df_range_sum['effi'] = total_goodbytes*100.0/total_recvbytes
+                        df_range_sum['lossrate'] = lossrate
                         df_range_sum['filename'] = in_file
                         df_output = pd.concat([df_output, df_range_sum[cols]])
 
                         print(optim_thrpt, range_thrpt, optim_thrpt+range_thrpt, duration)
-                            
+                        print()
+                        count += 1
+                        #if count == 10:
+                        #    break
         break
 
 
@@ -155,23 +262,33 @@ print(df_output)
 df_output = df_output[ df_output.range > 0 ]
 #df_output = df_output[ df_output.thread_num % 2 == 0]
 df_output.to_csv(out_file, encoding='utf-8',index=False)
+df_output_5 = df_output[df_output['lossrate'] <= 0.051]
+df_output_5_above = df_output[df_output['lossrate'] > 0.051]
+df_output_10 = df_output_5_above[df_output_5_above['lossrate'] <= 0.10]
+df_output_10_above = df_output_5_above[df_output_5_above['lossrate'] > 0.10]
 
-if  fix_kw == '' or fix_kw != 'wholeset':
-    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(9.5,5.5))
+
+#if  fix_kw == '' or fix_kw != 'wholeset':
+fix_kw = 'thread'
+test_kw = 'group'
+for df in [df_output_5, df_output_10, df_output_10_above]:
+    for optinum in [1, 2]:
+        fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(9.5,5.5))
     #for cl in ['range_sum''curl']:
-    axes1 = df_output.boxplot(ax=axes[0], column='curl', by='%s_num' % test_kw, showmeans=True)
-    #.title("Optim = 2, Group = 6, Loss Rate = 20%," + cl)
-    #plt.suptitle('')
-    axes1.set_ylim(0, 11)
-    axes1.set_xlabel('')
-    axes1.set_ylabel('Goodput(Mpbs)')
-    axes1.set_title("Overall Bandwidth")
+        df = df[df.optim_num == optinum]
+        for i in range(4):
+            df = df[df[fix_kw+'_num'] == i+3]
+            axes1 = df.boxplot(ax=axes[i], column='curl', by='%s_num' % test_kw, showmeans=True)
+            axes1.set_ylim(0, 11)
+            axes1.set_xlabel('')
+            axes1.set_ylabel('Goodput(Mpbs)')
+            axes1.set_title(f"{fix_kw} = {i+3}")
 
-    axes2 = df_output.boxplot(ax=axes[1], column='range_sum', by='%s_num' % test_kw, showmeans=True)
-    axes2.set_ylim(0, 1100)
-    axes2.set_xlabel('')
-    axes2.set_ylabel('Goodput(Kpbs)')
-    axes2.set_title("Overall Recovery Bandwidth of All Groups")
+    #axes2 = df_output.boxplot(ax=axes[1], column='range_sum', by='%s_num' % test_kw, showmeans=True)
+    #axes2.set_ylim(0, 1100)
+    #axes2.set_xlabel('')
+    #axes2.set_ylabel('Goodput(Kpbs)')
+    #axes2.set_title("Overall Recovery Bandwidth of All Groups")
 
     # axes3 = df_output.boxplot(ax=axes[2], column='effi', by='thread_num', showmeans=True)
     # axes3.set_ylim(0, 1000)
@@ -180,13 +297,13 @@ if  fix_kw == '' or fix_kw != 'wholeset':
     # axes3.set_title("Efficiency")
     # axes2.text(0.98, 0.98, date_string, ha='right', va='bottom', transform=axes2.transAxes)
 
-    xlabels = {'group':'Number of Threads Inside Each Group', 'thread': 'Number of Group'}
+        xlabels = {'group':'Number of Threads Inside Each Group', 'thread': 'Number of Group'}
 
-    fig.add_subplot(111, frameon=False)
-    plt.figtext(0.98, 0.08, date_string, ha='right', va='bottom', transform=fig.transFigure)
-    plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
-    plt.grid(False)
-    plt.xlabel(xlabels[fix_kw]) #Groups, 
-    fig.suptitle("Optim = %d, %s = %d, China-Shenzhen" % (optim_num, fix_kw.capitalize(), fix_num)) # lossrate, rtt)
-    plt.savefig(out_file.replace('.csv', 'curl_range_sum.png'), bbox_inches="tight")
+        fig.add_subplot(111, frameon=False)
+        plt.figtext(0.98, 0.08, date_string, ha='right', va='bottom', transform=fig.transFigure)
+        plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+        plt.grid(False)
+        plt.xlabel(xlabels[fix_kw]) #Groups, 
+        fig.suptitle("Optim = %d, %s = %f, China-Shenzhen" % (optim_num, 'Loss rate', df.lossrate.mean())) # lossrate, rtt)
+        plt.savefig(out_file.replace('.csv', 'curl_range_sum_%doptim_%d%s.png' % (optim_num, 'lossrate', df.lossrate.mean()*100)), bbox_inches="tight")
 

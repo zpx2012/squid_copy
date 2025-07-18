@@ -63,7 +63,7 @@ std::mutex g_interval_mutex; // Mutex to protect access to the interval set
 // Struct for NFQ thread arguments
 struct ClientArgs {
     std::string server_ip;
-    uint16_t my_port;
+    uint32_t my_port;
 };
 
 // --- C-style helper functions ---
@@ -234,7 +234,7 @@ int main(int argc, char **argv) {
     int duration = std::stoi(argv[4]);
     int sock = -1; // Initialize socket descriptor
     const int MARK = 666;
-    int my_port;
+    unsigned int my_port;
 
     int sockraw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (setsockopt(sockraw, SOL_SOCKET, SO_MARK, &MARK, sizeof(MARK)) < 0)
@@ -319,7 +319,7 @@ int main(int argc, char **argv) {
 
         g_program_running = false;
         // Send dummy packet to unblock recv() in nfq_thread
-        run_command("sudo hping3 127.0.0.1 -c 1 -p 12345 > /dev/null 2>&1");
+        //run_command("sudo hping3 127.0.0.1 -c 1 -p 12345 > /dev/null 2>&1");
         if(nfq_worker.joinable()) nfq_worker.join(); 
 
     }while(false);

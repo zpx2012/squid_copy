@@ -31,8 +31,8 @@
 
 // #define GROUP_NUM 6
 // #define RANGE_NUM 6
-const int GROUP_NUM = 4;
-const int RANGE_NUM = 3;
+const int GROUP_NUM = 6;
+const int RANGE_NUM = 4;
 
 #define MAX_RANGE_REQ_CNT 98
 #define REQ_STEP 5
