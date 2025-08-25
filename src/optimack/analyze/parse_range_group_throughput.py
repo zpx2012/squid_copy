@@ -1,4 +1,4 @@
-import pandas as pd, os, sys, matplotlib.pyplot as plt, numpy as np, re
+import pandas as pd, os, sys, matplotlib.pyplot as plt, numpy as np, re, statistics
 from datetime import datetime, timedelta
 from matplotlib.offsetbox import AnchoredText
 
@@ -126,6 +126,98 @@ def calculate_loss_rate_from_file(df):
         return 0.1,0
 
 
+def get_tshark_df(dirc, in_file):
+    tshark_file = in_file.replace('curl_squid', 'tcpdump').replace('.txt', '.pcap.tshark')
+    columns = ['time_epoch','ip_id','src_ip','srcport','dstport','data_len','tcp_seq_rel','tcp_ack_rel','rwnd']
+    with open(os.path.join(dirc, tshark_file), 'r') as inf:
+        lines = inf.read().splitlines()
+        fields = lines[0].split(',')
+        if len(fields) == 10:
+            columns += ['ooo']            
+    df = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', header = None, names = columns, on_bad_lines='skip',low_memory=False) #'dstport','rwnd'
+
+    # --- Data Cleaning ---
+    # for col in ['time_epoch', 'data_len', 'tcp_seq_rel', 'tcp_ack_rel']:
+    #     df[col] = pd.to_numeric(df[col], errors='coerce')
+    # df.dropna(inplace=True)
+
+    return df
+
+
+def get_lossrate(df_tshark, ports):
+    received_bytes_sum, lost_bytes_sum = 0,0
+    for port in ports:
+        #print(df_tshark[df_tshark.dstport == port])
+        received_bytes, lost_bytes = calculate_loss_rate_from_file(df_tshark[df_tshark.dstport == port])
+        received_bytes_sum += received_bytes
+        lost_bytes_sum += lost_bytes
+    return received_bytes_sum, lost_bytes_sum/(lost_bytes_sum+received_bytes_sum)
+
+
+def get_rtt(df):
+    # --- Identify Client and Server ---
+    # Find the two unique IPs involved in the conversation from the src_ip column.
+    unique_ips = df['src_ip'].unique()
+    if len(unique_ips) < 2:
+        print("Could not identify two distinct IPs in the conversation.")
+        return
+        
+    # The client is the source of the first packet in the capture.
+    client_ip = df.iloc[0]['src_ip']
+    # The server is the other IP.
+    server_ip = [ip for ip in unique_ips if ip != client_ip][0]
+
+    print(f"Identified Client IP: {client_ip}")
+    print(f"Identified Server IP: {server_ip}")
+
+    # --- Separate Data and ACK packets ---
+    # Data packets are sent *from* the client and have a data length > 0
+    data_packets = df[(df['src_ip'] == client_ip) & (df['data_len'] > 0)].copy()
+    
+    # ACK packets are sent *from* the server in response
+    ack_packets = df[df['src_ip'] == server_ip].copy()
+
+    # --- Match Data to ACKs and Calculate RTT ---
+    # Dictionary to store the time a data segment was sent.
+    # Key: The sequence number the server should ACK (seq + len)
+    # Value: The time the data packet was sent.
+    sent_times = {}
+    for _, row in data_packets.iterrows():
+        expected_ack = row['tcp_seq_rel'] + row['data_len']
+        # Only store the first time this sequence was sent to handle retransmissions
+        if expected_ack not in sent_times:
+            sent_times[expected_ack] = row['time_epoch']
+
+    rtt_samples = []
+    for _, ack in ack_packets.iterrows():
+        ack_num = ack['tcp_ack_rel']
+        # If this ACK corresponds to a data packet we've recorded
+        if ack_num in sent_times:
+            sent_time = sent_times[ack_num]
+            rtt = (ack['time_epoch'] - sent_time) * 1000  # Convert to milliseconds
+            if rtt > 0: # RTT must be a positive value
+                rtt_samples.append(rtt)
+            # Remove the entry to ensure we match an ACK only once
+            del sent_times[ack_num]
+
+    # --- Display Results ---
+    if not rtt_samples:
+        print("\nCould not find any matching Data/ACK pairs to calculate RTT.")
+        return
+
+    min_rtt = min(rtt_samples)
+    max_rtt = max(rtt_samples)
+    avg_rtt = sum(rtt_samples) / len(rtt_samples)
+
+    print("\n--- TCP RTT Calculation Results ---")
+    print(f"Number of RTT samples calculated: {len(rtt_samples)}")
+    print(f"Minimum RTT: {min_rtt:.2f} ms")
+    print(f"Maximum RTT: {max_rtt:.2f} ms")
+    print(f"Average RTT: {avg_rtt:.2f} ms")
+
+    return min_rtt, max_rtt, avg_rtt
+
+
 
 def get_total_recvbytes(dirc, in_file, goodbytes, ports):
     tshark_file = in_file.replace('curl_squid', 'tcpdump').replace('.txt', '.pcap.tshark')
@@ -137,9 +229,9 @@ def get_total_recvbytes(dirc, in_file, goodbytes, ports):
     #df_tshark = df_tshark[df_tshark.srcport == 80]
             return df_tshark[df_tshark.seq <= goodbytes]['tcplen'].sum(), 0
         elif len(fields) == 10:
-            df_tshark = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', header = None, names = ['time','ipid','src_ip','srcport','dstport','data_len','tcp_seq_rel','ack_sel','rwnd','ooo']) #'dstport','rwnd'
-            df_tshark = df_tshark[df_tshark.srcport == 80]
-            df_tshark = df_tshark[df_tshark.tcp_seq_rel <= goodbytes]
+            df_tshark = pd.read_csv(os.path.join(dirc, tshark_file), lineterminator='\n',sep=',', header = None, names = ['time','ipid','src_ip','srcport','dstport','data_len','tcp_seq_rel','ack_sel','rwnd','ooo'], on_bad_lines='skip',low_memory=False) #'dstport','rwnd'
+            #df_tshark = df_tshark[df_tshark.srcport == 80]
+            #df_tshark = df_tshark[df_tshark.tcp_seq_rel <= goodbytes]
             received_bytes_sum, lost_bytes_sum = 0,0
             for port in ports:
                 #print(df_tshark[df_tshark.dstport == port])
@@ -176,7 +268,7 @@ for field in tag_fields:
 print(optim_num, fix_kw, fix_num)
 optim_num, fix_num = 1,3
 
-cols = ['optim_num', 'group_num', 'thread_num', 'range','range_sum','optim','curl','goodbytes','recvedbytes', 'effi', 'lossrate',  'filename']
+cols = ['optim_num', 'group_num', 'thread_num', 'range','range_sum','optim','curl','goodbytes','recvedbytes', 'effi', 'lossrate', 'rtt_min', 'rtt_max', 'rtt_avg', 'filename']
 df_output = pd.DataFrame(columns = cols)
 
 count = 0
@@ -216,8 +308,22 @@ with open(out_file, 'w') as outf:
 
                         # print(total_recvbytes)
                         df = load_dataframe(os.path.join(root, process_file))
-                        #print(df[df.is_range=='optim_recv']['port'].unique())
-                        total_recvbytes,lossrate = get_total_recvbytes(root, in_file, total_goodbytes, df[df.is_range=='optim_recv']['port'].unique())
+                        df_tshark = get_tshark_df(root, in_file)
+                        df_tshark = df_tshark[df_tshark.tcp_seq_rel <= total_goodbytes]
+                        
+                        optim_ports = df[df.is_range=='optim_recv']['port'].unique()
+                        range_ports = df[df.is_range=='range_recv']['port'].unique()
+
+                        total_recvbytes, lossrate = get_lossrate(df_tshark, optim_ports)
+                        rtt_mins, rtt_maxs, rtt_avgs = [], [], []
+                        for range_port in range_ports:
+                            print(range_port)
+                            rtt_min, rtt_max, rtt_avg = get_rtt(df_tshark[(df_tshark['srcport'] == range_port) | (df_tshark['dstport'] == range_port)])
+                            rtt_mins += [rtt_min]
+                            rtt_maxs += [rtt_max]
+                            rtt_avgs += [rtt_avg]
+            
+                        # total_recvbytes,lossrate = get_total_recvbytes(root, in_file, total_goodbytes, df[df.is_range=='optim_recv']['port'].unique())
                         
                         df = df[ df['seq_start'] <= total_goodbytes ]
                         # 1. check if duration is larger than 59
@@ -226,16 +332,26 @@ with open(out_file, 'w') as outf:
                         #duration = 60
 
                         df_optim = df[ df.is_range == 'optim_recv']
-                        df_optim['byte'] = (df_optim['seq_end'] - df_optim['seq_start'])*8
+                        df_optim['byte'] = (df_optim['seq_end'] - df_optim['seq_start'])
                         optim_bytes = df_optim['byte'].sum()
-                        optim_thrpt = optim_bytes/1024.0/duration
+                        optim_thrpt = optim_bytes*8/1024.0/duration
 
                         df_range = df[ df.is_range == 'range_recv' ]
-                        df_range['bytes'] = (df_range['seq_end'] - df_range['seq_start'])*8
-                        df_range_sum = df_range.groupby(by=['conn'], as_index=False).sum()
-                        range_thrpt = df_range_sum['bytes'].sum()/1024.0/duration
+                        df_range['bytes'] = (df_range['seq_end'] - df_range['seq_start'])
 
-                        df_range_sum['range'] = df_range_sum['bytes']/1024.0/duration
+                        df_range_sum = df_range.groupby(by=['conn'], as_index=False).sum()
+                        range_thrpt = df_range_sum['bytes'].sum()*8/1024.0/duration
+
+                        if rtt_mins:
+                            df_range_sum['rtt_min'] = statistics.mean(rtt_mins)
+                            df_range_sum['rtt_max'] = statistics.mean(rtt_maxs)
+                            df_range_sum['rtt_avg'] = statistics.mean(rtt_avgs)
+                        else:
+                            df_range_sum['rtt_min'] = 0
+                            df_range_sum['rtt_max'] = 0
+                            df_range_sum['rtt_avg'] = 0
+
+                        df_range_sum['range'] = df_range_sum['bytes']*8/1024.0/duration
                         df_range_sum['optim_num'] = configs[0]
                         df_range_sum['group_num'] = configs[1]
                         df_range_sum['thread_num'] = configs[2]
@@ -262,48 +378,50 @@ print(df_output)
 df_output = df_output[ df_output.range > 0 ]
 #df_output = df_output[ df_output.thread_num % 2 == 0]
 df_output.to_csv(out_file, encoding='utf-8',index=False)
-df_output_5 = df_output[df_output['lossrate'] <= 0.051]
-df_output_5_above = df_output[df_output['lossrate'] > 0.051]
-df_output_10 = df_output_5_above[df_output_5_above['lossrate'] <= 0.10]
-df_output_10_above = df_output_5_above[df_output_5_above['lossrate'] > 0.10]
 
 
-#if  fix_kw == '' or fix_kw != 'wholeset':
-fix_kw = 'thread'
-test_kw = 'group'
-for df in [df_output_5, df_output_10, df_output_10_above]:
-    for optinum in [1, 2]:
-        fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(9.5,5.5))
-    #for cl in ['range_sum''curl']:
-        df = df[df.optim_num == optinum]
-        for i in range(4):
-            df = df[df[fix_kw+'_num'] == i+3]
-            axes1 = df.boxplot(ax=axes[i], column='curl', by='%s_num' % test_kw, showmeans=True)
-            axes1.set_ylim(0, 11)
-            axes1.set_xlabel('')
-            axes1.set_ylabel('Goodput(Mpbs)')
-            axes1.set_title(f"{fix_kw} = {i+3}")
+# df_output_5 = df_output[df_output['lossrate'] <= 0.051]
+# df_output_5_above = df_output[df_output['lossrate'] > 0.051]
+# df_output_10 = df_output_5_above[df_output_5_above['lossrate'] <= 0.10]
+# df_output_10_above = df_output_5_above[df_output_5_above['lossrate'] > 0.10]
 
-    #axes2 = df_output.boxplot(ax=axes[1], column='range_sum', by='%s_num' % test_kw, showmeans=True)
-    #axes2.set_ylim(0, 1100)
-    #axes2.set_xlabel('')
-    #axes2.set_ylabel('Goodput(Kpbs)')
-    #axes2.set_title("Overall Recovery Bandwidth of All Groups")
 
-    # axes3 = df_output.boxplot(ax=axes[2], column='effi', by='thread_num', showmeans=True)
-    # axes3.set_ylim(0, 1000)
-    # axes3.set_xlabel('')
-    # axes3.set_ylabel('Efficiency(%)')
-    # axes3.set_title("Efficiency")
-    # axes2.text(0.98, 0.98, date_string, ha='right', va='bottom', transform=axes2.transAxes)
+# #if  fix_kw == '' or fix_kw != 'wholeset':
+# fix_kw = 'thread'
+# test_kw = 'group'
+# for df in [df_output_5, df_output_10, df_output_10_above]:
+#     for optinum in [1, 2]:
+#         fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(9.5,5.5))
+#     #for cl in ['range_sum''curl']:
+#         df = df[df.optim_num == optinum]
+#         for i in range(4):
+#             df = df[df[fix_kw+'_num'] == i+3]
+#             axes1 = df.boxplot(ax=axes[i], column='curl', by='%s_num' % test_kw, showmeans=True)
+#             axes1.set_ylim(0, 11)
+#             axes1.set_xlabel('')
+#             axes1.set_ylabel('Goodput(Mpbs)')
+#             axes1.set_title(f"{fix_kw} = {i+3}")
 
-        xlabels = {'group':'Number of Threads Inside Each Group', 'thread': 'Number of Group'}
+#     #axes2 = df_output.boxplot(ax=axes[1], column='range_sum', by='%s_num' % test_kw, showmeans=True)
+#     #axes2.set_ylim(0, 1100)
+#     #axes2.set_xlabel('')
+#     #axes2.set_ylabel('Goodput(Kpbs)')
+#     #axes2.set_title("Overall Recovery Bandwidth of All Groups")
 
-        fig.add_subplot(111, frameon=False)
-        plt.figtext(0.98, 0.08, date_string, ha='right', va='bottom', transform=fig.transFigure)
-        plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
-        plt.grid(False)
-        plt.xlabel(xlabels[fix_kw]) #Groups, 
-        fig.suptitle("Optim = %d, %s = %f, China-Shenzhen" % (optim_num, 'Loss rate', df.lossrate.mean())) # lossrate, rtt)
-        plt.savefig(out_file.replace('.csv', 'curl_range_sum_%doptim_%d%s.png' % (optim_num, 'lossrate', df.lossrate.mean()*100)), bbox_inches="tight")
+#     # axes3 = df_output.boxplot(ax=axes[2], column='effi', by='thread_num', showmeans=True)
+#     # axes3.set_ylim(0, 1000)
+#     # axes3.set_xlabel('')
+#     # axes3.set_ylabel('Efficiency(%)')
+#     # axes3.set_title("Efficiency")
+#     # axes2.text(0.98, 0.98, date_string, ha='right', va='bottom', transform=axes2.transAxes)
+
+#         xlabels = {'group':'Number of Threads Inside Each Group', 'thread': 'Number of Group'}
+
+#         fig.add_subplot(111, frameon=False)
+#         plt.figtext(0.98, 0.08, date_string, ha='right', va='bottom', transform=fig.transFigure)
+#         plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+#         plt.grid(False)
+#         plt.xlabel(xlabels[fix_kw]) #Groups, 
+#         fig.suptitle("Optim = %d, %s = %f, China-Shenzhen" % (optim_num, 'Loss rate', df.lossrate.mean())) # lossrate, rtt)
+#         plt.savefig(out_file.replace('.csv', 'curl_range_sum_%doptim_%d%s.png' % (optim_num, 'lossrate', df.lossrate.mean()*100)), bbox_inches="tight")
 

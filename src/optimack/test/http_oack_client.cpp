@@ -353,7 +353,7 @@ int main(int argc, char **argv) {
         // std::cout << "Packet Loss Rate: " << std::fixed << std::setprecision(2) << loss_rate << "%" << std::endl;
         std::cout << std::fixed << std::setprecision(6) << std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()/1000000000.0 << "," 
                   << std::fixed << std::setprecision(2) << loss_rate << "," 
-                  << (loss_rate > 5 ? "True" : "False") << std::endl;
+                  << (loss_rate > 2 ? "True" : "False") << std::endl;
     }
     
     if (sock >= 0) close(sock);

@@ -1,0 +1,438 @@
+Optimack.cc: In function ‘char* time_in_YYYY_MM_DD(char*)’:
+Optimack.cc:173:39: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  173 |     return get_cur_time_str(time_str, "%Y-%m-%d");
+      |                                       ^~~~~~~~~~
+Optimack.cc: In function ‘char* time_in_HH_MM_SS(char*)’:
+Optimack.cc:177:39: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  177 |     return get_cur_time_str(time_str, "%Y-%m-%d %H:%M:%S");
+      |                                       ^~~~~~~~~~~~~~~~~~~
+Optimack.cc: In function ‘char* time_in_HH_MM_SS_nospace(char*)’:
+Optimack.cc:181:39: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  181 |     return get_cur_time_str(time_str, "%Y-%m-%dT%H:%M:%S");
+      |                                       ^~~~~~~~~~~~~~~~~~~
+Optimack.cc: In function ‘char* time_in_YYYYMMDDHHMMSS(char*)’:
+Optimack.cc:185:39: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  185 |     return get_cur_time_str(time_str, "%Y%m%d%H%M%S");
+      |                                       ^~~~~~~~~~~~~~
+Optimack.cc: In member function ‘int Optimack::get_adjusted_rwnd(int)’:
+Optimack.cc:355:10: warning: unused variable ‘cur_win_scaled’ [-Wunused-variable]
+  355 |     uint cur_win_scaled = diff <= 0? 0 : cur_rwnd / win_scale;
+      |          ^~~~~~~~~~~~~~
+Optimack.cc: In member function ‘void Optimack::send_optimistic_ack(subconn_info*, int, int)’:
+Optimack.cc:372:16: warning: comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]
+  372 |     if(cur_ack > max_opt_ack)
+      |        ~~~~~~~~^~~~~~~~~~~~~
+Optimack.cc: In member function ‘void Optimack::send_optimistic_ack_with_SACK(subconn_info*, int, int, IntervalList*)’:
+Optimack.cc:394:97: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  394 |     send_ACK_with_SACK(g_remote_ip, g_local_ip, g_remote_port, conn->local_port, sack_str, len, "", conn->ini_seq_rem + cur_ack, conn->ini_seq_loc + conn->next_seq_loc, cur_win_scaled);
+      |                                                                                                 ^~
+Optimack.cc: In member function ‘void Optimack::update_optimistic_ack_timer(bool, std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::duration<long int, std::ratio<1, 1000000000> > >&, std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::duration<long int, std::ratio<1, 1000000000> > >&)’:
+Optimack.cc:439:14: warning: unused variable ‘time_str’ [-Wunused-variable]
+  439 |         char time_str[20];
+      |              ^~~~~~~~
+Optimack.cc: In member function ‘void Optimack::backup_try_fill_gap()’:
+Optimack.cc:456:18: warning: unused variable ‘cur_send_seq’ [-Wunused-variable]
+  456 |             uint cur_send_seq = last_recved_seq;
+      |                  ^~~~~~~~~~~~
+Optimack.cc:457:27: warning: unused variable ‘dummy_payload’ [-Wunused-variable]
+  457 |             unsigned char dummy_payload[1461] = "dummy payload";
+      |                           ^~~~~~~~~~~~~
+Optimack.cc: In function ‘void* selective_optimistic_ack_trick(void*)’:
+Optimack.cc:519:18: warning: unused variable ‘opa_seq_start’ [-Wunused-variable]
+  519 |     unsigned int opa_seq_start = conn->opa_seq_start;
+      |                  ^~~~~~~~~~~~~
+Optimack.cc:520:18: warning: unused variable ‘local_port’ [-Wunused-variable]
+  520 |     unsigned int local_port = conn->local_port, payload_len = conn->payload_len;
+      |                  ^~~~~~~~~~
+Optimack.cc:520:49: warning: unused variable ‘payload_len’ [-Wunused-variable]
+  520 |     unsigned int local_port = conn->local_port, payload_len = conn->payload_len;
+      |                                                 ^~~~~~~~~~~
+Optimack.cc:524:10: warning: unused variable ‘mss’ [-Wunused-variable]
+  524 |     uint mss = obj->squid_MSS;
+      |          ^~~
+Optimack.cc:525:12: warning: unused variable ‘send_ack_pace’ [-Wunused-variable]
+  525 |     double send_ack_pace = 1500 / 1000000.0;
+      |            ^~~~~~~~~~~~~
+Optimack.cc:527:9: warning: variable ‘rv’ set but not used [-Wunused-but-set-variable]
+  527 |     int rv;
+      |         ^~
+Optimack.cc: In function ‘void* selective_optimistic_ack(void*)’:
+Optimack.cc:631:22: warning: variable ‘insert_interval_end’ set but not used [-Wunused-but-set-variable]
+  631 |                 uint insert_interval_end = last_recved_seq_end;
+      |                      ^~~~~~~~~~~~~~~~~~~
+Optimack.cc:545:18: warning: unused variable ‘opa_seq_start’ [-Wunused-variable]
+  545 |     unsigned int opa_seq_start = conn->opa_seq_start;
+      |                  ^~~~~~~~~~~~~
+Optimack.cc:546:18: warning: unused variable ‘local_port’ [-Wunused-variable]
+  546 |     unsigned int local_port = conn->local_port, payload_len = conn->payload_len;
+      |                  ^~~~~~~~~~
+Optimack.cc:558:10: warning: unused variable ‘last_cur_ack_rel’ [-Wunused-variable]
+  558 |     uint last_cur_ack_rel = 1;
+      |          ^~~~~~~~~~~~~~~~
+Optimack.cc:559:10: warning: unused variable ‘opa_ack_cur’ [-Wunused-variable]
+  559 |     uint opa_ack_cur = 1;
+      |          ^~~~~~~~~~~
+Optimack.cc: In member function ‘void* Optimack::full_optimistic_ack_altogether()’:
+Optimack.cc:855:22: warning: unused variable ‘time_str’ [-Wunused-variable]
+  855 |                 char time_str[20];
+      |                      ^~~~~~~~
+Optimack.cc:749:97: warning: variable ‘last_restart_seq’ set but not used [-Wunused-but-set-variable]
+  749 |     unsigned int opa_ack_start = 1,  last_opa_ack = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
+      |                                                                                                 ^~~~~~~~~~~~~~~~
+Optimack.cc:749:119: warning: unused variable ‘same_restart_cnt’ [-Wunused-variable]
+  749 |     unsigned int opa_ack_start = 1,  last_opa_ack = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
+      |                                                                                                                       ^~~~~~~~~~~~~~~~
+Optimack.cc:749:141: warning: variable ‘opa_ack_dup_countdown’ set but not used [-Wunused-but-set-variable]
+  749 |     unsigned int opa_ack_start = 1,  last_opa_ack = 1, last_stall_seq = 1, last_stall_port = 1, last_restart_seq = 0, same_restart_cnt = 0, opa_ack_dup_countdown = 0;
+      |                                                                                                                                             ^~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:753:10: warning: variable ‘log’ set but not used [-Wunused-but-set-variable]
+  753 |     char log[LOGSIZE+1] = {0};
+      |          ^~~
+Optimack.cc:754:10: warning: variable ‘is_in_overrun’ set but not used [-Wunused-but-set-variable]
+  754 |     bool is_in_overrun = false;
+      |          ^~~~~~~~~~~~~
+Optimack.cc: In member function ‘void Optimack::log_seq_gaps()’:
+Optimack.cc:1123:24: warning: unused variable ‘tmp_str’ [-Wunused-variable]
+ 1123 |     char time_str[30], tmp_str[1000];
+      |                        ^~~~~~~
+Optimack.cc: In member function ‘void Optimack::cleanup()’:
+Optimack.cc:1231:10: warning: variable ‘ask_nfq_stop’ set but not used [-Wunused-but-set-variable]
+ 1231 |     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
+      |          ^~~~~~~~~~~~
+Optimack.cc:1231:32: warning: variable ‘ask_overrun_stop’ set but not used [-Wunused-but-set-variable]
+ 1231 |     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
+      |                                ^~~~~~~~~~~~~~~~
+Optimack.cc:1231:58: warning: variable ‘ask_range_stop’ set but not used [-Wunused-but-set-variable]
+ 1231 |     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
+      |                                                          ^~~~~~~~~~~~~~
+Optimack.cc:1231:82: warning: variable ‘ask_optim_stop’ set but not used [-Wunused-but-set-variable]
+ 1231 |     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
+      |                                                                                  ^~~~~~~~~~~~~~
+Optimack.cc:1231:106: warning: variable ‘ask_recv_tls_stop’ set but not used [-Wunused-but-set-variable]
+ 1231 |     bool ask_nfq_stop = false, ask_overrun_stop = false, ask_range_stop = false, ask_optim_stop = false, ask_recv_tls_stop = false;
+      |                                                                                                          ^~~~~~~~~~~~~~~~~
+Optimack.cc: In function ‘void log_seq(FILE*, uint)’:
+Optimack.cc:1607:10: warning: unused variable ‘time_str’ [-Wunused-variable]
+ 1607 |     char time_str[30];
+      |          ^~~~~~~~
+Optimack.cc: In function ‘int cb(nfq_q_handle*, nfgenmsg*, nfq_data*, void*)’:
+Optimack.cc:1792:11: warning: ‘void* memset(void*, int, size_t)’ clearing an object of type ‘struct thread_data’ with no trivial copy-assignment; use assignment or value-initialization instead [-Wclass-memaccess]
+ 1792 |     memset(thr_data, 0, sizeof(struct thread_data));
+      |     ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from Optimack.cc:36:
+Optimack.h:152:8: note: ‘struct thread_data’ declared here
+  152 | struct thread_data {
+      |        ^~~~~~~~~~~
+Optimack.cc:1754:21: warning: unused variable ‘iphdr’ [-Wunused-variable]
+ 1754 |     struct myiphdr *iphdr = ip_hdr(packet);
+      |                     ^~~~~
+Optimack.cc: In function ‘void* pool_handler(void*)’:
+Optimack.cc:2006:33: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+ 2006 |         free_thr_data(thr_data, "pool_handler:2259");
+      |                                 ^~~~~~~~~~~~~~~~~~~
+Optimack.cc:2046:7: warning: suggest explicit braces to avoid ambiguous ‘else’ [-Wdangling-else]
+ 2046 |     if(!forward_packet)
+      |       ^
+Optimack.cc:2073:29: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+ 2073 |     free_thr_data(thr_data, "pool_handler:2317");
+      |                             ^~~~~~~~~~~~~~~~~~~
+Optimack.cc:2000:12: warning: unused variable ‘ph_start’ [-Wunused-variable]
+ 2000 |     double ph_start = get_current_epoch_time_nanosecond(), ptp_start, ptp_end, ph_end;
+      |            ^~~~~~~~
+Optimack.cc:2000:60: warning: variable ‘ptp_start’ set but not used [-Wunused-but-set-variable]
+ 2000 |     double ph_start = get_current_epoch_time_nanosecond(), ptp_start, ptp_end, ph_end;
+      |                                                            ^~~~~~~~~
+Optimack.cc:2000:71: warning: variable ‘ptp_end’ set but not used [-Wunused-but-set-variable]
+ 2000 |     double ph_start = get_current_epoch_time_nanosecond(), ptp_start, ptp_end, ph_end;
+      |                                                                       ^~~~~~~
+Optimack.cc:2000:80: warning: unused variable ‘ph_end’ [-Wunused-variable]
+ 2000 |     double ph_start = get_current_epoch_time_nanosecond(), ptp_start, ptp_end, ph_end;
+      |                                                                                ^~~~~~
+Optimack.cc: In member function ‘void Optimack::send_all_requests()’:
+Optimack.cc:2555:68: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+ 2555 |                 if (pthread_create(&recv_thread, NULL, dummy_recv, (void*)it->second->sockfd) != 0) {
+      |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc: In member function ‘int Optimack::process_tcp_packet(thread_data*)’:
+Optimack.cc:2599:11: warning: variable ‘sip’ set but not used [-Wunused-but-set-variable]
+ 2599 |     char *sip, *dip;
+      |           ^~~
+Optimack.cc:2599:17: warning: variable ‘dip’ set but not used [-Wunused-but-set-variable]
+ 2599 |     char *sip, *dip;
+      |                 ^~~
+Optimack.cc:2600:10: warning: variable ‘local_port’ set but not used [-Wunused-but-set-variable]
+ 2600 |     uint local_port;
+      |          ^~~~~~~~~~
+Optimack.cc: In member function ‘int Optimack::process_tcp_plaintext_packet(thread_data*, mytcphdr*, unsigned int, unsigned int, unsigned char*, unsigned int, unsigned char*, int, bool, subconn_info*, char*)’:
+Optimack.cc:2931:78: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+ 2931 |                 send_ACK(g_local_ip, g_remote_ip, local_port, g_remote_port, "", seq+1, ack);
+      |                                                                              ^~
+Optimack.cc:2969:44: warning: comparison of integer expressions of different signedness: ‘int’ and ‘uint’ {aka ‘unsigned int’} [-Wsign-compare]
+ 2969 |                         if(adjust_rwnd_tmp <= squid_MSS)
+      |                            ~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+Optimack.cc:3079:82: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+ 3079 |                     send_ACK(g_remote_ip, g_local_ip, g_remote_port, local_port, "", seq+1, ack);
+      |                                                                                  ^~
+Optimack.cc:2690:10: warning: unused variable ‘time_str’ [-Wunused-variable]
+ 2690 |     char time_str[64];
+      |          ^~~~~~~~
+Optimack.cc:2691:21: warning: unused variable ‘timestamps’ [-Wunused-variable]
+ 2691 |     vector<double>& timestamps = thr_data->timestamps;
+      |                     ^~~~~~~~~~
+Optimack.cc: In member function ‘int Optimack::process_tcp_packet_with_payload(mytcphdr*, unsigned int, unsigned char*, int, subconn_info*, char*)’:
+Optimack.cc:3166:13: warning: unused variable ‘order_flag_backup’ [-Wunused-variable]
+ 3166 |         int order_flag_backup;
+      |             ^~~~~~~~~~~~~~~~~
+Optimack.cc:3176:22: warning: comparison of integer expressions of different signedness: ‘int’ and ‘uint’ {aka ‘unsigned int’} [-Wsign-compare]
+ 3176 |     if( (payload_len != squid_MSS && !subconn->is_backup) || (!is_new_segment) ){
+      |          ~~~~~~~~~~~~^~~~~~~~~~~~
+Optimack.cc:3121:9: warning: unused variable ‘subconn_i’ [-Wunused-variable]
+ 3121 |     int subconn_i = subconn->id;
+      |         ^~~~~~~~~
+Optimack.cc:3122:20: warning: unused variable ‘local_port’ [-Wunused-variable]
+ 3122 |     unsigned short local_port = subconn->local_port;
+      |                    ^~~~~~~~~~
+Optimack.cc: In member function ‘bool Optimack::store_and_send_data(uint, unsigned char*, int, subconn_info*, bool, int)’:
+Optimack.cc:3229:72: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
+ 3229 |                         fprintf(processed_seq_file, "%f,range_recv,%d,%u,%u,%u\n", get_current_epoch_time_nanosecond(), id, (unsigned long)subconn, it->first.lower(),it->first.upper());
+      |                                                                       ~^                                                    ~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                        |                                                    |
+      |                                                                        unsigned int                                         long unsigned int
+      |                                                                       %lu
+Optimack.cc:3232:27: warning: comparison of floating-point type ‘double’ with enumeration type ‘ORDER_TYPE’ is deprecated [-Wdeprecated-enum-float-conversion]
+ 3232 |             if(it->second != OUT_OF_ORDER){
+      |                ~~~~~~~~~~~^~~~~~~~~~~~~~~
+Optimack.cc:3212:9: warning: unused variable ‘order_flag’ [-Wunused-variable]
+ 3212 |     int order_flag;
+      |         ^~~~~~~~~~
+Optimack.cc: In member function ‘int Optimack::send_data_to_squid_thread()’:
+Optimack.cc:3556:1: warning: no return statement in function returning non-void [-Wreturn-type]
+ 3556 | }
+      | ^
+Optimack.cc: In member function ‘int Optimack::remove_recved_recv_buffer(uint)’:
+Optimack.cc:3604:26: warning: unused variable ‘squid_conn’ [-Wunused-variable]
+ 3604 |     struct subconn_info* squid_conn = subconn_infos[squid_port];
+      |                          ^~~~~~~~~~
+Optimack.cc:3605:9: warning: unused variable ‘count’ [-Wunused-variable]
+ 3605 |     int count = 0;
+      |         ^~~~~
+Optimack.cc: In member function ‘void Optimack::send_data_to_subconn(subconn_info*, bool, unsigned int, unsigned char*, int)’:
+Optimack.cc:3700:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘uint’ {aka ‘unsigned int’} [-Wsign-compare]
+ 3700 |         packet_len = unsent >= squid_MSS? squid_MSS : unsent;
+      |                      ~~~~~~~^~~~~~~~~~~~
+Optimack.cc: In member function ‘subconn_info* Optimack::create_subconn_info(int, bool)’:
+Optimack.cc:3751:11: warning: ‘void* memset(void*, int, size_t)’ clearing an object of type ‘struct subconn_info’ with no trivial copy-assignment; use assignment or value-initialization instead [-Wclass-memaccess]
+ 3751 |     memset(new_subconn, 0, sizeof(struct subconn_info));
+      |     ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.h:88:8: note: ‘struct subconn_info’ declared here
+   88 | struct subconn_info
+      |        ^~~~~~~~~~~~
+Optimack.cc: In member function ‘int Optimack::insert_subconn_info(std::map<unsigned int, subconn_info*>&, uint&, subconn_info*)’:
+Optimack.cc:3787:15: warning: unused variable ‘obj’ [-Wunused-variable]
+ 3787 |     Optimack* obj = new_subconn->optack;
+      |               ^~~
+Optimack.cc:3793:9: warning: variable ‘ret’ set but not used [-Wunused-but-set-variable]
+ 3793 |     int ret = exec_iptables('A', cmd);
+      |         ^~~
+Optimack.cc: In member function ‘void Optimack::open_one_duplicate_conn(std::map<unsigned int, subconn_info*>&, bool)’:
+Optimack.cc:3815:9: warning: unused variable ‘ret’ [-Wunused-variable]
+ 3815 |     int ret;
+      |         ^~~
+Optimack.cc: In member function ‘void Optimack::set_main_subconn(char*, char*, short unsigned int, short unsigned int, int)’:
+Optimack.cc:3859:11: warning: unused variable ‘cmd’ [-Wunused-variable]
+ 3859 |     char* cmd;
+      |           ^~~
+Optimack.cc:3860:9: warning: unused variable ‘ret’ [-Wunused-variable]
+ 3860 |     int ret;
+      |         ^~~
+Optimack.cc: In member function ‘int Optimack::set_subconn_ssl_credentials(subconn_info*, SSL*)’:
+Optimack.cc:4129:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]
+ 4129 |     if(subconn->record_size < subconn->payload_len)
+      |        ~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc: In function ‘char* time_in_HH_MM_SS_US(char*)’:
+Optimack.cc:194:12: warning: ‘sprintf’ argument 3 overlaps destination object ‘time_str’ [-Wrestrict]
+  194 |     sprintf(time_str, "%s.%06ld", time_str, cur_timeval.tv_usec);
+      |     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:188:33: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+  188 | char* time_in_HH_MM_SS_US(char* time_str){
+      |                           ~~~~~~^~~~~~~~
+Optimack.cc: In member function ‘void Optimack::send_optimistic_ack_with_SACK(subconn_info*, int, int, IntervalList*)’:
+Optimack.cc:391:24: warning: ‘%02x’ directive writing 2 bytes into a region of size between 1 and 65 [-Wformat-overflow=]
+  391 |         sprintf(buf,"%s%02x", buf, *byte);
+      |                        ^~~~
+Optimack.cc:391:21: note: directive argument in the range [0, 255]
+  391 |         sprintf(buf,"%s%02x", buf, *byte);
+      |                     ^~~~~~~~
+Optimack.cc:391:16: note: ‘sprintf’ output between 3 and 67 bytes into a destination of size 65
+  391 |         sprintf(buf,"%s%02x", buf, *byte);
+      |         ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:391:16: warning: ‘sprintf’ argument 3 overlaps destination object ‘buf’ [-Wrestrict]
+Optimack.cc:389:10: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+  389 |     char buf[65] = {0};
+      |          ^~~
+Optimack.cc: In member function ‘void Optimack::init()’:
+Optimack.cc:1562:32: warning: ‘/info_’ directive writing 6 bytes into a region of size between 1 and 100 [-Wformat-overflow=]
+ 1562 |     sprintf(info_file_name, "%s/info_%s.txt", output_dir, tag);
+      |                                ^~~~~~
+Optimack.cc:1562:12: note: ‘sprintf’ output between 11 and 169 bytes into a destination of size 100
+ 1562 |     sprintf(info_file_name, "%s/info_%s.txt", output_dir, tag);
+      |     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc: In function ‘void* selective_optimistic_ack(void*)’:
+Optimack.cc:642:37: warning: ‘ > , ’ directive writing 5 bytes into a region of size between 1 and 100 [-Wformat-overflow=]
+  642 |                     sprintf(tmp, "%s > , ", tmp);
+      |                                     ^~~~~
+Optimack.cc:642:28: note: ‘sprintf’ output between 6 and 105 bytes into a destination of size 100
+  642 |                     sprintf(tmp, "%s > , ", tmp);
+      |                     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:642:28: warning: ‘sprintf’ argument 3 overlaps destination object ‘tmp’ [-Wrestrict]
+Optimack.cc:624:14: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+  624 |         char tmp[100];
+      |              ^~~
+Optimack.cc:638:37: warning: ‘ < , ’ directive writing 5 bytes into a region of size between 1 and 100 [-Wformat-overflow=]
+  638 |                     sprintf(tmp, "%s < , ", tmp);
+      |                                     ^~~~~
+Optimack.cc:638:28: note: ‘sprintf’ output between 6 and 105 bytes into a destination of size 100
+  638 |                     sprintf(tmp, "%s < , ", tmp);
+      |                     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:638:28: warning: ‘sprintf’ argument 3 overlaps destination object ‘tmp’ [-Wrestrict]
+Optimack.cc:624:14: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+  624 |         char tmp[100];
+      |              ^~~
+Optimack.cc:711:37: warning: ‘Before: [’ directive writing 9 bytes into a region of size between 1 and 100 [-Wformat-overflow=]
+  711 |                     sprintf(tmp, "%sBefore: [%u, %u]\n", tmp, *acks_to_be_sent.begin(), *acks_to_be_sent.rbegin());
+      |                                     ^~~~~~~~~
+Optimack.cc:711:28: note: ‘sprintf’ output between 16 and 133 bytes into a destination of size 100
+  711 |                     sprintf(tmp, "%sBefore: [%u, %u]\n", tmp, *acks_to_be_sent.begin(), *acks_to_be_sent.rbegin());
+      |                     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:711:28: warning: ‘sprintf’ argument 3 overlaps destination object ‘tmp’ [-Wrestrict]
+Optimack.cc:624:14: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+  624 |         char tmp[100];
+      |              ^~~
+Optimack.cc:716:37: warning: ‘After: [’ directive writing 8 bytes into a region of size between 1 and 100 [-Wformat-overflow=]
+  716 |                     sprintf(tmp, "%sAfter: [%u, %u]\n", tmp, *acks_to_be_sent.begin(), *acks_to_be_sent.rbegin());
+      |                                     ^~~~~~~~
+Optimack.cc:716:28: note: ‘sprintf’ output between 15 and 132 bytes into a destination of size 100
+  716 |                     sprintf(tmp, "%sAfter: [%u, %u]\n", tmp, *acks_to_be_sent.begin(), *acks_to_be_sent.rbegin());
+      |                     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.cc:716:28: warning: ‘sprintf’ argument 3 overlaps destination object ‘tmp’ [-Wrestrict]
+Optimack.cc:624:14: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+  624 |         char tmp[100];
+      |              ^~~
+In file included from ../../compat/compat.h:86,
+                 from ../../include/squid.h:43,
+                 from range_request.cc:20:
+../../compat/assert.h:15: warning: "assert" redefined
+   15 | #define assert(EX)  ((EX)?((void)0):xassert( # EX , __FILE__, __LINE__))
+      | 
+In file included from /usr/include/boost/assert.hpp:58,
+                 from /usr/include/boost/asio/detail/assert.hpp:21,
+                 from /usr/include/boost/asio/execution/any_executor.hpp:21,
+                 from /usr/include/boost/asio/execution.hpp:19,
+                 from /usr/include/boost/asio/system_executor.hpp:20,
+                 from /usr/include/boost/asio/associated_executor.hpp:24,
+                 from /usr/include/boost/asio/impl/post.hpp:20,
+                 from /usr/include/boost/asio/post.hpp:196,
+                 from Optimack.h:27,
+                 from range_request.cc:12:
+/usr/include/assert.h:92: note: this is the location of the previous definition
+   92 | #  define assert(expr)                                                  \
+      | 
+In file included from range_request.cc:21:
+../../src/sbuf/SBuf.h:48:34: warning: ‘template<class _Category, class _Tp, class _Distance, class _Pointer, class _Reference> struct std::iterator’ is deprecated [-Wdeprecated-declarations]
+   48 | class SBufIterator : public std::iterator<std::input_iterator_tag, char>
+      |                                  ^~~~~~~~
+In file included from /usr/include/c++/13/bits/stl_algobase.h:65,
+                 from /usr/include/c++/13/algorithm:60,
+                 from range_request.cc:2:
+/usr/include/c++/13/bits/stl_iterator_base_types.h:127:34: note: declared here
+  127 |     struct _GLIBCXX17_DEPRECATED iterator
+      |                                  ^~~~~~~~
+range_request.cc: In function ‘int open_group_range_conn(range_conn**, int, char*, short unsigned int, std::shared_ptr<Optimack>)’:
+range_request.cc:272:15: warning: ‘void* memset(void*, int, size_t)’ clearing an object of type ‘struct range_conn’ with no trivial copy-assignment; use value-initialization instead [-Wclass-memaccess]
+  272 |         memset(cur_range_conn, 0, sizeof(struct range_conn));
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.h:180:8: note: ‘struct range_conn’ declared here
+  180 | struct range_conn{
+      |        ^~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::process_range_rv(int, int, http_header*, char*, int, int&)’:
+range_request.cc:419:37: warning: comparison of integer expressions of different signedness: ‘int’ and ‘unsigned int’ [-Wsign-compare]
+  419 |             if (seq_rel + consuming > cur_ack_rel){
+      |                 ~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~
+range_request.cc:421:96: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+  421 |                 is_new_segment |= store_and_send_data(seq_rel, (u_char*)(response), consuming, (subconn_info*)port, true, id);
+      |                                                                                                ^~~~~~~~~~~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::send_group_range_request_worker(range_conn**, int)’:
+range_request.cc:553:37: warning: comparison of floating-point type ‘double’ with enumeration type ‘ORDER_TYPE’ is deprecated [-Wdeprecated-enum-float-conversion]
+  553 |             if(gaps.begin()->second == REQUEST_TIMEOUT)
+      |                ~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~
+range_request.cc:615:15: warning: ‘void* memset(void*, int, size_t)’ clearing an object of type ‘struct range_conn’ with no trivial copy-assignment; use value-initialization instead [-Wclass-memaccess]
+  615 |         memset(&group_conns[j], 0, sizeof(struct range_conn));
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Optimack.h:180:8: note: ‘struct range_conn’ declared here
+  180 | struct range_conn{
+      |        ^~~~~~~~~~
+range_request.cc:500:10: warning: unused variable ‘group_conns_size’ [-Wunused-variable]
+  500 |     uint group_conns_size = sizeof(struct range_conn)*RANGE_NUM;
+      |          ^~~~~~~~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::send_http_range_request(range_conn*, const char*)’:
+range_request.cc:704:1: warning: label ‘resend’ defined but not used [-Wunused-label]
+  704 | resend:
+      | ^~~~~~
+range_request.cc: In member function ‘int Optimack::range_worker(int&, Interval*)’:
+range_request.cc:1128:42: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+ 1128 |         int rv = send_http_range_request((void*)sockfd, it);
+      |                                          ^~~~~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::range_recv_block(int, Interval*)’:
+range_request.cc:1162:66: warning: unused variable ‘packet_len’ [-Wunused-variable]
+ 1162 |     int consumed=0, unread=0, parsed=0, recv_offset=0, unsent=0, packet_len=0;
+      |                                                                  ^~~~~~~~~~
+range_request.cc: In function ‘int process_range_rv_old(char*, int, Optimack*, subconn_info*, http_header*, int&, int&, int&, int&, int&)’:
+range_request.cc:1276:1: warning: no return statement in function returning non-void [-Wreturn-type]
+ 1276 | }
+      | ^
+range_request.cc: In member function ‘int Optimack::insert_lost_range(uint, uint)’:
+range_request.cc:1282:14: warning: comparison of integer expressions of different signedness: ‘uint’ {aka ‘unsigned int’} and ‘int’ [-Wsign-compare]
+ 1282 |     if(start == -1 || end == -1)
+      |        ~~~~~~^~~~~
+range_request.cc:1282:27: warning: comparison of integer expressions of different signedness: ‘uint’ {aka ‘unsigned int’} and ‘int’ [-Wsign-compare]
+ 1282 |     if(start == -1 || end == -1)
+      |                       ~~~~^~~~~
+range_request.cc: In function ‘void* worker_thread(void*)’:
+range_request.cc:1621:13: warning: variable ‘func’ set but not used [-Wunused-but-set-variable]
+ 1621 |     void *(*func)(void *);
+      |             ^~~~
+range_request.cc: In function ‘thr_pool_t* thr_pool_create_range(uint_t, uint_t, uint_t, pthread_attr_t*, Optimack*)’:
+range_request.cc:1792:22: warning: comparison of integer expressions of different signedness: ‘int’ and ‘uint_t’ {aka ‘unsigned int’} [-Wsign-compare]
+ 1792 |     for(int i = 0; i < max_threads; i++)
+      |                    ~~^~~~~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::send_http_range_request(range_conn*)’:
+range_request.cc:1091:20: warning: ‘char* strncat(char*, const char*, size_t)’ specified bound 2 equals source length [-Wstringop-overflow=]
+ 1091 |             strncat(ranges_str, ", ", 2);
+      |             ~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::insert_lost_range(uint, uint)’:
+range_request.cc:1324:1: warning: control reaches end of non-void function [-Wreturn-type]
+ 1324 | }
+      | ^
+range_request.cc: In member function ‘int Optimack::check_range_conn(range_conn*, std::vector<Interval>&)’:
+range_request.cc:1965:1: warning: control reaches end of non-void function [-Wreturn-type]
+ 1965 | }
+      | ^
+range_request.cc: In member function ‘int Optimack::send_http_range_request(range_conn*)’:
+range_request.cc:1092:41: warning: ‘-’ directive output may be truncated writing 1 byte into a region of size between 0 and 999 [-Wformat-truncation=]
+ 1092 |         snprintf(ranges_str, 1000, "%s%u-%u", ranges_str, ranges_tmp[i], ranges_tmp[i+1]);
+      |                                         ^
+range_request.cc:1092:17: note: ‘snprintf’ output between 4 and 1021 bytes into a destination of size 1000
+ 1092 |         snprintf(ranges_str, 1000, "%s%u-%u", ranges_str, ranges_tmp[i], ranges_tmp[i+1]);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+range_request.cc:1092:17: warning: ‘snprintf’ argument 4 overlaps destination object ‘ranges_str’ [-Wrestrict]
+range_request.cc:1087:10: note: destination object referenced by ‘restrict’-qualified argument 1 was declared here
+ 1087 |     char ranges_str[1000] = {0};
+      |          ^~~~~~~~~~
+range_request.cc: In member function ‘int Optimack::send_group_one_range_request(range_conn*, uint, uint)’:
+range_request.cc:631:38: warning: ‘-’ directive output may be truncated writing 1 byte into a region of size between 0 and 999 [-Wformat-truncation=]
+  631 |     snprintf(request_str, 1000, "%s%u-%u\r\n\r\n", range_request_template, get_byte_seq(start_seq), get_byte_seq(end_seq));
+      |                                      ^
+range_request.cc:631:13: note: ‘snprintf’ output between 8 and 1025 bytes into a destination of size 1000
+  631 |     snprintf(request_str, 1000, "%s%u-%u\r\n\r\n", range_request_template, get_byte_seq(start_seq), get_byte_seq(end_seq));
+      |     ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cc1: warning: command-line option '-std=c++20' is valid for C++/ObjC++ but not for C
+make: *** No rule to make target '2'.  Stop.
